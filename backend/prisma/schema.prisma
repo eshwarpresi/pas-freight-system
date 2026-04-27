@@ -1,0 +1,132 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// USER MODEL (For Authentication)
+// ==========================================
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("OPERATIONS") // ADMIN, OPERATIONS, ACCOUNTS
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// CENTRAL SHIPMENT MODEL
+// ==========================================
+model Shipment {
+  id           String   @id @default(uuid())
+  refNo        String   @unique
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  currentStatus String  @default("ENQUIRY") // ShipmentStatus values
+  isArchived   Boolean  @default(false)
+  
+  freightForwarding FreightForwarding?
+  cha               CHA?
+  accounts          Accounts?
+  
+  statusHistory StatusHistory[]
+}
+
+// ==========================================
+// FREIGHT FORWARDING MODULE
+// ==========================================
+model FreightForwarding {
+  id              String   @id @default(uuid())
+  shipmentId      String   @unique
+  shipment        Shipment @relation(fields: [shipmentId], references: [id])
+  
+  enquiryDate     DateTime?
+  noOfPackages    Int?
+  consigneeName   String?
+  shipperName     String?
+  agent           String?
+  
+  sellingRate     Decimal?
+  weight          Decimal?
+  
+  nominationDate  DateTime?
+  bookingDate     DateTime?
+  
+  etd             DateTime?
+  eta             DateTime?
+  
+  mawb            String?
+  hawb            String?
+  awbDate         DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ==========================================
+// CHA MODULE (Customs Clearance)
+// ==========================================
+model CHA {
+  id                    String   @id @default(uuid())
+  shipmentId            String   @unique
+  shipment              Shipment @relation(fields: [shipmentId], references: [id])
+  
+  jobNo                 String?
+  checklistDate         DateTime?
+  checklistApprovalDate DateTime?
+  
+  boeNo                 String?
+  boeDate               DateTime?
+  
+  doCollectionDate      DateTime?
+  status                String?
+  
+  oocDate               DateTime?
+  gatePassDate          DateTime?
+  
+  deliveryDate          DateTime?
+  trackingNumber        String?
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+// ==========================================
+// ACCOUNTS MODULE
+// ==========================================
+model Accounts {
+  id              String   @id @default(uuid())
+  shipmentId      String   @unique
+  shipment        Shipment @relation(fields: [shipmentId], references: [id])
+  
+  invoiceNumber   String?
+  invoiceDate     DateTime?
+  
+  sendingDate     DateTime?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ==========================================
+// STATUS HISTORY (Timeline Tracking)
+// ==========================================
+model StatusHistory {
+  id          String   @id @default(uuid())
+  shipmentId  String
+  shipment    Shipment @relation(fields: [shipmentId], references: [id])
+  status      String   // ShipmentStatus value
+  remarks     String?
+  changedBy   String?
+  createdAt   DateTime @default(now())
+}
