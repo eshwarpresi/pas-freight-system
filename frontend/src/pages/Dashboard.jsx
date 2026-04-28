@@ -1,224 +1,313 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import { Package, Clock, Download, Archive, RefreshCw, Search, Plus } from 'lucide-react'
+import { useToast } from '../components/Toast'
+import { 
+  Package, Clock, Download, Archive, Search, Plus,
+  CheckCircle2, Truck, FileSpreadsheet, BarChart3,
+  Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
+  ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
+  FileSearch, ArchiveIcon
+} from 'lucide-react'
+
+const PER_PAGE_OPTIONS = [10, 25, 50, 100]
 
 export default function Dashboard() {
+  const { addToast } = useToast()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [selected, setSelected] = useState([])
+  const [showAnalytics, setShowAnalytics] = useState(false)
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(25)
   const queryClient = useQueryClient()
 
-  // Instant data with React Query caching
-  const { data: shipments = [], isLoading } = useQuery({
-    queryKey: ['shipments', search, statusFilter, false],
+  const updateSearch = (val) => { setSearch(val); setPage(1) }
+  const updateStatus = (val) => { setStatusFilter(val); setPage(1) }
+  const toggleArchived = (val) => { setShowArchived(val); setPage(1); setSelected([]) }
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['shipments', search, statusFilter, showArchived, page, perPage],
     queryFn: async () => {
-      const params = { isArchived: 'false' }
+      const params = { 
+        isArchived: showArchived ? 'true' : 'false',
+        page,
+        limit: perPage
+      }
       if (search) params.search = search
       if (statusFilter) params.status = statusFilter
       const res = await api.get('/freight/shipments', { params })
-      return res.data.data
-    }
+      return res.data
+    },
+    placeholderData: (prev) => prev
   })
 
-  const { data: archivedShipments = [] } = useQuery({
-    queryKey: ['shipments', '', '', true],
-    queryFn: async () => {
-      const res = await api.get('/freight/shipments', { 
-        params: { isArchived: 'true' } 
-      })
-      return res.data.data
-    }
-  })
+  const shipments = data?.data || []
+  const totalCount = data?.pagination?.total || 0
+  const totalPages = data?.pagination?.totalPages || 0
 
-  // Instant archive/unarchive mutations
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shipments'] })
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment archived', 'success') },
+    onError: () => addToast('Failed to archive', 'error')
   })
 
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shipments'] })
-    }
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment restored', 'success') },
+    onError: () => addToast('Failed to restore', 'error')
   })
 
-  const getStatusColor = (status) => {
-    const colors = {
-      'ENQUIRY': 'bg-yellow-100 text-yellow-800',
-      'RATES_ADDED': 'bg-blue-100 text-blue-800',
-      'NOMINATED': 'bg-purple-100 text-purple-800',
-      'BOOKED': 'bg-indigo-100 text-indigo-800',
-      'SCHEDULED': 'bg-cyan-100 text-cyan-800',
-      'AWB_GENERATED': 'bg-teal-100 text-teal-800',
-      'CHECKLIST_APPROVED': 'bg-green-100 text-green-800',
-      'BOE_FILED': 'bg-lime-100 text-lime-800',
-      'DO_COLLECTED': 'bg-emerald-100 text-emerald-800',
-      'OOC_DONE': 'bg-sky-100 text-sky-800',
-      'GATE_PASS': 'bg-violet-100 text-violet-800',
-      'DELIVERED': 'bg-green-200 text-green-900',
-      'INVOICE_GENERATED': 'bg-orange-100 text-orange-800',
-      'INVOICE_SENT': 'bg-rose-100 text-rose-800',
-      'COMPLETED': 'bg-gray-200 text-gray-800',
-    }
-    return colors[status] || 'bg-gray-100 text-gray-800'
+  const bulkArchiveMutation = useMutation({
+    mutationFn: async (ids) => { await Promise.all(ids.map(id => api.put(`/archive/shipments/${id}/archive`))) },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); setSelected([]); addToast('Shipments archived', 'success') },
+    onError: () => addToast('Bulk archive failed', 'error')
+  })
+
+  const analytics = useMemo(() => {
+    const delivered = shipments.filter(s => s.currentStatus === 'DELIVERED').length
+    const inTransit = shipments.filter(s => ['BOOKED', 'SCHEDULED', 'AWB_GENERATED'].includes(s.currentStatus)).length
+    const customs = shipments.filter(s => ['CHECKLIST_APPROVED', 'BOE_FILED', 'OOC_DONE'].includes(s.currentStatus)).length
+    const pending = shipments.filter(s => ['ENQUIRY', 'RATES_ADDED', 'NOMINATED'].includes(s.currentStatus)).length
+    const invoiced = shipments.filter(s => ['INVOICE_GENERATED', 'INVOICE_SENT'].includes(s.currentStatus)).length
+    const deliveryRate = shipments.length > 0 ? Math.round((delivered / shipments.length) * 100) : 0
+    return { delivered, inTransit, customs, pending, invoiced, deliveryRate }
+  }, [shipments])
+
+  const toggleSelectAll = () => {
+    if (selected.length === shipments.length) setSelected([])
+    else setSelected(shipments.map(s => s.id))
   }
 
-  const activeShipments = shipments
-  const inProgress = shipments.filter(s => s.currentStatus !== 'DELIVERED' && s.currentStatus !== 'COMPLETED').length
+  const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+
+  const getStatusBadge = (status) => {
+    const b = {
+      'ENQUIRY': 'bg-amber-50 text-amber-700 border-amber-200', 'RATES_ADDED': 'bg-sky-50 text-sky-700 border-sky-200',
+      'NOMINATED': 'bg-violet-50 text-violet-700 border-violet-200', 'BOOKED': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      'SCHEDULED': 'bg-cyan-50 text-cyan-700 border-cyan-200', 'AWB_GENERATED': 'bg-teal-50 text-teal-700 border-teal-200',
+      'CHECKLIST_APPROVED': 'bg-emerald-50 text-emerald-700 border-emerald-200', 'BOE_FILED': 'bg-lime-50 text-lime-700 border-lime-200',
+      'DO_COLLECTED': 'bg-green-50 text-green-700 border-green-200', 'OOC_DONE': 'bg-blue-50 text-blue-700 border-blue-200',
+      'GATE_PASS': 'bg-purple-50 text-purple-700 border-purple-200', 'DELIVERED': 'bg-green-100 text-green-800 border-green-300',
+      'INVOICE_GENERATED': 'bg-orange-50 text-orange-700 border-orange-200', 'INVOICE_SENT': 'bg-rose-50 text-rose-700 border-rose-200',
+      'COMPLETED': 'bg-gray-100 text-gray-700 border-gray-300',
+    }
+    return b[status] || 'bg-gray-50 text-gray-600 border-gray-200'
+  }
+
+  const quickFilters = [
+    { label: 'All', value: '', icon: Package },
+    { label: 'Enquiry', value: 'ENQUIRY', icon: Search },
+    { label: 'In Transit', value: 'BOOKED', icon: Truck },
+    { label: 'Customs', value: 'CHECKLIST_APPROVED', icon: FileSpreadsheet },
+    { label: 'Delivered', value: 'DELIVERED', icon: CheckCircle2 },
+    { label: 'Invoiced', value: 'INVOICE_GENERATED', icon: FileSpreadsheet },
+  ]
+
+  const startItem = totalCount === 0 ? 0 : (page - 1) * perPage + 1
+  const endItem = Math.min(page * perPage, totalCount)
+
+  // Determine empty state type
+  const hasFilters = search || statusFilter
+  const isEmpty = !isLoading && !isError && shipments.length === 0
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
-          <p className="text-gray-500 mt-1">Real-time shipment tracking</p>
+          <h1 className="text-2xl font-bold text-gray-900">Shipment Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {totalCount.toLocaleString()} {showArchived ? 'archived' : 'active'} shipments
+          </p>
         </div>
-        <Link
-          to="/create"
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2 transition-colors"
-        >
-          <Plus size={18} />
-          New Shipment
-        </Link>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-3 gap-6 mb-6">
-        <StatCard icon={Package} label="Active" value={activeShipments.length} color="bg-blue-500" />
-        <StatCard icon={Clock} label="In Progress" value={inProgress} color="bg-yellow-500" />
-        <StatCard icon={Archive} label="Archived" value={archivedShipments.length} color="bg-gray-500" />
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-          <button
-            onClick={() => setShowArchived(false)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${!showArchived ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
-          >
-            Active
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowAnalytics(!showAnalytics)}
+            className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors flex items-center gap-2 ${showAnalytics ? 'bg-blue-50 border-blue-200 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+            <BarChart3 size={16} /> Analytics
           </button>
-          <button
-            onClick={() => setShowArchived(true)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${showArchived ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600'}`}
-          >
-            <Archive size={14} />
-            Archives
-          </button>
+          <Link to="/create" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2 shadow-sm">
+            <Plus size={16} /> New Shipment
+          </Link>
         </div>
-        
-        <a
-          href={`http://localhost:5000/api/freight/export?isArchived=${showArchived}`}
-          target="_blank"
-          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center gap-2 transition-colors"
-        >
-          <Download size={16} />
-          Export
-        </a>
       </div>
 
-      {/* Search */}
-      <div className="flex gap-3 mb-4">
-        <div className="relative flex-1">
+      {showAnalytics && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <AnalyticCard label="On Page" value={shipments.length} color="bg-gray-600" icon={Package} />
+          <AnalyticCard label="Pending" value={analytics.pending} color="bg-amber-500" icon={Clock} />
+          <AnalyticCard label="In Transit" value={analytics.inTransit} color="bg-blue-500" icon={Truck} />
+          <AnalyticCard label="Customs" value={analytics.customs} color="bg-purple-500" icon={FileSpreadsheet} />
+          <AnalyticCard label="Delivered" value={analytics.delivered} color="bg-green-500" icon={CheckCircle2} />
+          <AnalyticCard label="Invoiced" value={analytics.invoiced} color="bg-orange-500" icon={FileSpreadsheet} />
+          <div className="col-span-full bg-white rounded-xl p-4 border">
+            <div className="flex justify-between mb-2"><span className="text-sm font-medium">Delivery Progress</span><span className="text-sm font-bold">{analytics.deliveryRate}%</span></div>
+            <div className="w-full bg-gray-200 rounded-full h-3"><div className="bg-green-500 h-3 rounded-full transition-all" style={{ width: `${analytics.deliveryRate}%` }} /></div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {quickFilters.map((f) => {
+          const Icon = f.icon; const isActive = statusFilter === f.value
+          return (<button key={f.value} onClick={() => updateStatus(isActive ? '' : f.value)} className={`px-3 py-1.5 rounded-full text-xs font-medium border flex items-center gap-1.5 ${isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}><Icon size={12} /> {f.label} {isActive && <X size={12} />}</button>)
+        })}
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+        <div className="relative flex-1 w-full">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search by Ref No, Consignee, Shipper..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          />
+          <input type="text" placeholder="Search by Ref No, Consignee, Shipper..." value={search} onChange={(e) => updateSearch(e.target.value)} className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+          {search && <button onClick={() => updateSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>}
         </div>
-        {!showArchived && (
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            <option value="">All Statuses</option>
-            <option value="ENQUIRY">Enquiry</option>
-            <option value="BOOKED">Booked</option>
-            <option value="AWB_GENERATED">AWB Generated</option>
-            <option value="DELIVERED">Delivered</option>
-            <option value="COMPLETED">Completed</option>
-          </select>
-        )}
+        <div className="flex items-center gap-2">
+          <div className="flex bg-gray-100 rounded-lg p-0.5">
+            <button onClick={() => toggleArchived(false)} className={`px-3 py-1.5 rounded-md text-xs font-medium ${!showArchived ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>Active</button>
+            <button onClick={() => toggleArchived(true)} className={`px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1 ${showArchived ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}><Archive size={12} />Archived</button>
+          </div>
+          <a href={`http://localhost:5000/api/freight/export?isArchived=${showArchived}`} target="_blank" className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-xs font-medium flex items-center gap-1.5"><Download size={14} /> Export</a>
+        </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b">
-            <tr>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Ref No</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Consignee</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Status</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Date</th>
-              <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {isLoading ? (
-              <tr><td colSpan="5" className="px-6 py-12 text-center text-gray-400">Loading...</td></tr>
-            ) : (showArchived ? archivedShipments : shipments).length === 0 ? (
-              <tr><td colSpan="5" className="px-6 py-12 text-center text-gray-400">
-                {showArchived ? 'No archived shipments' : 'No shipments yet. Create your first one!'}
-              </td></tr>
-            ) : (
-              (showArchived ? archivedShipments : shipments).map((s) => (
-                <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <Link to={`/shipment/${s.id}`} className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                      {s.refNo}
-                    </Link>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    {s.freightForwarding?.consigneeName || '-'}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(s.currentStatus)}`}>
-                      {s.currentStatus.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {new Date(s.createdAt).toLocaleDateString()}
-                  </td>
-                  <td className="px-6 py-4 flex gap-2">
-                    <Link to={`/shipment/${s.id}`} className="text-blue-600 hover:text-blue-800 text-xs font-medium">View</Link>
-                    {showArchived ? (
-                      <button onClick={() => unarchiveMutation.mutate(s.id)} className="text-green-600 hover:text-green-800 text-xs font-medium">Restore</button>
-                    ) : (
-                      <button onClick={() => archiveMutation.mutate(s.id)} className="text-orange-600 hover:text-orange-800 text-xs font-medium">Archive</button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {selected.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 flex items-center justify-between">
+          <span className="text-sm text-blue-700 font-medium">{selected.length} selected</span>
+          <div className="flex gap-2">
+            {!showArchived && <button onClick={() => bulkArchiveMutation.mutate(selected)} className="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs font-medium hover:bg-blue-700 flex items-center gap-1"><Archive size={12} /> Archive</button>}
+            <button onClick={() => setSelected([])} className="px-3 py-1.5 border border-blue-300 text-blue-700 rounded-md text-xs font-medium hover:bg-blue-100">Clear</button>
+          </div>
+        </div>
+      )}
+
+      {/* ========== EMPTY STATE: Error ========== */}
+      {isError && (
+        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <AlertCircle size={32} className="text-red-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-1">Failed to load shipments</h3>
+          <p className="text-sm text-gray-500 mb-4">There was a problem connecting to the server.</p>
+          <button onClick={() => refetch()} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+            <RefreshCw size={16} /> Try Again
+          </button>
+        </div>
+      )}
+
+      {/* ========== EMPTY STATE: No Results (search/filter) ========== */}
+      {!isError && isEmpty && hasFilters && (
+        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+          <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <FileSearch size={32} className="text-amber-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-1">No matching shipments</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            {search && <>No results for "<strong>{search}</strong>"</>}
+            {statusFilter && <>No shipments in this status</>}
+          </p>
+          <button onClick={() => { updateSearch(''); updateStatus('') }} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+            <X size={16} /> Clear Filters
+          </button>
+        </div>
+      )}
+
+      {/* ========== EMPTY STATE: No Shipments (fresh) ========== */}
+      {!isError && isEmpty && !hasFilters && !showArchived && (
+        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+          <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Inbox size={32} className="text-blue-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-1">No shipments yet</h3>
+          <p className="text-sm text-gray-500 mb-4">Create your first shipment to start tracking freight.</p>
+          <Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm">
+            <Plus size={16} /> Create Your First Shipment
+          </Link>
+        </div>
+      )}
+
+      {/* ========== EMPTY STATE: No Archived ========== */}
+      {!isError && isEmpty && !hasFilters && showArchived && (
+        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+          <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <ArchiveIcon size={32} className="text-gray-400" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-800 mb-1">No archived shipments</h3>
+          <p className="text-sm text-gray-500 mb-4">All your shipments are currently active.</p>
+          <button onClick={() => toggleArchived(false)} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">
+            <Package size={16} /> View Active Shipments
+          </button>
+        </div>
+      )}
+
+      {/* ========== LOADING STATE ========== */}
+      {isLoading && (
+        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+          <div className="w-12 h-12 border-3 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-sm text-gray-500">Loading shipments...</p>
+        </div>
+      )}
+
+      {/* ========== TABLE (only when data exists) ========== */}
+      {!isLoading && !isError && shipments.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr className="bg-gray-50 border-b border-gray-200">
+                <th className="w-10 px-4 py-3"><input type="checkbox" checked={selected.length === shipments.length} onChange={toggleSelectAll} className="rounded border-gray-300 text-blue-600" /></th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Ref No</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Consignee</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Shipper</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase hidden lg:table-cell">Date</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+              </tr></thead>
+              <tbody className="divide-y divide-gray-100">
+                {shipments.map((s) => (
+                  <tr key={s.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3"><input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggleSelect(s.id)} className="rounded border-gray-300 text-blue-600" /></td>
+                    <td className="px-4 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-semibold text-blue-600 hover:text-blue-800">{s.refNo}</Link></td>
+                    <td className="px-4 py-3 text-sm text-gray-700 font-medium">{s.freightForwarding?.consigneeName || '—'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">{s.freightForwarding?.shipperName || '—'}</td>
+                    <td className="px-4 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g, ' ')}</span></td>
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden lg:table-cell">{new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                    <td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-1">
+                      <Link to={`/shipment/${s.id}`} className="px-2 py-1 text-xs font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded flex items-center gap-1"><Eye size={12} />View</Link>
+                      {showArchived ? <button onClick={() => unarchiveMutation.mutate(s.id)} className="px-2 py-1 text-xs font-medium text-gray-600 hover:text-green-600 hover:bg-green-50 rounded flex items-center gap-1"><ArchiveRestore size={12} />Restore</button>
+                      : <button onClick={() => archiveMutation.mutate(s.id)} className="px-2 py-1 text-xs font-medium text-gray-600 hover:text-orange-600 hover:bg-orange-50 rounded flex items-center gap-1"><Archive size={12} />Archive</button>}
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="border-t border-gray-100 px-4 py-3 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm">
+            <div className="flex items-center gap-3 text-gray-500">
+              <span>{startItem}-{endItem} of {totalCount.toLocaleString()}</span>
+              <select value={perPage} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1) }} className="border border-gray-300 rounded px-2 py-1 text-xs">
+                {PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(1)} disabled={page === 1} className="p-2 rounded hover:bg-gray-200 disabled:opacity-30"><ChevronsLeft size={16} /></button>
+              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-2 rounded hover:bg-gray-200 disabled:opacity-30"><ChevronLeft size={16} /></button>
+              {generatePageNumbers(page, totalPages).map((p, i) => p === '...' ? <span key={i} className="px-2 py-1 text-gray-400">...</span> : <button key={p} onClick={() => setPage(p)} className={`w-8 h-8 rounded text-xs font-medium ${page === p ? 'bg-blue-600 text-white' : 'hover:bg-gray-200 text-gray-600'}`}>{p}</button>)}
+              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages || totalPages === 0} className="p-2 rounded hover:bg-gray-200 disabled:opacity-30"><ChevronRight size={16} /></button>
+              <button onClick={() => setPage(totalPages)} disabled={page === totalPages || totalPages === 0} className="p-2 rounded hover:bg-gray-200 disabled:opacity-30"><ChevronsRight size={16} /></button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function StatCard({ icon: Icon, label, value, color }) {
-  return (
-    <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-      <div className="flex items-center gap-3">
-        <div className={`${color} p-2.5 rounded-lg`}>
-          <Icon size={20} className="text-white" />
-        </div>
-        <div>
-          <p className="text-xl font-bold text-gray-800">{value}</p>
-          <p className="text-xs text-gray-500">{label}</p>
-        </div>
-      </div>
-    </div>
-  )
+function AnalyticCard({ label, value, color, icon: Icon }) {
+  return <div className="bg-white rounded-xl p-4 border border-gray-200 hover:shadow-md transition-shadow"><div className="flex items-center gap-3"><div className={`${color} p-2 rounded-lg`}><Icon size={16} className="text-white" /></div><div><p className="text-lg font-bold text-gray-900">{value}</p><p className="text-xs text-gray-500">{label}</p></div></div></div>
+}
+
+function generatePageNumbers(c, t) {
+  if (t <= 7) return Array.from({ length: t }, (_, i) => i + 1)
+  if (c <= 3) return [1,2,3,4,5,'...',t]
+  if (c >= t-2) return [1,'...',t-4,t-3,t-2,t-1,t]
+  return [1,'...',c-1,c,c+1,'...',t]
 }
