@@ -11,9 +11,6 @@ router.put('/shipments/:id/boe', chaController.updateBOE);
 // UPDATE - DO Collection
 router.put('/shipments/:id/do-collection', chaController.updateDOCollection);
 
-// UPDATE - Status (Manual text)
-router.put('/shipments/:id/status', chaController.updateStatus);
-
 // UPDATE - OOC (Out of Charge)
 router.put('/shipments/:id/ooc', chaController.updateOOC);
 

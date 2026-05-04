@@ -1,404 +1,96 @@
 const prisma = require('../utils/prisma');
 
-// ==========================================
-// UPDATE CHECKLIST
-// ==========================================
+// Helper: ensure CHA record exists
+async function ensureCHA(shipmentId) {
+  const existing = await prisma.cHA.findUnique({ where: { shipmentId } });
+  if (!existing) {
+    await prisma.shipment.update({
+      where: { id: shipmentId },
+      data: { cha: { create: {} } }
+    });
+  }
+}
+
+// UPDATE CHECKLIST (partial)
 const updateChecklist = async (req, res) => {
   try {
     const { id } = req.params;
-    const { jobNo, checklistDate, checklistApprovalDate } = req.body;
-
-    if (!jobNo || !checklistDate) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Job No and Checklist Date are required'
-      });
-    }
-
-    // First check if CHA record exists, if not create it
-    const existingCHA = await prisma.cHA.findUnique({
-      where: { shipmentId: id }
-    });
-
-    let updatedShipment;
-
-    if (existingCHA) {
-      updatedShipment = await prisma.shipment.update({
-        where: { id },
-        data: {
-          currentStatus: 'CHECKLIST_APPROVED',
-          cha: {
-            update: {
-              jobNo,
-              checklistDate: new Date(checklistDate),
-              checklistApprovalDate: checklistApprovalDate ? new Date(checklistApprovalDate) : null
-            }
-          },
-          statusHistory: {
-            create: {
-              status: 'CHECKLIST_APPROVED',
-              remarks: `Checklist approved - Job No: ${jobNo}`
-            }
-          }
-        },
-        include: {
-          cha: true,
-          statusHistory: true
-        }
-      });
-    } else {
-      updatedShipment = await prisma.shipment.update({
-        where: { id },
-        data: {
-          currentStatus: 'CHECKLIST_APPROVED',
-          cha: {
-            create: {
-              jobNo,
-              checklistDate: new Date(checklistDate),
-              checklistApprovalDate: checklistApprovalDate ? new Date(checklistApprovalDate) : null
-            }
-          },
-          statusHistory: {
-            create: {
-              status: 'CHECKLIST_APPROVED',
-              remarks: `Checklist approved - Job No: ${jobNo}`
-            }
-          }
-        },
-        include: {
-          cha: true,
-          statusHistory: true
-        }
-      });
-    }
-
-    res.json({
-      status: 'success',
-      data: updatedShipment
-    });
-
-  } catch (error) {
-    console.error('Error updating checklist:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update checklist'
-    });
-  }
+    await ensureCHA(id);
+    const data = {};
+    if (req.body.jobNo !== undefined) data.jobNo = req.body.jobNo;
+    if (req.body.checklistDate) data.checklistDate = new Date(req.body.checklistDate);
+    if (req.body.checklistApprovalDate) data.checklistApprovalDate = new Date(req.body.checklistApprovalDate);
+    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } } }, select: { id: true, cha: true } });
+    res.json({ status: 'success', data: u });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// ==========================================
-// UPDATE BOE (Bill of Entry)
-// ==========================================
+// UPDATE BOE (partial)
 const updateBOE = async (req, res) => {
   try {
     const { id } = req.params;
-    const { boeNo, boeDate } = req.body;
-
-    if (!boeNo || !boeDate) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'BOE Number and Date are required'
-      });
-    }
-
-    const updatedShipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        currentStatus: 'BOE_FILED',
-        cha: {
-          update: {
-            boeNo,
-            boeDate: new Date(boeDate)
-          }
-        },
-        statusHistory: {
-          create: {
-            status: 'BOE_FILED',
-            remarks: `BOE Filed - BOE No: ${boeNo}`
-          }
-        }
-      },
-      include: {
-        cha: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({
-      status: 'success',
-      data: updatedShipment
-    });
-
-  } catch (error) {
-    console.error('Error updating BOE:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update BOE'
-    });
-  }
+    await ensureCHA(id);
+    const data = {};
+    if (req.body.boeNo !== undefined) data.boeNo = req.body.boeNo;
+    if (req.body.boeDate) data.boeDate = new Date(req.body.boeDate);
+    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } } }, select: { id: true, cha: true } });
+    res.json({ status: 'success', data: u });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// ==========================================
-// UPDATE DO COLLECTION
-// ==========================================
+// UPDATE DO COLLECTION (partial)
 const updateDOCollection = async (req, res) => {
   try {
     const { id } = req.params;
-    const { doCollectionDate } = req.body;
-
-    if (!doCollectionDate) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'DO Collection Date is required'
-      });
-    }
-
-    const updatedShipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        currentStatus: 'DO_COLLECTED',
-        cha: {
-          update: {
-            doCollectionDate: new Date(doCollectionDate)
-          }
-        },
-        statusHistory: {
-          create: {
-            status: 'DO_COLLECTED',
-            remarks: `DO Collected on ${doCollectionDate}`
-          }
-        }
-      },
-      include: {
-        cha: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({
-      status: 'success',
-      data: updatedShipment
-    });
-
-  } catch (error) {
-    console.error('Error updating DO Collection:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update DO Collection'
-    });
-  }
+    await ensureCHA(id);
+    const data = {};
+    if (req.body.doCollectionDate) data.doCollectionDate = new Date(req.body.doCollectionDate);
+    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } } }, select: { id: true, cha: true } });
+    res.json({ status: 'success', data: u });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// ==========================================
-// UPDATE STATUS (Manual Text)
-// ==========================================
-const updateStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Status text is required'
-      });
-    }
-
-    const updatedShipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        cha: {
-          update: {
-            status: status
-          }
-        },
-        statusHistory: {
-          create: {
-            status: 'CHECKLIST_APPROVED', // Keeps current status
-            remarks: `Customs Status Update: ${status}`
-          }
-        }
-      },
-      include: {
-        cha: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({
-      status: 'success',
-      data: updatedShipment
-    });
-
-  } catch (error) {
-    console.error('Error updating status:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update status'
-    });
-  }
-};
-
-// ==========================================
-// UPDATE OOC (Out of Charge)
-// ==========================================
+// UPDATE OOC (partial)
 const updateOOC = async (req, res) => {
   try {
     const { id } = req.params;
-    const { oocDate } = req.body;
-
-    if (!oocDate) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'OOC Date is required'
-      });
-    }
-
-    const updatedShipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        currentStatus: 'OOC_DONE',
-        cha: {
-          update: {
-            oocDate: new Date(oocDate)
-          }
-        },
-        statusHistory: {
-          create: {
-            status: 'OOC_DONE',
-            remarks: `Out of Charge on ${oocDate}`
-          }
-        }
-      },
-      include: {
-        cha: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({
-      status: 'success',
-      data: updatedShipment
-    });
-
-  } catch (error) {
-    console.error('Error updating OOC:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update OOC'
-    });
-  }
+    await ensureCHA(id);
+    const data = {};
+    if (req.body.oocDate) data.oocDate = new Date(req.body.oocDate);
+    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } } }, select: { id: true, cha: true } });
+    res.json({ status: 'success', data: u });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// ==========================================
-// UPDATE GATE PASS
-// ==========================================
+// UPDATE GATE PASS (partial)
 const updateGatePass = async (req, res) => {
   try {
     const { id } = req.params;
-    const { gatePassDate } = req.body;
-
-    if (!gatePassDate) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Gate Pass Date is required'
-      });
-    }
-
-    const updatedShipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        currentStatus: 'GATE_PASS',
-        cha: {
-          update: {
-            gatePassDate: new Date(gatePassDate)
-          }
-        },
-        statusHistory: {
-          create: {
-            status: 'GATE_PASS',
-            remarks: `Gate Pass issued on ${gatePassDate}`
-          }
-        }
-      },
-      include: {
-        cha: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({
-      status: 'success',
-      data: updatedShipment
-    });
-
-  } catch (error) {
-    console.error('Error updating Gate Pass:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update Gate Pass'
-    });
-  }
+    await ensureCHA(id);
+    const data = {};
+    if (req.body.gatePassDate) data.gatePassDate = new Date(req.body.gatePassDate);
+    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } } }, select: { id: true, cha: true } });
+    res.json({ status: 'success', data: u });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// ==========================================
-// UPDATE POD (Proof of Delivery)
-// ==========================================
+// UPDATE POD (partial)
 const updatePOD = async (req, res) => {
   try {
     const { id } = req.params;
-    const { deliveryDate, trackingNumber } = req.body;
-
-    if (!deliveryDate) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Delivery Date is required'
-      });
-    }
-
-    const updatedShipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        currentStatus: 'DELIVERED',
-        cha: {
-          update: {
-            deliveryDate: new Date(deliveryDate),
-            trackingNumber: trackingNumber || null
-          }
-        },
-        statusHistory: {
-          create: {
-            status: 'DELIVERED',
-            remarks: `Delivered on ${deliveryDate}${trackingNumber ? ' - Tracking: ' + trackingNumber : ''}`
-          }
-        }
-      },
-      include: {
-        cha: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({
-      status: 'success',
-      data: updatedShipment
-    });
-
-  } catch (error) {
-    console.error('Error updating POD:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to update POD'
-    });
-  }
+    await ensureCHA(id);
+    const data = {};
+    if (req.body.deliveryDate) data.deliveryDate = new Date(req.body.deliveryDate);
+    if (req.body.trackingNumber !== undefined) data.trackingNumber = req.body.trackingNumber;
+    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } } }, select: { id: true, cha: true } });
+    res.json({ status: 'success', data: u });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-module.exports = {
-  updateChecklist,
-  updateBOE,
-  updateDOCollection,
-  updateStatus,
-  updateOOC,
-  updateGatePass,
-  updatePOD
-};
+module.exports = { updateChecklist, updateBOE, updateDOCollection, updateOOC, updateGatePass, updatePOD };
