@@ -60,9 +60,10 @@ model FreightForwarding {
   shipperName     String?
   agent           String?
   
-  // NEW: From & To locations
+  // From, To & Terms
   fromLocation    String?
   toLocation      String?
+  terms           String?
   
   sellingRate     Decimal?
   weight          Decimal?

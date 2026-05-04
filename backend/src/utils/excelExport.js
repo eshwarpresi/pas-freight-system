@@ -18,11 +18,12 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Ref No', key: 'refNo', width: 18 },
     { header: 'Status', key: 'status', width: 18 },
     { header: 'Stage', key: 'shipmentStage', width: 16 },
-    { header: 'Consignee', key: 'consignee', width: 26 },
-    { header: 'Shipper', key: 'shipper', width: 26 },
-    { header: 'From', key: 'fromLocation', width: 20 },
-    { header: 'To', key: 'toLocation', width: 20 },
-    { header: 'Agent', key: 'agent', width: 20 },
+    { header: 'Consignee', key: 'consignee', width: 24 },
+    { header: 'Shipper', key: 'shipper', width: 24 },
+    { header: 'From', key: 'fromLocation', width: 18 },
+    { header: 'To', key: 'toLocation', width: 18 },
+    { header: 'Terms', key: 'terms', width: 18 },
+    { header: 'Agent', key: 'agent', width: 18 },
     { header: 'Pkgs', key: 'packages', width: 7 },
     { header: 'Weight (kg)', key: 'weight', width: 12 },
     { header: 'Selling Rate', key: 'rate', width: 14 },
@@ -46,8 +47,8 @@ async function exportShipmentsToExcel(shipments, res) {
   ];
   ws.columns = columns;
 
-  const lastCol = 'AB';
-  const colCount = 28;
+  const lastCol = 'AC';
+  const colCount = 29;
 
   // Row 1: Title
   ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD - SHIPMENT REPORT']);
@@ -97,6 +98,7 @@ async function exportShipmentsToExcel(shipments, res) {
       shipper: ff.shipperName || '',
       fromLocation: ff.fromLocation || '',
       toLocation: ff.toLocation || '',
+      terms: ff.terms || '',
       agent: ff.agent || '',
       packages: ff.noOfPackages || '',
       weight: ff.weight || '',
@@ -124,26 +126,21 @@ async function exportShipmentsToExcel(shipments, res) {
     row.alignment = { horizontal: 'center', vertical: 'middle' };
     row.font = { name: 'Arial', size: 9 };
 
-    // Alternating row colors
     if (index % 2 === 0) {
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
     }
 
-    // Stage cell color
     const stageCell = row.getCell(3);
     if (s.shipmentStage && STAGE_COLORS[s.shipmentStage]) {
       stageCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[s.shipmentStage] } };
       stageCell.font = { name: 'Arial', size: 9, bold: true };
     }
 
-    // Remarks left-aligned
-    const remCell = row.getCell(28);
+    const remCell = row.getCell(29);
     remCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
-    // Bold Ref No
     row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
 
-    // Thin borders for all data cells
     row.eachCell(cell => {
       cell.border = {
         top: { style: 'thin', color: { argb: 'D1D5DB' } },
@@ -154,79 +151,38 @@ async function exportShipmentsToExcel(shipments, res) {
     });
   });
 
-  // Auto-filter & Freeze
   ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + shipments.length, column: colCount } };
   ws.views = [{ state: 'frozen', ySplit: 3 }];
 
-  // Footer
   const fr = ws.addRow(['']);
   ws.mergeCells(`A${fr.number}:${lastCol}${fr.number}`);
   ws.getCell(`A${fr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential`;
   ws.getCell(`A${fr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
   ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
 
-  // Logo
   try {
     const fs = require('fs'); let lp = path.join(__dirname, '..', 'logo.webp'), ext = 'webp';
     if (!fs.existsSync(lp)) { lp = path.join(__dirname, '..', 'logo.png'); ext = 'png'; }
     if (fs.existsSync(lp)) { const id = workbook.addImage({ filename: lp, extension: ext }); ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 80, height: 45 } }); }
   } catch (e) {}
 
-  // ========== SUMMARY SHEET ==========
   const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '059669' } } });
-  ss.columns = [
-    { header: 'Status', key: 'status', width: 28 },
-    { header: 'Count', key: 'count', width: 12 },
-    { header: 'Percentage', key: 'pct', width: 15 }
-  ];
-  
-  // Title
-  ss.insertRow(1, ['SHIPMENT SUMMARY']);
-  ss.mergeCells('A1:C1');
-  ss.getCell('A1').font = { name: 'Arial', size: 14, bold: true, color: { argb: '059669' } };
-  ss.getCell('A1').alignment = { horizontal: 'center' };
+  ss.columns = [{ header: 'Status', key: 'status', width: 28 }, { header: 'Count', key: 'count', width: 12 }, { header: 'Percentage', key: 'pct', width: 15 }];
+  ss.insertRow(1, ['SHIPMENT SUMMARY']); ss.mergeCells('A1:C1');
+  ss.getCell('A1').font = { name: 'Arial', size: 14, bold: true, color: { argb: '059669' } }; ss.getCell('A1').alignment = { horizontal: 'center' };
   ss.getRow(1).height = 28;
-
-  // Header
-  const sh = ss.getRow(2);
-  sh.values = ['Status', 'Count', 'Percentage'];
+  const sh = ss.getRow(2); sh.values = ['Status', 'Count', 'Percentage'];
   sh.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
   sh.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '059669' } };
-  sh.alignment = { horizontal: 'center', vertical: 'middle' };
-  sh.height = 26;
-
-  // Status counts
-  const counts = {};
-  shipments.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
-  Object.entries(counts).forEach(([s, c]) => {
-    const r = ss.addRow({ status: s, count: c, pct: `${Math.round((c / shipments.length) * 100)}%` });
-    r.alignment = { horizontal: 'center', vertical: 'middle' };
-    r.font = { name: 'Arial', size: 10 };
-  });
+  sh.alignment = { horizontal: 'center', vertical: 'middle' }; sh.height = 26;
+  const counts = {}; shipments.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
+  Object.entries(counts).forEach(([s, c]) => { const r = ss.addRow({ status: s, count: c, pct: `${Math.round((c / shipments.length) * 100)}%` }); r.alignment = { horizontal: 'center', vertical: 'middle' }; r.font = { name: 'Arial', size: 10 }; });
   const totalRow = ss.addRow({ status: 'TOTAL', count: shipments.length, pct: '100%' });
-  totalRow.font = { name: 'Arial', size: 10, bold: true };
-  totalRow.alignment = { horizontal: 'center' };
-
-  // Stage Summary
-  ss.addRow([]);
-  const stageTitle = ss.addRow(['STAGE SUMMARY', '', '']);
-  stageTitle.font = { name: 'Arial', size: 12, bold: true, color: { argb: '7C3AED' } };
-  
-  const stageCounts = {};
-  shipments.forEach(s => { const st = s.shipmentStage || 'Not Set'; stageCounts[st] = (stageCounts[st] || 0) + 1; });
-  Object.entries(stageCounts).forEach(([stage, count]) => {
-    const r = ss.addRow({ status: stage, count, pct: `${Math.round((count / shipments.length) * 100)}%` });
-    r.alignment = { horizontal: 'center', vertical: 'middle' };
-    r.font = { name: 'Arial', size: 10 };
-    if (STAGE_COLORS[stage]) {
-      r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[stage] } };
-    }
-  });
-
-  // Adjust summary column widths
-  ss.getColumn(1).width = 28;
-  ss.getColumn(2).width = 12;
-  ss.getColumn(3).width = 15;
+  totalRow.font = { name: 'Arial', size: 10, bold: true }; totalRow.alignment = { horizontal: 'center' };
+  ss.addRow([]); ss.addRow(['STAGE SUMMARY', '', '']).font = { name: 'Arial', size: 12, bold: true, color: { argb: '7C3AED' } };
+  const stageCounts = {}; shipments.forEach(s => { const st = s.shipmentStage || 'Not Set'; stageCounts[st] = (stageCounts[st] || 0) + 1; });
+  Object.entries(stageCounts).forEach(([stage, count]) => { const r = ss.addRow({ status: stage, count, pct: `${Math.round((count / shipments.length) * 100)}%` }); r.alignment = { horizontal: 'center' }; r.font = { name: 'Arial', size: 10 }; if (STAGE_COLORS[stage]) r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[stage] } }; });
+  ss.getColumn(1).width = 28; ss.getColumn(2).width = 12; ss.getColumn(3).width = 15;
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename=PAS_Shipments_${new Date().toISOString().split('T')[0]}.xlsx`);

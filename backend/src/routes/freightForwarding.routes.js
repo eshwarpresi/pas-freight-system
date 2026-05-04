@@ -41,4 +41,7 @@ router.put('/shipments/:id/fromlocation', freightController.updateFromLocation);
 // UPDATE - To Location
 router.put('/shipments/:id/tolocation', freightController.updateToLocation);
 
+// UPDATE - Terms
+router.put('/shipments/:id/terms', freightController.updateTerms);
+
 module.exports = router;
