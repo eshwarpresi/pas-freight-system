@@ -17,63 +17,71 @@ async function exportShipmentsToExcel(shipments, res) {
   const columns = [
     { header: 'Ref No', key: 'refNo', width: 18 },
     { header: 'Status', key: 'status', width: 18 },
-    { header: 'Stage', key: 'shipmentStage', width: 18 },
-    { header: 'Consignee', key: 'consignee', width: 25 },
-    { header: 'Shipper', key: 'shipper', width: 25 },
-    { header: 'From', key: 'fromLocation', width: 22 },
-    { header: 'To', key: 'toLocation', width: 22 },
-    { header: 'Agent', key: 'agent', width: 22 },
-    { header: 'Pkgs', key: 'packages', width: 8 },
-    { header: 'Weight (kg)', key: 'weight', width: 14 },
-    { header: 'Selling Rate', key: 'rate', width: 15 },
-    { header: 'Booking Date', key: 'booking', width: 16 },
+    { header: 'Stage', key: 'shipmentStage', width: 16 },
+    { header: 'Consignee', key: 'consignee', width: 26 },
+    { header: 'Shipper', key: 'shipper', width: 26 },
+    { header: 'From', key: 'fromLocation', width: 20 },
+    { header: 'To', key: 'toLocation', width: 20 },
+    { header: 'Agent', key: 'agent', width: 20 },
+    { header: 'Pkgs', key: 'packages', width: 7 },
+    { header: 'Weight (kg)', key: 'weight', width: 12 },
+    { header: 'Selling Rate', key: 'rate', width: 14 },
+    { header: 'Booking Date', key: 'booking', width: 15 },
     { header: 'ETD', key: 'etd', width: 14 },
     { header: 'ETA', key: 'eta', width: 14 },
-    { header: 'MAWB/MBL', key: 'mawb', width: 18 },
-    { header: 'HAWB/HBL', key: 'hawb', width: 18 },
+    { header: 'MAWB/MBL', key: 'mawb', width: 17 },
+    { header: 'HAWB/HBL', key: 'hawb', width: 17 },
     { header: 'Job No', key: 'jobNo', width: 14 },
     { header: 'BOE No', key: 'boeNo', width: 14 },
-    { header: 'DO Collection', key: 'doDate', width: 16 },
+    { header: 'DO Collection', key: 'doDate', width: 17 },
     { header: 'OOC Date', key: 'oocDate', width: 14 },
     { header: 'Gate Pass', key: 'gatePass', width: 14 },
     { header: 'Delivery Date', key: 'delivery', width: 16 },
-    { header: 'Tracking No', key: 'tracking', width: 18 },
-    { header: 'Invoice No', key: 'invoiceNo', width: 18 },
-    { header: 'Invoice Date', key: 'invoiceDate', width: 16 },
-    { header: 'Invoice Sent', key: 'invoiceSent', width: 16 },
-    { header: 'Created', key: 'createdAt', width: 16 },
-    { header: 'Remarks', key: 'remarks', width: 35 },
+    { header: 'Tracking No', key: 'tracking', width: 20 },
+    { header: 'Invoice No', key: 'invoiceNo', width: 16 },
+    { header: 'Invoice Date', key: 'invoiceDate', width: 15 },
+    { header: 'Invoice Sent', key: 'invoiceSent', width: 15 },
+    { header: 'Created', key: 'createdAt', width: 15 },
+    { header: 'Remarks', key: 'remarks', width: 30 },
   ];
   ws.columns = columns;
 
   const lastCol = 'AB';
   const colCount = 28;
 
-  // Row 1: Title (simple, clean - like old format)
+  // Row 1: Title
   ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD - SHIPMENT REPORT']);
   ws.mergeCells(`A1:${lastCol}1`);
-  const titleCell = ws.getCell('A1');
-  titleCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: '1E40AF' } };
-  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: '1E40AF' } };
+  ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 35;
 
-  // Row 2: Date
-  ws.insertRow(2, [`Generated: ${new Date().toLocaleDateString()}`]);
+  // Row 2: Generated date + Total shipments
+  ws.insertRow(2, [`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}     |     Total Shipments: ${shipments.length}`]);
   ws.mergeCells(`A2:${lastCol}2`);
-  ws.getCell('A2').font = { size: 10, color: { argb: '666666' } };
-  ws.getCell('A2').alignment = { horizontal: 'center' };
+  ws.getCell('A2').font = { name: 'Arial', size: 10, color: { argb: '666666' } };
+  ws.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(2).height = 22;
 
   // Row 3: Header
   const headerRow = ws.getRow(3);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11, name: 'Arial' };
-  headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
-  headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
-  headerRow.height = 30;
+  headerRow.height = 32;
+  columns.forEach((col, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = col.header;
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = {
+      top: { style: 'medium', color: { argb: '1E3A8A' } },
+      bottom: { style: 'medium', color: { argb: '1E3A8A' } },
+      left: { style: 'thin', color: { argb: '1E3A8A' } },
+      right: { style: 'thin', color: { argb: '1E3A8A' } }
+    };
+  });
 
-  // Dropdown for Stage column (column C = 3)
-  const dataStartRow = 4;
-  const dataEndRow = 3 + shipments.length + 500;
-  ws.dataValidations.add(`C${dataStartRow}:C${dataEndRow}`, {
+  // Dropdown for Stage column (C = 3)
+  ws.dataValidations.add(`C4:C${3 + shipments.length + 500}`, {
     type: 'list', allowBlank: true, formulae: [`"${STAGE_OPTIONS.join(',')}"`],
     showErrorMessage: true, errorTitle: 'Invalid Stage', error: 'Please select a valid Shipment Stage.'
   });
@@ -81,7 +89,7 @@ async function exportShipmentsToExcel(shipments, res) {
   // Data rows
   shipments.forEach((s, index) => {
     const ff = s.freightForwarding || {}; const cha = s.cha || {}; const acc = s.accounts || {};
-    const rowData = {
+    const row = ws.addRow({
       refNo: s.refNo,
       status: s.currentStatus?.replace(/_/g, ' ') || '',
       shipmentStage: s.shipmentStage || '',
@@ -93,38 +101,39 @@ async function exportShipmentsToExcel(shipments, res) {
       packages: ff.noOfPackages || '',
       weight: ff.weight || '',
       rate: ff.sellingRate ? `$${parseFloat(ff.sellingRate).toLocaleString()}` : '',
-      booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString() : '',
-      etd: ff.etd ? new Date(ff.etd).toLocaleDateString() : '',
-      eta: ff.eta ? new Date(ff.eta).toLocaleDateString() : '',
+      booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString('en-US') : '',
+      etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '',
+      eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
       mawb: ff.mawb || '',
       hawb: ff.hawb || '',
       jobNo: cha.jobNo || '',
       boeNo: cha.boeNo || '',
-      doDate: cha.doCollectionDate ? new Date(cha.doCollectionDate).toLocaleDateString() : '',
-      oocDate: cha.oocDate ? new Date(cha.oocDate).toLocaleDateString() : '',
-      gatePass: cha.gatePassDate ? new Date(cha.gatePassDate).toLocaleDateString() : '',
-      delivery: cha.deliveryDate ? new Date(cha.deliveryDate).toLocaleDateString() : '',
+      doDate: cha.doCollectionDate ? new Date(cha.doCollectionDate).toLocaleDateString('en-US') : '',
+      oocDate: cha.oocDate ? new Date(cha.oocDate).toLocaleDateString('en-US') : '',
+      gatePass: cha.gatePassDate ? new Date(cha.gatePassDate).toLocaleDateString('en-US') : '',
+      delivery: cha.deliveryDate ? new Date(cha.deliveryDate).toLocaleDateString('en-US') : '',
       tracking: cha.trackingNumber || '',
       invoiceNo: acc.invoiceNumber || '',
-      invoiceDate: acc.invoiceDate ? new Date(acc.invoiceDate).toLocaleDateString() : '',
-      invoiceSent: acc.sendingDate ? new Date(acc.sendingDate).toLocaleDateString() : '',
-      createdAt: new Date(s.createdAt).toLocaleDateString(),
+      invoiceDate: acc.invoiceDate ? new Date(acc.invoiceDate).toLocaleDateString('en-US') : '',
+      invoiceSent: acc.sendingDate ? new Date(acc.sendingDate).toLocaleDateString('en-US') : '',
+      createdAt: new Date(s.createdAt).toLocaleDateString('en-US'),
       remarks: s.remarks || '',
-    };
+    });
 
-    const row = ws.addRow(rowData);
+    row.height = 22;
     row.alignment = { horizontal: 'center', vertical: 'middle' };
+    row.font = { name: 'Arial', size: 9 };
 
-    // Alternating row colors (subtle - like old format)
+    // Alternating row colors
     if (index % 2 === 0) {
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
     }
 
-    // Color the Stage cell
+    // Stage cell color
     const stageCell = row.getCell(3);
     if (s.shipmentStage && STAGE_COLORS[s.shipmentStage]) {
       stageCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[s.shipmentStage] } };
-      stageCell.font = { bold: true, size: 9 };
+      stageCell.font = { name: 'Arial', size: 9, bold: true };
     }
 
     // Remarks left-aligned
@@ -132,15 +141,15 @@ async function exportShipmentsToExcel(shipments, res) {
     remCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
     // Bold Ref No
-    row.getCell(1).font = { bold: true, color: { argb: '1E40AF' }, size: 9 };
+    row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
 
-    // Borders
+    // Thin borders for all data cells
     row.eachCell(cell => {
       cell.border = {
-        top: { style: 'thin', color: { argb: 'E2E8F0' } },
-        left: { style: 'thin', color: { argb: 'E2E8F0' } },
-        bottom: { style: 'thin', color: { argb: 'E2E8F0' } },
-        right: { style: 'thin', color: { argb: 'E2E8F0' } }
+        top: { style: 'thin', color: { argb: 'D1D5DB' } },
+        left: { style: 'thin', color: { argb: 'D1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'D1D5DB' } },
+        right: { style: 'thin', color: { argb: 'D1D5DB' } }
       };
     });
   });
@@ -153,7 +162,7 @@ async function exportShipmentsToExcel(shipments, res) {
   const fr = ws.addRow(['']);
   ws.mergeCells(`A${fr.number}:${lastCol}${fr.number}`);
   ws.getCell(`A${fr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential`;
-  ws.getCell(`A${fr.number}`).font = { size: 8, italic: true, color: { argb: '94A3B8' } };
+  ws.getCell(`A${fr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
   ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
 
   // Logo
@@ -165,16 +174,59 @@ async function exportShipmentsToExcel(shipments, res) {
 
   // ========== SUMMARY SHEET ==========
   const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '059669' } } });
-  ss.columns = [{ header: 'Status', key: 'status', width: 25 }, { header: 'Count', key: 'count', width: 15 }, { header: 'Percentage', key: 'pct', width: 15 }];
-  ss.insertRow(1, ['SHIPMENT SUMMARY']); ss.mergeCells('A1:C1');
-  ss.getCell('A1').font = { size: 14, bold: true, color: { argb: '059669' } }; ss.getCell('A1').alignment = { horizontal: 'center' };
-  const sh = ss.getRow(2); sh.font = { bold: true, color: { argb: 'FFFFFF' }, size: 11 }; sh.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '059669' } }; sh.alignment = { horizontal: 'center' };
-  const counts = {}; shipments.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
-  Object.entries(counts).forEach(([s, c]) => ss.addRow({ status: s, count: c, pct: `${Math.round((c / shipments.length) * 100)}%` }));
-  ss.addRow({ status: 'TOTAL', count: shipments.length, pct: '100%' }).font = { bold: true };
-  ss.addRow([]); ss.addRow(['STAGE SUMMARY', '', '']).font = { bold: true, size: 12, color: { argb: '7C3AED' } };
-  const stageCounts = {}; shipments.forEach(s => { const st = s.shipmentStage || 'Not Set'; stageCounts[st] = (stageCounts[st] || 0) + 1; });
-  Object.entries(stageCounts).forEach(([stage, count]) => ss.addRow({ status: stage, count, pct: `${Math.round((count / shipments.length) * 100)}%` }));
+  ss.columns = [
+    { header: 'Status', key: 'status', width: 28 },
+    { header: 'Count', key: 'count', width: 12 },
+    { header: 'Percentage', key: 'pct', width: 15 }
+  ];
+  
+  // Title
+  ss.insertRow(1, ['SHIPMENT SUMMARY']);
+  ss.mergeCells('A1:C1');
+  ss.getCell('A1').font = { name: 'Arial', size: 14, bold: true, color: { argb: '059669' } };
+  ss.getCell('A1').alignment = { horizontal: 'center' };
+  ss.getRow(1).height = 28;
+
+  // Header
+  const sh = ss.getRow(2);
+  sh.values = ['Status', 'Count', 'Percentage'];
+  sh.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
+  sh.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '059669' } };
+  sh.alignment = { horizontal: 'center', vertical: 'middle' };
+  sh.height = 26;
+
+  // Status counts
+  const counts = {};
+  shipments.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
+  Object.entries(counts).forEach(([s, c]) => {
+    const r = ss.addRow({ status: s, count: c, pct: `${Math.round((c / shipments.length) * 100)}%` });
+    r.alignment = { horizontal: 'center', vertical: 'middle' };
+    r.font = { name: 'Arial', size: 10 };
+  });
+  const totalRow = ss.addRow({ status: 'TOTAL', count: shipments.length, pct: '100%' });
+  totalRow.font = { name: 'Arial', size: 10, bold: true };
+  totalRow.alignment = { horizontal: 'center' };
+
+  // Stage Summary
+  ss.addRow([]);
+  const stageTitle = ss.addRow(['STAGE SUMMARY', '', '']);
+  stageTitle.font = { name: 'Arial', size: 12, bold: true, color: { argb: '7C3AED' } };
+  
+  const stageCounts = {};
+  shipments.forEach(s => { const st = s.shipmentStage || 'Not Set'; stageCounts[st] = (stageCounts[st] || 0) + 1; });
+  Object.entries(stageCounts).forEach(([stage, count]) => {
+    const r = ss.addRow({ status: stage, count, pct: `${Math.round((count / shipments.length) * 100)}%` });
+    r.alignment = { horizontal: 'center', vertical: 'middle' };
+    r.font = { name: 'Arial', size: 10 };
+    if (STAGE_COLORS[stage]) {
+      r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[stage] } };
+    }
+  });
+
+  // Adjust summary column widths
+  ss.getColumn(1).width = 28;
+  ss.getColumn(2).width = 12;
+  ss.getColumn(3).width = 15;
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename=PAS_Shipments_${new Date().toISOString().split('T')[0]}.xlsx`);
