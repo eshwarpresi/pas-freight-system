@@ -63,7 +63,7 @@ async function exportShipmentsToExcel(shipments, res) {
   ws.columns = columns;
 
   // Update merge cells range (now 25 columns = A:Y)
-  const lastCol = 'Y';
+  const lastCol = 'Z';
 
   // ===== ROW 1: COMPANY HEADER =====
   ws.insertRow(1, ['']);
