@@ -35,6 +35,10 @@ model Shipment {
   currentStatus String  @default("ENQUIRY") // ShipmentStatus values
   isArchived   Boolean  @default(false)
   
+  // NEW FIELDS
+  shipmentStage String?  // Draft, Created, Confirmed, Booked, Scheduled, In Progress, Completed, Cancelled, On Hold
+  remarks       String?  // Manual notes/comments
+  
   freightForwarding FreightForwarding?
   cha               CHA?
   accounts          Accounts?

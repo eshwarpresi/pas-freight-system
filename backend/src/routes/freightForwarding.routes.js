@@ -29,4 +29,10 @@ router.put('/shipments/:id/schedule', freightController.updateSchedule);
 // UPDATE - AWB Details
 router.put('/shipments/:id/awb', freightController.updateAWB);
 
+// UPDATE - Shipment Stage
+router.put('/shipments/:id/stage', freightController.updateStage);
+
+// UPDATE - Remarks
+router.put('/shipments/:id/remarks', freightController.updateRemarks);
+
 module.exports = router;
