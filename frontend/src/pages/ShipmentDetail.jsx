@@ -31,7 +31,13 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
 
 export default function ShipmentDetail() {
   const { id } = useParams(); const { addToast } = useToast(); const [activeTab, setActiveTab] = useState('freight'); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
-  const { data: shipment, isLoading, refetch } = useQuery({ queryKey: ['shipment', id], queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`); return r.data.data } })
+  
+  const { data: shipment, isLoading } = useQuery({
+    queryKey: ['shipment', id],
+    queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`); return r.data.data },
+    staleTime: 0,        // ALWAYS refetch - data never stale
+    cacheTime: 0,        // Don't cache old data
+  })
 
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
@@ -40,7 +46,42 @@ export default function ShipmentDetail() {
       }
       return api[eps[section].m](eps[section].u, data)
     },
-    onSuccess: () => { addToast('Saved!', 'success'); refetch(); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
+    onSuccess: (response, { section, data }) => {
+      // Instantly update the cache with new data (no refetch needed!)
+      queryClient.setQueryData(['shipment', id], (old) => {
+        if (!old) return old;
+        const updated = { ...old };
+        const ff = { ...(updated.freightForwarding || {}) };
+        const cha = { ...(updated.cha || {}) };
+        const acc = { ...(updated.accounts || {}) };
+        
+        switch(section) {
+          case 'rates': ff.sellingRate = data.sellingRate; ff.weight = data.weight; updated.currentStatus = 'RATES_ADDED'; break;
+          case 'nomination': ff.nominationDate = data.nominationDate; updated.currentStatus = 'NOMINATED'; break;
+          case 'booking': ff.bookingDate = data.bookingDate; updated.currentStatus = 'BOOKED'; break;
+          case 'schedule': ff.etd = data.etd; ff.eta = data.eta; updated.currentStatus = 'SCHEDULED'; break;
+          case 'awb': ff.mawb = data.mawb; ff.hawb = data.hawb; ff.awbDate = data.awbDate; updated.currentStatus = 'AWB_GENERATED'; break;
+          case 'checklist': cha.jobNo = data.jobNo; cha.checklistDate = data.checklistDate; cha.checklistApprovalDate = data.checklistApprovalDate; updated.currentStatus = 'CHECKLIST_APPROVED'; break;
+          case 'boe': cha.boeNo = data.boeNo; cha.boeDate = data.boeDate; updated.currentStatus = 'BOE_FILED'; break;
+          case 'do': cha.doCollectionDate = data.doCollectionDate; updated.currentStatus = 'DO_COLLECTED'; break;
+          case 'ooc': cha.oocDate = data.oocDate; updated.currentStatus = 'OOC_DONE'; break;
+          case 'gatepass': cha.gatePassDate = data.gatePassDate; updated.currentStatus = 'GATE_PASS'; break;
+          case 'pod': cha.deliveryDate = data.deliveryDate; cha.trackingNumber = data.trackingNumber; updated.currentStatus = 'DELIVERED'; break;
+          case 'invoice': acc.invoiceNumber = data.invoiceNumber; acc.invoiceDate = data.invoiceDate; updated.currentStatus = 'INVOICE_GENERATED'; break;
+          case 'invoiceSend': acc.sendingDate = data.sendingDate; updated.currentStatus = 'INVOICE_SENT'; break;
+          case 'stage': updated.shipmentStage = data.shipmentStage; break;
+          case 'remarks': updated.remarks = data.remarks; break;
+          case 'fromlocation': ff.fromLocation = data.fromLocation; break;
+          case 'tolocation': ff.toLocation = data.toLocation; break;
+        }
+        updated.freightForwarding = ff;
+        updated.cha = cha;
+        updated.accounts = acc;
+        return updated;
+      });
+      addToast('Saved!', 'success');
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
+    },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
 
@@ -72,10 +113,7 @@ export default function ShipmentDetail() {
   }
 
   const copyToClipboard = (text, key) => { navigator.clipboard.writeText(text); setCopied(key); addToast('Copied!', 'info'); setTimeout(() => setCopied(null), 2000) }
-  const getStatusBadge = (s) => {
-    const b = {'ENQUIRY':'bg-amber-50 text-amber-700 border-amber-200','RATES_ADDED':'bg-sky-50 text-sky-700 border-sky-200','NOMINATED':'bg-violet-50 text-violet-700 border-violet-200','BOOKED':'bg-indigo-50 text-indigo-700 border-indigo-200','SCHEDULED':'bg-cyan-50 text-cyan-700 border-cyan-200','AWB_GENERATED':'bg-teal-50 text-teal-700 border-teal-200','CHECKLIST_APPROVED':'bg-emerald-50 text-emerald-700 border-emerald-200','BOE_FILED':'bg-lime-50 text-lime-700 border-lime-200','DO_COLLECTED':'bg-green-50 text-green-700 border-green-200','OOC_DONE':'bg-blue-50 text-blue-700 border-blue-200','GATE_PASS':'bg-purple-50 text-purple-700 border-purple-200','DELIVERED':'bg-green-100 text-green-800 border-green-300','INVOICE_GENERATED':'bg-orange-50 text-orange-700 border-orange-200','INVOICE_SENT':'bg-rose-50 text-rose-700 border-rose-200','COMPLETED':'bg-gray-100 text-gray-700 border-gray-300'}
-    return b[s]||'bg-gray-50 text-gray-600 border-gray-200'
-  }
+  const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-amber-50 text-amber-700 border-amber-200','RATES_ADDED':'bg-sky-50 text-sky-700 border-sky-200','NOMINATED':'bg-violet-50 text-violet-700 border-violet-200','BOOKED':'bg-indigo-50 text-indigo-700 border-indigo-200','SCHEDULED':'bg-cyan-50 text-cyan-700 border-cyan-200','AWB_GENERATED':'bg-teal-50 text-teal-700 border-teal-200','CHECKLIST_APPROVED':'bg-emerald-50 text-emerald-700 border-emerald-200','BOE_FILED':'bg-lime-50 text-lime-700 border-lime-200','DO_COLLECTED':'bg-green-50 text-green-700 border-green-200','OOC_DONE':'bg-blue-50 text-blue-700 border-blue-200','GATE_PASS':'bg-purple-50 text-purple-700 border-purple-200','DELIVERED':'bg-green-100 text-green-800 border-green-300','INVOICE_GENERATED':'bg-orange-50 text-orange-700 border-orange-200','INVOICE_SENT':'bg-rose-50 text-rose-700 border-rose-200','COMPLETED':'bg-gray-100 text-gray-700 border-gray-300'}; return b[s]||'bg-gray-50 text-gray-600 border-gray-200' }
   const steps = [{s:'ENQUIRY',l:'Enquiry',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',i:DollarSign},{s:'NOMINATED',l:'Nominated',i:User},{s:'BOOKED',l:'Booked',i:Calendar},{s:'SCHEDULED',l:'Scheduled',i:Clock},{s:'AWB_GENERATED',l:'AWB',i:Barcode},{s:'CHECKLIST_APPROVED',l:'Checklist',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',i:FileText},{s:'DO_COLLECTED',l:'DO',i:FileCheck},{s:'OOC_DONE',l:'OOC',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',i:Truck},{s:'DELIVERED',l:'Delivered',i:MapPin},{s:'INVOICE_GENERATED',l:'Invoice',i:Banknote},{s:'INVOICE_SENT',l:'Sent',i:Send}]
   const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
   if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
@@ -92,11 +130,7 @@ export default function ShipmentDetail() {
       <div className="flex bg-gray-100 rounded-xl p-1 gap-1">{[{k:'freight',l:'Freight',i:Ship},{k:'cha',l:'Customs',i:FileCheck},{k:'accounts',l:'Accounts',i:Receipt},{k:'history',l:'Timeline',i:Clock}].map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center ${activeTab===t.k?'bg-white text-blue-600 shadow-sm':'text-gray-500'}`}><Icon size={16}/><span className="hidden sm:inline">{t.l}</span></button>})}</div>
       <div className="bg-white rounded-xl border p-6">
         {activeTab==='freight'&&<div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/>
-            <C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/>
-            <C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/>
-          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
           <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /></div></Section>
           <Section title="Rates" icon={DollarSign}><div className="grid grid-cols-2 gap-3"><Field label="Selling Rate ($)" value={ff.sellingRate} onSave={v => updateMutation.mutate({ section: 'rates', data: { sellingRate: v } })} type="number" /><Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /></div></Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
