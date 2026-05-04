@@ -1,17 +1,20 @@
 const prisma = require('../utils/prisma');
 
-// Helper: ensure Accounts record exists
 async function ensureAccounts(shipmentId) {
   const existing = await prisma.accounts.findUnique({ where: { shipmentId } });
   if (!existing) {
-    await prisma.shipment.update({
-      where: { id: shipmentId },
-      data: { accounts: { create: {} } }
-    });
+    await prisma.shipment.update({ where: { id: shipmentId }, data: { accounts: { create: {} } } });
   }
 }
 
-// UPDATE INVOICE (partial)
+async function getFullShipment(id) {
+  return await prisma.shipment.findUnique({
+    where: { id },
+    include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 20 } }
+  });
+}
+
+// UPDATE INVOICE
 const updateInvoice = async (req, res) => {
   try {
     const { id } = req.params;
@@ -19,22 +22,24 @@ const updateInvoice = async (req, res) => {
     const data = {};
     if (req.body.invoiceNumber !== undefined) data.invoiceNumber = req.body.invoiceNumber;
     if (req.body.invoiceDate) data.invoiceDate = new Date(req.body.invoiceDate);
-    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
-    const u = await prisma.shipment.update({ where: { id }, data: { accounts: { update: { data } } }, select: { id: true, accounts: true } });
-    res.json({ status: 'success', data: u });
+    if (Object.keys(data).length > 0) {
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'INVOICE_GENERATED', accounts: { update: { data } }, statusHistory: { create: { status: 'INVOICE_GENERATED', remarks: 'Invoice generated' } } } });
+    }
+    const s = await getFullShipment(id);
+    res.json({ status: 'success', data: s });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// UPDATE INVOICE SENDING (partial)
+// UPDATE INVOICE SENDING
 const updateInvoiceSending = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureAccounts(id);
-    const data = {};
-    if (req.body.sendingDate) data.sendingDate = new Date(req.body.sendingDate);
-    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
-    const u = await prisma.shipment.update({ where: { id }, data: { accounts: { update: { data } } }, select: { id: true, accounts: true } });
-    res.json({ status: 'success', data: u });
+    if (req.body.sendingDate) {
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'INVOICE_SENT', accounts: { update: { sendingDate: new Date(req.body.sendingDate) } }, statusHistory: { create: { status: 'INVOICE_SENT', remarks: 'Invoice sent' } } } });
+    }
+    const s = await getFullShipment(id);
+    res.json({ status: 'success', data: s });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 

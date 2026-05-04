@@ -35,8 +35,7 @@ export default function ShipmentDetail() {
   const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
     queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`); return r.data.data },
-    staleTime: 0,        // ALWAYS refetch - data never stale
-    cacheTime: 0,        // Don't cache old data
+    staleTime: 0,
   })
 
   const updateMutation = useMutation({
@@ -46,39 +45,9 @@ export default function ShipmentDetail() {
       }
       return api[eps[section].m](eps[section].u, data)
     },
-    onSuccess: (response, { section, data }) => {
-      // Instantly update the cache with new data (no refetch needed!)
-      queryClient.setQueryData(['shipment', id], (old) => {
-        if (!old) return old;
-        const updated = { ...old };
-        const ff = { ...(updated.freightForwarding || {}) };
-        const cha = { ...(updated.cha || {}) };
-        const acc = { ...(updated.accounts || {}) };
-        
-        switch(section) {
-          case 'rates': ff.sellingRate = data.sellingRate; ff.weight = data.weight; updated.currentStatus = 'RATES_ADDED'; break;
-          case 'nomination': ff.nominationDate = data.nominationDate; updated.currentStatus = 'NOMINATED'; break;
-          case 'booking': ff.bookingDate = data.bookingDate; updated.currentStatus = 'BOOKED'; break;
-          case 'schedule': ff.etd = data.etd; ff.eta = data.eta; updated.currentStatus = 'SCHEDULED'; break;
-          case 'awb': ff.mawb = data.mawb; ff.hawb = data.hawb; ff.awbDate = data.awbDate; updated.currentStatus = 'AWB_GENERATED'; break;
-          case 'checklist': cha.jobNo = data.jobNo; cha.checklistDate = data.checklistDate; cha.checklistApprovalDate = data.checklistApprovalDate; updated.currentStatus = 'CHECKLIST_APPROVED'; break;
-          case 'boe': cha.boeNo = data.boeNo; cha.boeDate = data.boeDate; updated.currentStatus = 'BOE_FILED'; break;
-          case 'do': cha.doCollectionDate = data.doCollectionDate; updated.currentStatus = 'DO_COLLECTED'; break;
-          case 'ooc': cha.oocDate = data.oocDate; updated.currentStatus = 'OOC_DONE'; break;
-          case 'gatepass': cha.gatePassDate = data.gatePassDate; updated.currentStatus = 'GATE_PASS'; break;
-          case 'pod': cha.deliveryDate = data.deliveryDate; cha.trackingNumber = data.trackingNumber; updated.currentStatus = 'DELIVERED'; break;
-          case 'invoice': acc.invoiceNumber = data.invoiceNumber; acc.invoiceDate = data.invoiceDate; updated.currentStatus = 'INVOICE_GENERATED'; break;
-          case 'invoiceSend': acc.sendingDate = data.sendingDate; updated.currentStatus = 'INVOICE_SENT'; break;
-          case 'stage': updated.shipmentStage = data.shipmentStage; break;
-          case 'remarks': updated.remarks = data.remarks; break;
-          case 'fromlocation': ff.fromLocation = data.fromLocation; break;
-          case 'tolocation': ff.toLocation = data.toLocation; break;
-        }
-        updated.freightForwarding = ff;
-        updated.cha = cha;
-        updated.accounts = acc;
-        return updated;
-      });
+    // SIMPLE: Backend now returns full shipment, just set it in cache!
+    onSuccess: (response) => {
+      queryClient.setQueryData(['shipment', id], response.data.data);
       addToast('Saved!', 'success');
       queryClient.invalidateQueries({ queryKey: ['shipments'] });
     },
@@ -129,15 +98,13 @@ export default function ShipmentDetail() {
       <div className="bg-white rounded-xl border p-5 overflow-x-auto"><div className="flex items-center gap-0 min-w-max">{steps.map((step,i)=>{const Icon=step.i;const done=i<=cur;const now=i===cur;return <div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done?'opacity-100':'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${now?'border-blue-500 bg-blue-50 scale-110':done?'border-green-500 bg-green-50':'border-gray-300 bg-white'}`}>{done?<CheckCircle2 size={16} className="text-green-600"/>:<Icon size={16} className="text-gray-400"/>}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now?'text-blue-600':'text-gray-500'}`}>{step.l}</span></div>{i<steps.length-1&&<div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i<cur?'bg-green-400':'bg-gray-200'}`}/>}</div>})}</div></div>
       <div className="flex bg-gray-100 rounded-xl p-1 gap-1">{[{k:'freight',l:'Freight',i:Ship},{k:'cha',l:'Customs',i:FileCheck},{k:'accounts',l:'Accounts',i:Receipt},{k:'history',l:'Timeline',i:Clock}].map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center ${activeTab===t.k?'bg-white text-blue-600 shadow-sm':'text-gray-500'}`}><Icon size={16}/><span className="hidden sm:inline">{t.l}</span></button>})}</div>
       <div className="bg-white rounded-xl border p-6">
-        {activeTab==='freight'&&<div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
+        {activeTab==='freight'&&<div className="space-y-4"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
           <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /></div></Section>
           <Section title="Rates" icon={DollarSign}><div className="grid grid-cols-2 gap-3"><Field label="Selling Rate ($)" value={ff.sellingRate} onSave={v => updateMutation.mutate({ section: 'rates', data: { sellingRate: v } })} type="number" /><Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /></div></Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
-          <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section>
-        </div>}
+          <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section></div>}
         {activeTab==='cha'&&<div className="space-y-4"><Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => updateMutation.mutate({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section><Section title="BOE" icon={FileText}><div className="grid grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section><Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section><Section title="OOC" icon={CheckCircle2}><Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => updateMutation.mutate({ section: 'ooc', data: { oocDate: v } })} type="date" /></Section><Section title="Gate Pass" icon={Truck}><Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => updateMutation.mutate({ section: 'gatepass', data: { gatePassDate: v } })} type="date" /></Section><Section title="POD (Delivery)" icon={MapPin}><div className="grid grid-cols-2 gap-3"><Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'pod', data: { deliveryDate: v } })} type="date" /><Field label="Tracking No" value={cha.trackingNumber} onSave={v => updateMutation.mutate({ section: 'pod', data: { trackingNumber: v } })} /></div></Section></div>}
         {activeTab==='accounts'&&<div className="space-y-4"><Section title="Invoice" icon={Banknote}><div className="grid grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => updateMutation.mutate({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}
         {activeTab==='history'&&<div><h3 className="text-base font-semibold mb-4">Status Timeline</h3>{shipment.statusHistory?.length>0?<div className="relative pl-6 border-l-2 border-blue-200 space-y-6">{[...shipment.statusHistory].reverse().map((h,i)=><div key={i} className="relative"><div className="absolute -left-[25px] w-3 h-3 rounded-full bg-blue-500 border-2 border-white ring-2 ring-blue-200"/><div className="bg-gray-50 rounded-lg p-3 ml-2"><p className="text-sm font-semibold">{h.status.replace(/_/g,' ')}</p>{h.remarks&&<p className="text-xs text-gray-500 mt-0.5">{h.remarks}</p>}<p className="text-xs text-gray-400 mt-1">{new Date(h.createdAt).toLocaleString()}</p></div></div>)}</div>:<div className="text-center py-8 text-gray-500"><Clock size={32} className="mx-auto text-gray-300 mb-2"/><p className="text-sm">No history yet.</p></div>}</div>}
