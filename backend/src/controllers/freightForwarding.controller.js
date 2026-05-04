@@ -25,7 +25,7 @@ const exportShipments = async (req, res) => {
     const totalCount = await prisma.shipment.count({ where });
     const BATCH_SIZE = 5000; let all = [];
     for (let skip = 0; skip < totalCount; skip += BATCH_SIZE) {
-      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, sellingRate: true, weight: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
+      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, sellingRate: true, weight: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
       all = all.concat(batch);
     }
     const { exportShipmentsToExcel } = require('../utils/excelExport');
@@ -60,86 +60,57 @@ const getShipmentById = async (req, res) => {
 
 // UPDATE STAGE
 const updateStage = async (req, res) => {
-  try {
-    const { id } = req.params; const { shipmentStage } = req.body;
-    const u = await prisma.shipment.update({ where: { id }, data: { shipmentStage }, select: { id: true, shipmentStage: true } });
-    res.json({ status: 'success', data: u });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { id } = req.params; const { shipmentStage } = req.body; const u = await prisma.shipment.update({ where: { id }, data: { shipmentStage }, select: { id: true, shipmentStage: true } }); res.json({ status: 'success', data: u }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE REMARKS
 const updateRemarks = async (req, res) => {
+  try { const { id } = req.params; const { remarks } = req.body; const u = await prisma.shipment.update({ where: { id }, data: { remarks }, select: { id: true, remarks: true } }); res.json({ status: 'success', data: u }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// UPDATE FROM LOCATION (partial)
+const updateFromLocation = async (req, res) => {
   try {
-    const { id } = req.params; const { remarks } = req.body;
-    const u = await prisma.shipment.update({ where: { id }, data: { remarks }, select: { id: true, remarks: true } });
+    const { id } = req.params;
+    if (req.body.fromLocation === undefined) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { fromLocation: req.body.fromLocation } } }, select: { id: true, freightForwarding: { select: { fromLocation: true } } } });
     res.json({ status: 'success', data: u });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// ========== PARTIAL UPDATES - only update what's sent ==========
+// UPDATE TO LOCATION (partial)
+const updateToLocation = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (req.body.toLocation === undefined) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
+    const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { toLocation: req.body.toLocation } } }, select: { id: true, freightForwarding: { select: { toLocation: true } } } });
+    res.json({ status: 'success', data: u });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
 
 // UPDATE RATES (partial)
 const updateRates = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = {};
-    if (req.body.sellingRate !== undefined) data.sellingRate = parseFloat(req.body.sellingRate);
-    if (req.body.weight !== undefined) data.weight = parseFloat(req.body.weight);
-    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
-    const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { sellingRate: true, weight: true } } } });
-    res.json({ status: 'success', data: u });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { id } = req.params; const data = {}; if (req.body.sellingRate !== undefined) data.sellingRate = parseFloat(req.body.sellingRate); if (req.body.weight !== undefined) data.weight = parseFloat(req.body.weight); if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' }); const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { sellingRate: true, weight: true } } } }); res.json({ status: 'success', data: u }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE SCHEDULE (partial)
 const updateSchedule = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = {};
-    if (req.body.etd) data.etd = new Date(req.body.etd);
-    if (req.body.eta) data.eta = new Date(req.body.eta);
-    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
-    const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } }, statusHistory: { create: { status: 'SCHEDULED', remarks: `Schedule updated` } } }, select: { id: true, freightForwarding: { select: { etd: true, eta: true } } } });
-    res.json({ status: 'success', data: u });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { id } = req.params; const data = {}; if (req.body.etd) data.etd = new Date(req.body.etd); if (req.body.eta) data.eta = new Date(req.body.eta); if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' }); const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { etd: true, eta: true } } } }); res.json({ status: 'success', data: u }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE NOMINATION
 const updateNomination = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = {};
-    if (req.body.nominationDate) data.nominationDate = new Date(req.body.nominationDate);
-    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
-    const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { nominationDate: true } } } });
-    res.json({ status: 'success', data: u });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { id } = req.params; const data = {}; if (req.body.nominationDate) data.nominationDate = new Date(req.body.nominationDate); if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' }); const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { nominationDate: true } } } }); res.json({ status: 'success', data: u }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE BOOKING
 const updateBooking = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = {};
-    if (req.body.bookingDate) data.bookingDate = new Date(req.body.bookingDate);
-    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
-    const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { bookingDate: true } } } });
-    res.json({ status: 'success', data: u });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { id } = req.params; const data = {}; if (req.body.bookingDate) data.bookingDate = new Date(req.body.bookingDate); if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' }); const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { bookingDate: true } } } }); res.json({ status: 'success', data: u }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE AWB (partial)
 const updateAWB = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const data = {};
-    if (req.body.mawb !== undefined) data.mawb = req.body.mawb;
-    if (req.body.hawb !== undefined) data.hawb = req.body.hawb;
-    if (req.body.awbDate) data.awbDate = new Date(req.body.awbDate);
-    if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' });
-    const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { mawb: true, hawb: true, awbDate: true } } } });
-    res.json({ status: 'success', data: u });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { id } = req.params; const data = {}; if (req.body.mawb !== undefined) data.mawb = req.body.mawb; if (req.body.hawb !== undefined) data.hawb = req.body.hawb; if (req.body.awbDate) data.awbDate = new Date(req.body.awbDate); if (Object.keys(data).length === 0) return res.status(400).json({ status: 'error', message: 'Nothing to update' }); const u = await prisma.shipment.update({ where: { id }, data: { freightForwarding: { update: { data } } }, select: { id: true, freightForwarding: { select: { mawb: true, hawb: true, awbDate: true } } } }); res.json({ status: 'success', data: u }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-module.exports = { createShipment, exportShipments, getAllShipments, getShipmentById, updateStage, updateRemarks, updateRates, updateNomination, updateBooking, updateSchedule, updateAWB };
+module.exports = { createShipment, exportShipments, getAllShipments, getShipmentById, updateStage, updateRemarks, updateFromLocation, updateToLocation, updateRates, updateNomination, updateBooking, updateSchedule, updateAWB };

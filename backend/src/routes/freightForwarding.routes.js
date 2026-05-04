@@ -35,4 +35,10 @@ router.put('/shipments/:id/stage', freightController.updateStage);
 // UPDATE - Remarks
 router.put('/shipments/:id/remarks', freightController.updateRemarks);
 
+// UPDATE - From Location
+router.put('/shipments/:id/fromlocation', freightController.updateFromLocation);
+
+// UPDATE - To Location
+router.put('/shipments/:id/tolocation', freightController.updateToLocation);
+
 module.exports = router;
