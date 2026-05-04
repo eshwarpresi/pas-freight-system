@@ -45,9 +45,11 @@ export default function ShipmentDetail() {
       }
       return api[eps[section].m](eps[section].u, data)
     },
-    // SIMPLE: Backend now returns full shipment, just set it in cache!
     onSuccess: (response) => {
-      queryClient.setQueryData(['shipment', id], response.data.data);
+      const updatedData = response.data?.data || response.data;
+      if (updatedData) {
+        queryClient.setQueryData(['shipment', id], updatedData);
+      }
       addToast('Saved!', 'success');
       queryClient.invalidateQueries({ queryKey: ['shipments'] });
     },
