@@ -38,9 +38,9 @@ export default function Dashboard() {
       const res = await api.get('/freight/shipments', { params })
       return res.data
     },
-    staleTime: 0,
+    staleTime: 10000,
     refetchOnMount: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
     placeholderData: (prev) => prev
   })
 
