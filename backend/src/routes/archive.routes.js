@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const freightController = require('../controllers/freightForwarding.controller');
 
-// Archive a shipment
+// Archive a shipment - keep current status, don't force COMPLETED
 router.put('/shipments/:id/archive', async (req, res) => {
   const prisma = require('../utils/prisma');
   try {
@@ -12,7 +11,6 @@ router.put('/shipments/:id/archive', async (req, res) => {
       where: { id },
       data: {
         isArchived: true,
-        currentStatus: 'COMPLETED',
         statusHistory: {
           create: {
             status: 'COMPLETED',
@@ -35,7 +33,7 @@ router.put('/shipments/:id/archive', async (req, res) => {
   }
 });
 
-// Unarchive a shipment
+// Unarchive - keep original status
 router.put('/shipments/:id/unarchive', async (req, res) => {
   const prisma = require('../utils/prisma');
   try {
@@ -47,7 +45,8 @@ router.put('/shipments/:id/unarchive', async (req, res) => {
       include: {
         freightForwarding: true,
         cha: true,
-        accounts: true
+        accounts: true,
+        statusHistory: true
       }
     });
 

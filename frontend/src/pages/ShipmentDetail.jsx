@@ -32,7 +32,7 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
 export default function ShipmentDetail() {
   const { id } = useParams(); const { addToast } = useToast(); const [activeTab, setActiveTab] = useState('freight'); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
   
-  const { data: shipment, isLoading, refetch } = useQuery({
+  const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
     queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`); return r.data.data },
     staleTime: 0,
@@ -45,15 +45,16 @@ export default function ShipmentDetail() {
       }
       return api[eps[section].m](eps[section].u, data)
     },
-    onSuccess: (response) => {
-      // Force refetch fresh data from server to update stepper
-      refetch();
+    onSuccess: () => {
       addToast('Saved!', 'success');
+      // Force refetch everything - stepper updates guaranteed
       queryClient.invalidateQueries({ queryKey: ['shipments'] });
+      queryClient.invalidateQueries({ queryKey: ['shipment', id] });
     },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
 
+  // ... rest of the file stays EXACTLY the same ...
   const handlePrint = () => {
     const ff = shipment?.freightForwarding || {}; const cha = shipment?.cha || {}; const acc = shipment?.accounts || {}
     const fmt = d => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
