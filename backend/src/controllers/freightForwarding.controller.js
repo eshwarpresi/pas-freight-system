@@ -21,6 +21,27 @@ const createShipment = async (req, res) => {
   } catch (error) { console.error('Error creating shipment:', error); res.status(500).json({ status: 'error', message: 'Failed to create shipment' }); }
 };
 
+// DELETE SINGLE SHIPMENT
+const deleteShipment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.shipment.delete({ where: { id } });
+    res.json({ status: 'success', message: 'Shipment deleted' });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed to delete' }); }
+};
+
+// DELETE ALL SHIPMENTS
+const deleteAllShipments = async (req, res) => {
+  try {
+    await prisma.statusHistory.deleteMany({});
+    await prisma.freightForwarding.deleteMany({});
+    await prisma.cHA.deleteMany({});
+    await prisma.accounts.deleteMany({});
+    await prisma.shipment.deleteMany({});
+    res.json({ status: 'success', message: 'All shipments deleted' });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed to delete all' }); }
+};
+
 // EXPORT - added terms
 const exportShipments = async (req, res) => {
   try {
@@ -164,4 +185,4 @@ const updateAWB = async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-module.exports = { createShipment, exportShipments, getAllShipments, getShipmentById, updateStage, updateRemarks, updateFromLocation, updateToLocation, updateTerms, updateRates, updateNomination, updateBooking, updateSchedule, updateAWB };
+module.exports = { createShipment, deleteShipment, deleteAllShipments, exportShipments, getAllShipments, getShipmentById, updateStage, updateRemarks, updateFromLocation, updateToLocation, updateTerms, updateRates, updateNomination, updateBooking, updateSchedule, updateAWB };

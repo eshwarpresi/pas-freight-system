@@ -14,6 +14,12 @@ router.get('/shipments', freightController.getAllShipments);
 // GET - Single Shipment by ID
 router.get('/shipments/:id', freightController.getShipmentById);
 
+// DELETE - Single Shipment
+router.delete('/shipments/:id', freightController.deleteShipment);
+
+// DELETE - All Shipments
+router.delete('/shipments', freightController.deleteAllShipments);
+
 // UPDATE - Rates
 router.put('/shipments/:id/rates', freightController.updateRates);
 
