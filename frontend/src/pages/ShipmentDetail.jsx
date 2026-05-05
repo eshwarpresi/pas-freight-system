@@ -32,7 +32,7 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
 export default function ShipmentDetail() {
   const { id } = useParams(); const { addToast } = useToast(); const [activeTab, setActiveTab] = useState('freight'); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
   
-  const { data: shipment, isLoading } = useQuery({
+  const { data: shipment, isLoading, refetch } = useQuery({
     queryKey: ['shipment', id],
     queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`); return r.data.data },
     staleTime: 0,
@@ -46,8 +46,8 @@ export default function ShipmentDetail() {
       return api[eps[section].m](eps[section].u, data)
     },
     onSuccess: (response) => {
-      const updatedData = response.data?.data || response.data;
-      if (updatedData) { queryClient.setQueryData(['shipment', id], updatedData); }
+      // Force refetch fresh data from server to update stepper
+      refetch();
       addToast('Saved!', 'success');
       queryClient.invalidateQueries({ queryKey: ['shipments'] });
     },
