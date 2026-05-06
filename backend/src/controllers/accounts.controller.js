@@ -20,10 +20,11 @@ const updateInvoice = async (req, res) => {
     const { id } = req.params;
     await ensureAccounts(id);
     const data = {};
-    if (req.body.invoiceNumber !== undefined) data.invoiceNumber = req.body.invoiceNumber;
-    if (req.body.invoiceDate) data.invoiceDate = new Date(req.body.invoiceDate);
+    const parts = [];
+    if (req.body.invoiceNumber !== undefined) { data.invoiceNumber = req.body.invoiceNumber; parts.push(`Invoice No: ${req.body.invoiceNumber}`); }
+    if (req.body.invoiceDate) { data.invoiceDate = new Date(req.body.invoiceDate); parts.push(`Invoice Date: ${req.body.invoiceDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'INVOICE_GENERATED', accounts: { update: { data } }, statusHistory: { create: { status: 'INVOICE_GENERATED', remarks: 'Invoice generated' } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'INVOICE_GENERATED', accounts: { update: { data } }, statusHistory: { create: { status: 'INVOICE_GENERATED', remarks: parts.join(' | ') } } } });
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -44,7 +45,7 @@ const updateInvoiceSending = async (req, res) => {
           accounts: { update: { sendingDate: new Date(req.body.sendingDate) } }, 
           statusHistory: { 
             create: [
-              { status: 'INVOICE_SENT', remarks: 'Invoice sent' },
+              { status: 'INVOICE_SENT', remarks: `Invoice Sent Date: ${req.body.sendingDate}` },
               { status: 'COMPLETED', remarks: 'Shipment auto-archived after invoice sent' }
             ] 
           } 
