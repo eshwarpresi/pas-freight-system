@@ -18,7 +18,7 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Ref No', key: 'refNo', width: 18 },
     { header: 'Status', key: 'status', width: 18 },
     { header: 'Stage', key: 'shipmentStage', width: 16 },
-    { header: 'Type', key: 'shipmentType', width: 18 },
+    { header: 'Import / Export Type', key: 'shipmentType', width: 22 },
     { header: 'Consignee', key: 'consignee', width: 24 },
     { header: 'Shipper', key: 'shipper', width: 24 },
     { header: 'From', key: 'fromLocation', width: 18 },

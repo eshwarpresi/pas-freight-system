@@ -46,6 +46,16 @@ export default function CreateShipment() {
     if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }))
   }
 
+  const handleTypeDropdown = (e) => {
+    const val = e.target.value
+    setFormData(prev => ({ ...prev, shipmentType: val }))
+  }
+
+  const handleTypeManual = (e) => {
+    const val = e.target.value
+    setFormData(prev => ({ ...prev, shipmentType: val }))
+  }
+
   const handleBlur = (e) => {
     const { name, value } = e.target
     setTouched(prev => ({ ...prev, [name]: true }))
@@ -89,6 +99,7 @@ export default function CreateShipment() {
 
   const hasDraft = localStorage.getItem(DRAFT_KEY)
   const getFieldClass = (name) => errors[name] && touched[name] ? 'border-red-300 bg-red-50' : touched[name] && formData[name] && !errors[name] ? 'border-green-300 bg-green-50' : 'border-gray-300'
+  const isCustomType = formData.shipmentType && !SHIPMENT_TYPES.includes(formData.shipmentType)
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -147,16 +158,17 @@ export default function CreateShipment() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export Type</label>
-                <div className="flex gap-2">
-                  <select name="shipmentType" value={formData.shipmentType} onChange={handleChange}
-                    className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                    <option value="">Select type...</option>
-                    {SHIPMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <input type="text" name="shipmentType" value={!SHIPMENT_TYPES.includes(formData.shipmentType) ? formData.shipmentType : ''} onChange={handleChange}
-                    placeholder="Or type..."
-                    className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                </div>
+                <select value={isCustomType ? '__other__' : (formData.shipmentType || '')} onChange={handleTypeDropdown}
+                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white mb-2">
+                  <option value="">Select type...</option>
+                  {SHIPMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  <option value="__other__">Other (manual)</option>
+                </select>
+                {(isCustomType || formData.shipmentType === '__other__') && (
+                  <input type="text" value={isCustomType ? formData.shipmentType : ''} onChange={handleTypeManual}
+                    placeholder="Enter custom type..."
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                )}
               </div>
             </div>
           </div>
