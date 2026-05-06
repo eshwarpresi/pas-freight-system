@@ -4,11 +4,13 @@ import api from '../lib/api'
 import { useToast } from '../components/Toast'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
-  Ship, Sparkles, Loader2, Building2, Globe, AlertCircle
+  Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
+  Plane, Truck
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 const DRAFT_KEY = 'pas_shipment_draft'
+const SHIPMENT_TYPES = ['AIR', 'SEA FCL', 'SEA LCL', 'Domestic Courier', 'International Courier']
 
 export default function CreateShipment() {
   const navigate = useNavigate()
@@ -29,7 +31,7 @@ export default function CreateShipment() {
   const [formData, setFormData] = useState(() => {
     const saved = localStorage.getItem(DRAFT_KEY)
     if (saved) { try { return JSON.parse(saved) } catch {} }
-    return { refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '' }
+    return { refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', shipmentType: '' }
   })
 
   useEffect(() => {
@@ -80,7 +82,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', shipmentType: '' })
     setErrors({}); setTouched({})
     addToast('Draft cleared', 'info')
   }
@@ -134,13 +136,28 @@ export default function CreateShipment() {
 
           <div className="p-6 border-b border-gray-100">
             <div className="flex items-center gap-2 mb-4"><Ship size={16} className="text-blue-500" /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Shipment Details</h3></div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label>
-              <div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} placeholder="Enter quantity" min="1"
-                  className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.noOfPackages ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label>
+                <div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} placeholder="Enter quantity" min="1"
+                    className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${errors.noOfPackages ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+                </div>
+                {errors.noOfPackages && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={12} />{errors.noOfPackages}</p>}
               </div>
-              {errors.noOfPackages && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={12} />{errors.noOfPackages}</p>}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export Type</label>
+                <div className="flex gap-2">
+                  <select name="shipmentType" value={formData.shipmentType} onChange={handleChange}
+                    className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">Select type...</option>
+                    {SHIPMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <input type="text" name="shipmentType" value={!SHIPMENT_TYPES.includes(formData.shipmentType) ? formData.shipmentType : ''} onChange={handleChange}
+                    placeholder="Or type..."
+                    className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
             </div>
           </div>
 

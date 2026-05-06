@@ -38,6 +38,7 @@ model Shipment {
   // NEW FIELDS
   shipmentStage String?  // Draft, Created, Confirmed, Booked, Scheduled, In Progress, Completed, Cancelled, On Hold
   remarks       String?  // Manual notes/comments
+  shipmentType  String?  // AIR, SEA FCL, SEA LCL, Domestic Courier, International Courier
   
   freightForwarding FreightForwarding?
   cha               CHA?

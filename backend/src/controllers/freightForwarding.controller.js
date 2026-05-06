@@ -5,15 +5,15 @@ const fullShipmentSelect = (id) => ({
   include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 20 } }
 });
 
-// CREATE NEW SHIPMENT
+// CREATE NEW SHIPMENT - added shipmentType
 const createShipment = async (req, res) => {
   try {
-    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent } = req.body;
+    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const exists = await prisma.shipment.findUnique({ where: { refNo }, select: { id: true } });
     if (exists) return res.status(400).json({ status: 'error', message: 'Shipment with this Reference Number already exists' });
     const shipment = await prisma.shipment.create({
-      data: { refNo, currentStatus: 'ENQUIRY', freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent } }, statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo} | Consignee: ${consigneeName || 'N/A'} | Shipper: ${shipperName || 'N/A'}` } } },
+      data: { refNo, currentStatus: 'ENQUIRY', shipmentType, freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent } }, statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo} | Consignee: ${consigneeName || 'N/A'} | Shipper: ${shipperName || 'N/A'}` } } },
       include: { freightForwarding: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
     });
     res.status(201).json({ status: 'success', data: shipment });
@@ -30,7 +30,7 @@ const deleteAllShipments = async (req, res) => {
   try { await prisma.statusHistory.deleteMany({}); await prisma.freightForwarding.deleteMany({}); await prisma.cHA.deleteMany({}); await prisma.accounts.deleteMany({}); await prisma.shipment.deleteMany({}); res.json({ status: 'success', message: 'All shipments deleted' }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed to delete all' }); }
 };
 
-// EXPORT
+// EXPORT - added shipmentType
 const exportShipments = async (req, res) => {
   try {
     const { status, search, isArchived } = req.query;
@@ -46,7 +46,7 @@ const exportShipments = async (req, res) => {
     const totalCount = await prisma.shipment.count({ where });
     const BATCH_SIZE = 5000; let all = [];
     for (let skip = 0; skip < totalCount; skip += BATCH_SIZE) {
-      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
+      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, shipmentType: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
       all = all.concat(batch);
     }
     const { exportShipmentsToExcel } = require('../utils/excelExport');
@@ -54,7 +54,7 @@ const exportShipments = async (req, res) => {
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
 
-// GET ALL - FIXED: Added hawb and boeNo to select
+// GET ALL
 const getAllShipments = async (req, res) => {
   try {
     const { status, search, isArchived, page = 1, limit = 25 } = req.query;
@@ -87,6 +87,16 @@ const getAllShipments = async (req, res) => {
 // GET SINGLE
 const getShipmentById = async (req, res) => {
   try { const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 20 } } }); if (!s) return res.status(404).json({ status: 'error', message: 'Not found' }); res.json({ status: 'success', data: s }); } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// UPDATE SHIPMENT TYPE (NEW)
+const updateShipmentType = async (req, res) => {
+  try {
+    const { shipmentType } = req.body;
+    await prisma.shipment.update({ where: { id: req.params.id }, data: { shipmentType }, statusHistory: { create: { status: 'TYPE_UPDATED', remarks: `Shipment Type: ${shipmentType}` } } });
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 20 } } });
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE STAGE
@@ -228,4 +238,4 @@ const updateAWB = async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-module.exports = { createShipment, deleteShipment, deleteAllShipments, exportShipments, getAllShipments, getShipmentById, updateStage, updateRemarks, updateFromLocation, updateToLocation, updateTerms, updateRates, updateCBM, updatePortLocation, updateNomination, updateBooking, updateSchedule, updateAWB };
+module.exports = { createShipment, deleteShipment, deleteAllShipments, exportShipments, getAllShipments, getShipmentById, updateShipmentType, updateStage, updateRemarks, updateFromLocation, updateToLocation, updateTerms, updateRates, updateCBM, updatePortLocation, updateNomination, updateBooking, updateSchedule, updateAWB };
