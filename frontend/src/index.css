@@ -3,7 +3,19 @@
 /* Custom styles */
 body {
   font-family: 'Inter', sans-serif;
-  background-color: #f9fafb;
+  background: linear-gradient(135deg, #e8f0fe 0%, #ecfdf5 50%, #fff7ed 100%);
+  min-height: 100vh;
+  background-attachment: fixed;
+}
+
+/* Brand colors */
+:root {
+  --brand-blue: #1e40af;
+  --brand-blue-light: #dbeafe;
+  --brand-green: #059669;
+  --brand-green-light: #d1fae5;
+  --brand-orange: #ea580c;
+  --brand-orange-light: #fff7ed;
 }
 
 /* Smooth animations */
@@ -27,10 +39,10 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: #93c5fd;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: #1e40af;
 }

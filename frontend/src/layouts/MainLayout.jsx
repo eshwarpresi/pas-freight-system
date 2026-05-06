@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet, Link, useLocation } from 'react-router-dom'
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Package, Menu, X, 
   Box, Archive, ChevronRight, Command
@@ -7,12 +7,20 @@ import {
 
 export default function MainLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: 'Overview', shortcut: 'O' },
     { path: '/create', icon: Package, label: 'New Shipment', shortcut: 'N' },
   ]
+
+  const goToArchives = () => {
+    navigate('/')
+    // Store a flag in sessionStorage so Dashboard opens archive tab
+    sessionStorage.setItem('showArchived', 'true')
+    window.location.href = '/'
+  }
 
   return (
     <div className="min-h-screen bg-[#f8f9fb]">
@@ -89,10 +97,13 @@ export default function MainLayout() {
                 <p className="text-[10px] text-gray-400">Completed shipments</p>
               </div>
             </div>
-            <Link to="/" className="flex items-center justify-between text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors">
+            <button 
+              onClick={goToArchives}
+              className="flex items-center justify-between w-full text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
+            >
               <span>View archives</span>
               <ChevronRight size={12} />
-            </Link>
+            </button>
           </div>
           <div className="mt-3 flex items-center gap-2 px-1">
             <div className="w-5 h-5 bg-gray-200 rounded-full flex items-center justify-center">
