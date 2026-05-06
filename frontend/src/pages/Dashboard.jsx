@@ -167,7 +167,7 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
         <div className="relative flex-1 w-full">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" placeholder="Search shipments..." value={search} onChange={e=>updateSearch(e.target.value)}
+          <input type="text" placeholder="Search by Ref No, Consignee, HAWB, BOE, Invoice..." value={search} onChange={e=>updateSearch(e.target.value)}
             className="w-full pl-9 pr-9 py-2.5 bg-white/70 backdrop-blur border border-white/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 text-sm transition-all" />
           {search && <button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14}/></button>}
         </div>
@@ -260,7 +260,8 @@ export default function Dashboard() {
                   </th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Ref No</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Consignee</th>
-                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Shipper</th>
+                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">HAWB</th>
+                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">BOE No</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Date</th>
                   <th className="text-right pr-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
@@ -282,7 +283,10 @@ export default function Dashboard() {
                       {s.freightForwarding?.consigneeName || <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-500 hidden md:table-cell">
-                      {s.freightForwarding?.shipperName || <span className="text-gray-300">—</span>}
+                      {s.freightForwarding?.hawb || <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-3 py-3 text-sm text-gray-500 hidden lg:table-cell">
+                      {s.cha?.boeNo || <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-3 py-3">
                       <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>

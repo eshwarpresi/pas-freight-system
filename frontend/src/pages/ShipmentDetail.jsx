@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Box
+  MapPinned, Navigation, FileSignature
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -16,8 +16,6 @@ const STAGE_COLORS = {
   'Booked': 'bg-purple-100 text-purple-700', 'Scheduled': 'bg-cyan-100 text-cyan-700', 'In Progress': 'bg-yellow-100 text-yellow-700',
   'Completed': 'bg-green-100 text-green-700', 'Cancelled': 'bg-red-100 text-red-700', 'On Hold': 'bg-orange-100 text-orange-700',
 }
-
-const PORT_OPTIONS = ['INWFD6', 'INDEL4']
 
 function InlineField({ value, onSave, type = 'text', placeholder = '—', className = '', options = null }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
@@ -100,7 +98,7 @@ export default function ShipmentDetail() {
       <div className="flex bg-gray-100 rounded-xl p-1 gap-1">{[{k:'freight',l:'Freight',i:Ship},{k:'cha',l:'Customs',i:FileCheck},{k:'accounts',l:'Accounts',i:Receipt},{k:'history',l:'Timeline',i:Clock}].map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center ${activeTab===t.k?'bg-white text-blue-600 shadow-sm':'text-gray-500'}`}><Icon size={16}/><span className="hidden sm:inline">{t.l}</span></button>})}</div>
       <div className="bg-white rounded-xl border p-6">
         {activeTab==='freight'&&<div className="space-y-4"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
-          <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /><Field label="Terms" value={ff.terms} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} /><Field label="Port Location" value={ff.portLocation} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} options={PORT_OPTIONS} /></div></Section>
+          <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /><Field label="Terms" value={ff.terms} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} /><Field label="Port Location" value={ff.portLocation} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} /></div></Section>
           <Section title="Rates" icon={DollarSign}><div className="grid grid-cols-3 gap-3"><Field label="Selling Rate (₹)" value={ff.sellingRate} onSave={v => updateMutation.mutate({ section: 'rates', data: { sellingRate: v } })} type="number" /><Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /><Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" /></div></Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
@@ -116,28 +114,15 @@ export default function ShipmentDetail() {
 
 function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"><I size={16} className="text-gray-400 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-gray-500">{l}</p><p className="text-sm font-medium text-gray-800 truncate">{v||'—'}</p></div></div>}
 function Section({ title, icon: Icon, children }) { return <div className="border border-gray-200 rounded-xl overflow-hidden"><div className="flex items-center gap-2 p-4 bg-gray-50/50 border-b border-gray-100"><Icon size={14} className="text-gray-400" /><p className="text-sm font-medium text-gray-700">{title}</p></div><div className="p-4">{children}</div></div> }
-function Field({ label, value, onSave, type = 'text', options = null }) {
+function Field({ label, value, onSave, type = 'text' }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
   useEffect(() => { setVal(value || '') }, [value])
   const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
   return <div><label className="block text-xs text-gray-500 mb-1">{label}</label>{editing ? (
-    options ? (
-      <div className="flex gap-2">
-        <select value={options.includes(val) ? val : ''} onChange={e => { if(e.target.value) setVal(e.target.value) }}
-          className="border border-blue-300 rounded-lg px-2 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500">
-          <option value="">Select...</option>
-          {options.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <input ref={inputRef} type="text" value={val} onChange={e => setVal(e.target.value)} onBlur={save}
-          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
-          className="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white" placeholder="Or type manually..." />
-      </div>
-    ) : (
-      <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save}
-        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
-        className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white" step={type === 'number' ? '0.01' : undefined} />
-    )
+    <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save}
+      onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
+      className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white" step={type === 'number' ? '0.01' : undefined} />
   ) : (
     <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors flex items-center justify-between group">
       <span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || 'Not set'}</span>

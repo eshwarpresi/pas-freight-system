@@ -36,7 +36,13 @@ const exportShipments = async (req, res) => {
     const { status, search, isArchived } = req.query;
     const where = { isArchived: isArchived === 'true' };
     if (status) where.currentStatus = status;
-    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { shipperName: { contains: search } } }];
+    if (search) where.OR = [
+      { refNo: { contains: search } },
+      { freightForwarding: { consigneeName: { contains: search } } },
+      { freightForwarding: { hawb: { contains: search } } },
+      { cha: { boeNo: { contains: search } } },
+      { accounts: { invoiceNumber: { contains: search } } }
+    ];
     const totalCount = await prisma.shipment.count({ where });
     const BATCH_SIZE = 5000; let all = [];
     for (let skip = 0; skip < totalCount; skip += BATCH_SIZE) {
@@ -48,16 +54,30 @@ const exportShipments = async (req, res) => {
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
 
-// GET ALL
+// GET ALL - FIXED: Added hawb and boeNo to select
 const getAllShipments = async (req, res) => {
   try {
     const { status, search, isArchived, page = 1, limit = 25 } = req.query;
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
     const where = { isArchived: isArchived === 'true' };
     if (status) where.currentStatus = status;
-    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { shipperName: { contains: search } } }];
+    if (search) where.OR = [
+      { refNo: { contains: search } },
+      { freightForwarding: { consigneeName: { contains: search } } },
+      { freightForwarding: { hawb: { contains: search } } },
+      { cha: { boeNo: { contains: search } } },
+      { accounts: { invoiceNumber: { contains: search } } }
+    ];
     const [shipments, total] = await Promise.all([
-      prisma.shipment.findMany({ where, select: { id: true, refNo: true, currentStatus: true, shipmentStage: true, createdAt: true, freightForwarding: { select: { consigneeName: true, shipperName: true } } }, orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l }),
+      prisma.shipment.findMany({ 
+        where, 
+        select: { 
+          id: true, refNo: true, currentStatus: true, shipmentStage: true, createdAt: true, 
+          freightForwarding: { select: { consigneeName: true, hawb: true } },
+          cha: { select: { boeNo: true } }
+        }, 
+        orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l 
+      }),
       prisma.shipment.count({ where })
     ]);
     res.json({ status: 'success', data: shipments, pagination: { total, page: p, limit: l, totalPages: Math.ceil(total/l) } });
