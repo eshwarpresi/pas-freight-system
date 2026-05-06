@@ -30,13 +30,26 @@ const updateInvoice = async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// UPDATE INVOICE SENDING
+// UPDATE INVOICE SENDING - Auto archive on send
 const updateInvoiceSending = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureAccounts(id);
     if (req.body.sendingDate) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'INVOICE_SENT', accounts: { update: { sendingDate: new Date(req.body.sendingDate) } }, statusHistory: { create: { status: 'INVOICE_SENT', remarks: 'Invoice sent' } } } });
+      await prisma.shipment.update({ 
+        where: { id }, 
+        data: { 
+          currentStatus: 'INVOICE_SENT', 
+          isArchived: true,
+          accounts: { update: { sendingDate: new Date(req.body.sendingDate) } }, 
+          statusHistory: { 
+            create: [
+              { status: 'INVOICE_SENT', remarks: 'Invoice sent' },
+              { status: 'COMPLETED', remarks: 'Shipment auto-archived after invoice sent' }
+            ] 
+          } 
+        } 
+      });
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
