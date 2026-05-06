@@ -67,6 +67,7 @@ model FreightForwarding {
   
   sellingRate     Decimal?
   weight          Decimal?
+  cbm             Decimal?
   
   nominationDate  DateTime?
   bookingDate     DateTime?
@@ -77,6 +78,9 @@ model FreightForwarding {
   mawb            String?
   hawb            String?
   awbDate         DateTime?
+  
+  // Port Location with dropdown
+  portLocation    String?
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

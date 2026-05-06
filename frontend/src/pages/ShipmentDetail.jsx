@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature
+  MapPinned, Navigation, FileSignature, Box
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -16,6 +16,8 @@ const STAGE_COLORS = {
   'Booked': 'bg-purple-100 text-purple-700', 'Scheduled': 'bg-cyan-100 text-cyan-700', 'In Progress': 'bg-yellow-100 text-yellow-700',
   'Completed': 'bg-green-100 text-green-700', 'Cancelled': 'bg-red-100 text-red-700', 'On Hold': 'bg-orange-100 text-orange-700',
 }
+
+const PORT_OPTIONS = ['INWFD6', 'INDEL4']
 
 function InlineField({ value, onSave, type = 'text', placeholder = '—', className = '', options = null }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
@@ -41,20 +43,18 @@ export default function ShipmentDetail() {
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
-        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'}
+        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'}
       }
       return api[eps[section].m](eps[section].u, data)
     },
     onSuccess: () => {
       addToast('Saved!', 'success');
-      // Force refetch everything - stepper updates guaranteed
       queryClient.invalidateQueries({ queryKey: ['shipments'] });
       queryClient.invalidateQueries({ queryKey: ['shipment', id] });
     },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
 
-  // ... rest of the file stays EXACTLY the same ...
   const handlePrint = () => {
     const ff = shipment?.freightForwarding || {}; const cha = shipment?.cha || {}; const acc = shipment?.accounts || {}
     const fmt = d => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
@@ -73,7 +73,7 @@ export default function ShipmentDetail() {
       <div class="ref-box"><div class="ref">${shipment.refNo}</div><div class="stage">${shipment.currentStatus.replace(/_/g,' ')}</div></div>
       ${shipment.shipmentStage?`<p style="margin-bottom:15px"><strong>Stage:</strong> ${shipment.shipmentStage}</p>`:''}
       <div class="section"><h2>📦 Freight Forwarding</h2><div class="grid">
-      <div class="item"><label>Consignee</label><span>${ff.consigneeName||'—'}</span></div><div class="item"><label>Shipper</label><span>${ff.shipperName||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Terms</label><span>${ff.terms||'—'}</span></div><div class="item"><label>Agent</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Packages</label><span>${ff.noOfPackages||'—'}</span></div><div class="item"><label>Selling Rate</label><span>${ff.sellingRate?'$'+ff.sellingRate:'—'}</span></div><div class="item"><label>Weight</label><span>${ff.weight?ff.weight+' kg':'—'}</span></div><div class="item"><label>Booking Date</label><span>${fmt(ff.bookingDate)}</span></div><div class="item"><label>ETD</label><span>${fmt(ff.etd)}</span></div><div class="item"><label>ETA</label><span>${fmt(ff.eta)}</span></div><div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>AWB Date</label><span>${fmt(ff.awbDate)}</span></div></div></div>
+      <div class="item"><label>Consignee</label><span>${ff.consigneeName||'—'}</span></div><div class="item"><label>Shipper</label><span>${ff.shipperName||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Terms</label><span>${ff.terms||'—'}</span></div><div class="item"><label>Port Location</label><span>${ff.portLocation||'—'}</span></div><div class="item"><label>Agent</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Packages</label><span>${ff.noOfPackages||'—'}</span></div><div class="item"><label>Selling Rate</label><span>${ff.sellingRate?'₹'+ff.sellingRate:'—'}</span></div><div class="item"><label>Weight</label><span>${ff.weight?ff.weight+' kg':'—'}</span></div><div class="item"><label>CBM</label><span>${ff.cbm||'—'}</span></div><div class="item"><label>Booking Date</label><span>${fmt(ff.bookingDate)}</span></div><div class="item"><label>ETD</label><span>${fmt(ff.etd)}</span></div><div class="item"><label>ETA</label><span>${fmt(ff.eta)}</span></div><div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>AWB Date</label><span>${fmt(ff.awbDate)}</span></div></div></div>
       <div class="section"><h2>🛃 Customs Clearance</h2><div class="grid">
       <div class="item"><label>Job No</label><span>${cha.jobNo||'—'}</span></div><div class="item"><label>Checklist Date</label><span>${fmt(cha.checklistDate)}</span></div><div class="item"><label>BOE No</label><span>${cha.boeNo||'—'}</span></div><div class="item"><label>BOE Date</label><span>${fmt(cha.boeDate)}</span></div><div class="item"><label>DO Collection</label><span>${fmt(cha.doCollectionDate)}</span></div><div class="item"><label>OOC Date</label><span>${fmt(cha.oocDate)}</span></div><div class="item"><label>Gate Pass</label><span>${fmt(cha.gatePassDate)}</span></div><div class="item"><label>Delivery Date</label><span>${fmt(cha.deliveryDate)}</span></div><div class="item"><label>Tracking No</label><span>${cha.trackingNumber||'—'}</span></div></div></div>
       <div class="section"><h2>💰 Accounts</h2><div class="grid"><div class="item"><label>Invoice No</label><span>${acc.invoiceNumber||'—'}</span></div><div class="item"><label>Invoice Date</label><span>${fmt(acc.invoiceDate)}</span></div><div class="item"><label>Sending Date</label><span>${fmt(acc.sendingDate)}</span></div></div></div>
@@ -100,8 +100,8 @@ export default function ShipmentDetail() {
       <div className="flex bg-gray-100 rounded-xl p-1 gap-1">{[{k:'freight',l:'Freight',i:Ship},{k:'cha',l:'Customs',i:FileCheck},{k:'accounts',l:'Accounts',i:Receipt},{k:'history',l:'Timeline',i:Clock}].map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center ${activeTab===t.k?'bg-white text-blue-600 shadow-sm':'text-gray-500'}`}><Icon size={16}/><span className="hidden sm:inline">{t.l}</span></button>})}</div>
       <div className="bg-white rounded-xl border p-6">
         {activeTab==='freight'&&<div className="space-y-4"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
-          <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /><Field label="Terms" value={ff.terms} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} /></div></Section>
-          <Section title="Rates" icon={DollarSign}><div className="grid grid-cols-2 gap-3"><Field label="Selling Rate ($)" value={ff.sellingRate} onSave={v => updateMutation.mutate({ section: 'rates', data: { sellingRate: v } })} type="number" /><Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /></div></Section>
+          <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /><Field label="Terms" value={ff.terms} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} /><Field label="Port Location" value={ff.portLocation} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} options={PORT_OPTIONS} /></div></Section>
+          <Section title="Rates" icon={DollarSign}><div className="grid grid-cols-3 gap-3"><Field label="Selling Rate (₹)" value={ff.sellingRate} onSave={v => updateMutation.mutate({ section: 'rates', data: { sellingRate: v } })} type="number" /><Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /><Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" /></div></Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
@@ -116,10 +116,32 @@ export default function ShipmentDetail() {
 
 function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"><I size={16} className="text-gray-400 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-gray-500">{l}</p><p className="text-sm font-medium text-gray-800 truncate">{v||'—'}</p></div></div>}
 function Section({ title, icon: Icon, children }) { return <div className="border border-gray-200 rounded-xl overflow-hidden"><div className="flex items-center gap-2 p-4 bg-gray-50/50 border-b border-gray-100"><Icon size={14} className="text-gray-400" /><p className="text-sm font-medium text-gray-700">{title}</p></div><div className="p-4">{children}</div></div> }
-function Field({ label, value, onSave, type = 'text' }) {
+function Field({ label, value, onSave, type = 'text', options = null }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
   useEffect(() => { setVal(value || '') }, [value])
   const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
-  return <div><label className="block text-xs text-gray-500 mb-1">{label}</label>{editing ? <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white" step={type === 'number' ? '0.01' : undefined} /> : <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors flex items-center justify-between group"><span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || 'Not set'}</span><Pencil size={10} className="text-gray-300 group-hover:text-blue-500 opacity-0 group-hover:opacity-100" /></div>}</div>
+  return <div><label className="block text-xs text-gray-500 mb-1">{label}</label>{editing ? (
+    options ? (
+      <div className="flex gap-2">
+        <select value={options.includes(val) ? val : ''} onChange={e => { if(e.target.value) setVal(e.target.value) }}
+          className="border border-blue-300 rounded-lg px-2 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500">
+          <option value="">Select...</option>
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+        <input ref={inputRef} type="text" value={val} onChange={e => setVal(e.target.value)} onBlur={save}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
+          className="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white" placeholder="Or type manually..." />
+      </div>
+    ) : (
+      <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
+        className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white" step={type === 'number' ? '0.01' : undefined} />
+    )
+  ) : (
+    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors flex items-center justify-between group">
+      <span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || 'Not set'}</span>
+      <Pencil size={10} className="text-gray-300 group-hover:text-blue-500 opacity-0 group-hover:opacity-100" />
+    </div>
+  )}</div>
 }

@@ -23,6 +23,9 @@ router.delete('/shipments', freightController.deleteAllShipments);
 // UPDATE - Rates
 router.put('/shipments/:id/rates', freightController.updateRates);
 
+// UPDATE - CBM
+router.put('/shipments/:id/cbm', freightController.updateCBM);
+
 // UPDATE - Nomination
 router.put('/shipments/:id/nomination', freightController.updateNomination);
 
@@ -49,5 +52,8 @@ router.put('/shipments/:id/tolocation', freightController.updateToLocation);
 
 // UPDATE - Terms
 router.put('/shipments/:id/terms', freightController.updateTerms);
+
+// UPDATE - Port Location
+router.put('/shipments/:id/portlocation', freightController.updatePortLocation);
 
 module.exports = router;

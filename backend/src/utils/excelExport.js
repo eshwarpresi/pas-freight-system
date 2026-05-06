@@ -22,10 +22,12 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Shipper', key: 'shipper', width: 24 },
     { header: 'From', key: 'fromLocation', width: 18 },
     { header: 'To', key: 'toLocation', width: 18 },
-    { header: 'Terms', key: 'terms', width: 18 },
+    { header: 'Terms', key: 'terms', width: 14 },
+    { header: 'Port Location', key: 'portLocation', width: 16 },
     { header: 'Agent', key: 'agent', width: 18 },
     { header: 'Pkgs', key: 'packages', width: 7 },
     { header: 'Weight (kg)', key: 'weight', width: 12 },
+    { header: 'CBM', key: 'cbm', width: 10 },
     { header: 'Selling Rate', key: 'rate', width: 14 },
     { header: 'Booking Date', key: 'booking', width: 15 },
     { header: 'ETD', key: 'etd', width: 14 },
@@ -47,8 +49,8 @@ async function exportShipmentsToExcel(shipments, res) {
   ];
   ws.columns = columns;
 
-  const lastCol = 'AC';
-  const colCount = 29;
+  const lastCol = 'AE';
+  const colCount = 31;
 
   // Row 1: Title
   ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD - SHIPMENT REPORT']);
@@ -91,7 +93,7 @@ async function exportShipmentsToExcel(shipments, res) {
   shipments.forEach((s, index) => {
     const ff = s.freightForwarding || {}; const cha = s.cha || {}; const acc = s.accounts || {};
     const row = ws.addRow({
-      refNo: s.refNo,
+      refNo: s.refNo || '',
       status: s.currentStatus?.replace(/_/g, ' ') || '',
       shipmentStage: s.shipmentStage || '',
       consignee: ff.consigneeName || '',
@@ -99,10 +101,12 @@ async function exportShipmentsToExcel(shipments, res) {
       fromLocation: ff.fromLocation || '',
       toLocation: ff.toLocation || '',
       terms: ff.terms || '',
+      portLocation: ff.portLocation || '',
       agent: ff.agent || '',
       packages: ff.noOfPackages || '',
       weight: ff.weight || '',
-      rate: ff.sellingRate ? `$${parseFloat(ff.sellingRate).toLocaleString()}` : '',
+      cbm: ff.cbm || '',
+      rate: ff.sellingRate ? `₹${parseFloat(ff.sellingRate).toLocaleString()}` : '',
       booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString('en-US') : '',
       etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '',
       eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
@@ -136,7 +140,7 @@ async function exportShipmentsToExcel(shipments, res) {
       stageCell.font = { name: 'Arial', size: 9, bold: true };
     }
 
-    const remCell = row.getCell(29);
+    const remCell = row.getCell(31);
     remCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
     row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
