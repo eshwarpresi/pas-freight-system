@@ -8,7 +8,7 @@ export default defineConfig({
     tailwindcss()
   ],
   build: {
-    minify: 'terser',
+    minify: 'esbuild',
     sourcemap: false,
     chunkSizeWarningLimit: 500,
     rollupOptions: {
