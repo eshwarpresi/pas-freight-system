@@ -9,7 +9,7 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
@@ -19,6 +19,7 @@ export default function Dashboard() {
   const { addToast } = useToast()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [shipmentTypeFilter, setShipmentTypeFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState([])
   const [page, setPage] = useState(1)
@@ -36,14 +37,16 @@ export default function Dashboard() {
 
   const updateSearch = (val) => { setSearch(val); setPage(1) }
   const updateStatus = (val) => { setStatusFilter(val); setPage(1) }
+  const updateShipmentTypeFilter = (val) => { setShipmentTypeFilter(val); setPage(1) }
   const toggleArchived = (val) => { setShowArchived(val); setPage(1); setSelected([]) }
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', search, statusFilter, showArchived, page, perPage],
+    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, page, perPage],
     queryFn: async () => {
       const params = { isArchived: showArchived ? 'true' : 'false', page, limit: perPage }
       if (search) params.search = search
       if (statusFilter) params.status = statusFilter
+      if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
       const res = await api.get('/freight/shipments', { params })
       return res.data
     },
@@ -94,13 +97,18 @@ export default function Dashboard() {
     return b[s]||'bg-gray-100/80 text-gray-600 ring-gray-200'
   }
 
+  const getTypeBadge = (type) => {
+    if (type === 'CHA Only') return 'bg-green-100/80 text-green-700 ring-green-200'
+    return 'bg-blue-100/80 text-blue-700 ring-blue-200'
+  }
+
   const quickFilters = [
     {l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}
   ]
 
   const startItem = totalCount===0?0:(page-1)*perPage+1
   const endItem = Math.min(page*perPage,totalCount)
-  const hasFilters = search||statusFilter
+  const hasFilters = search||statusFilter||shipmentTypeFilter
   const isEmpty = !isLoading&&!isError&&shipments.length===0
 
   const statCards = [
@@ -124,6 +132,12 @@ export default function Dashboard() {
           </h1>
         </div>
         <div className="flex items-center gap-2.5">
+          {/* Shipment Type Filter Toggle */}
+          <div className="flex bg-white/60 backdrop-blur rounded-lg p-0.5 border border-white/50 mr-1">
+            <button onClick={()=>updateShipmentTypeFilter('')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${!shipmentTypeFilter?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>All</button>
+            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>Shipments</button>
+            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}><FileCheck size={12}/>CHA Only</button>
+          </div>
           <div className="flex bg-white/60 backdrop-blur rounded-lg p-0.5 border border-white/50">
             <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${!showArchived?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>Active</button>
             <button onClick={()=>toggleArchived(true)} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all duration-200 flex items-center gap-1.5 ${showArchived?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}><Archive size={13}/>Archive</button>
@@ -218,7 +232,7 @@ export default function Dashboard() {
           <div className="w-14 h-14 bg-amber-100/80 rounded-xl flex items-center justify-center mx-auto mb-4"><FileSearch size={24} className="text-amber-500"/></div>
           <h3 className="text-base font-semibold text-gray-800 mb-1">No Results</h3>
           <p className="text-sm text-gray-500 mb-4">Try adjusting your search.</p>
-          <button onClick={()=>{updateSearch('');updateStatus('')}} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"><X size={14}/> Clear Filters</button>
+          <button onClick={()=>{updateSearch('');updateStatus('');updateShipmentTypeFilter('')}} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"><X size={14}/> Clear Filters</button>
         </div>
       )}
 
@@ -259,6 +273,7 @@ export default function Dashboard() {
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5" />
                   </th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Ref No</th>
+                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Type</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Consignee</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">HAWB</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">BOE No</th>
@@ -278,6 +293,11 @@ export default function Dashboard() {
                       <Link to={`/shipment/${s.id}`} className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors">
                         {s.refNo}
                       </Link>
+                    </td>
+                    <td className="px-3 py-3 hidden md:table-cell">
+                      <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getTypeBadge(s.shipmentType)}`}>
+                        {s.shipmentType || <span className="text-gray-300">—</span>}
+                      </span>
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-700 font-medium">
                       {s.freightForwarding?.consigneeName || <span className="text-gray-300">—</span>}

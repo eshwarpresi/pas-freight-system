@@ -54,13 +54,20 @@ const exportShipments = async (req, res) => {
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
 
-// GET ALL
+// GET ALL - UPDATED with shipmentType filter
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, page = 1, limit = 25 } = req.query;
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
     const where = { isArchived: isArchived === 'true' };
     if (status) where.currentStatus = status;
+    if (shipmentType) {
+      if (shipmentType === 'CHA_ONLY') {
+        where.shipmentType = 'CHA Only';
+      } else if (shipmentType === 'FULL_SHIPMENT') {
+        where.NOT = { shipmentType: 'CHA Only' };
+      }
+    }
     if (search) where.OR = [
       { refNo: { contains: search } },
       { freightForwarding: { consigneeName: { contains: search } } },
@@ -72,7 +79,7 @@ const getAllShipments = async (req, res) => {
       prisma.shipment.findMany({ 
         where, 
         select: { 
-          id: true, refNo: true, currentStatus: true, shipmentStage: true, createdAt: true, 
+          id: true, refNo: true, currentStatus: true, shipmentStage: true, shipmentType: true, createdAt: true, 
           freightForwarding: { select: { consigneeName: true, hawb: true } },
           cha: { select: { boeNo: true } }
         }, 
