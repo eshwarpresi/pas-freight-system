@@ -18,6 +18,10 @@ const STAGE_COLORS = {
 }
 const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
 const IMPORT_EXPORT_OPTIONS = ['Import', 'Export']
+const COUNTRY_PORTS = ['SINGAPORE', 'MALAYSIA', 'CHINA', 'HONG KONG', 'JAPAN', 'SOUTH KOREA', 'TAIWAN', 'THAILAND', 'VIETNAM', 'INDONESIA', 'USA', 'UK', 'GERMANY', 'NETHERLANDS', 'FRANCE', 'ITALY', 'SPAIN', 'UAE', 'SAUDI ARABIA', 'AUSTRALIA']
+const INDIA_PORTS = ['BANGALORE', 'CHENNAI', 'MUMBAI', 'DELHI', 'HYDERABAD', 'KOLKATA', 'AHMEDABAD', 'PUNE', 'COCHIN', 'TUTICORIN', 'VISAKHAPATNAM', 'MUNDRA', 'NHAVA SHEVA', 'KATTUPALLI', 'ENNORE']
+const TERMS_OPTIONS = ['EXW', 'FOB', 'FCA', 'CIF', 'DDP', 'DAP', 'DAT', 'CPT', 'CIP', 'FAS', 'CFR']
+const PORT_LOCATIONS = ['SIN', 'INBLR4', 'INMAA4', 'INBOM4', 'INDEA4', 'INHYD4', 'INCCU4', 'INAMD4', 'INPNQ4', 'INCOK4', 'INTUT4', 'INVTZ4', 'INMUN4', 'INNSV4', 'INKAT4', 'INENR4']
 
 const FULL_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',d:'Pricing added',i:DollarSign},{s:'NOMINATED',l:'Nominated',d:'Agent assigned',i:User},
@@ -43,6 +47,24 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
     return <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="border border-indigo-300 rounded px-2 py-1 text-sm bg-white focus:ring-2 focus:ring-indigo-500 w-full" step={type === 'number' ? '0.01' : undefined} />
   }
   return <div onClick={() => setEditing(true)} className={`cursor-pointer group flex items-center gap-1 ${className}`}><span className={value ? '' : 'text-gray-400 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
+}
+
+// Combo field: dropdown + manual input side by side
+function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }) {
+  const isInOptions = options.includes(value || '')
+  return (
+    <div>
+      <label className="block text-xs text-indigo-400 mb-1">{label}</label>
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" />
+        </div>
+        <div className="flex-1">
+          <InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} />
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function ShipmentDetail() {
@@ -187,18 +209,24 @@ export default function ShipmentDetail() {
         </div>
       </div>
       
-      {/* Tabs - Desktop */}
+      {/* Tabs */}
       <div className="hidden sm:flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 border border-indigo-100">
         {tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500 hover:text-indigo-500'}`}><Icon size={16}/><span>{t.l}</span></button>})}
       </div>
-      {/* Tabs - Mobile scrollable */}
       <div className="sm:hidden flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 overflow-x-auto border border-indigo-100">
         {tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500'}`}><Icon size={14}/>{t.l}</button>})}
       </div>
 
       <div className="bg-white rounded-xl border border-indigo-100 p-4 sm:p-6 shadow-sm">
         {activeTab==='freight'&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
-          <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /><Field label="Terms" value={ff.terms} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} /><Field label="Port Location" value={ff.portLocation} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} /></div></Section>
+          <Section title="Route Details" icon={MapPinned}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." />
+              <ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." />
+              <ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." />
+              <ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." />
+            </div>
+          </Section>
           <Section title="Rates" icon={DollarSign}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Selling Rate (₹)" value={ff.sellingRate} onSave={v => updateMutation.mutate({ section: 'rates', data: { sellingRate: v } })} type="number" /><Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /><Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" /></div></Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
