@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -16,7 +16,25 @@ const STAGE_COLORS = {
   'Booked': 'bg-purple-100 text-purple-700', 'Scheduled': 'bg-cyan-100 text-cyan-700', 'In Progress': 'bg-yellow-100 text-yellow-700',
   'Completed': 'bg-green-100 text-green-700', 'Cancelled': 'bg-red-100 text-red-700', 'On Hold': 'bg-orange-100 text-orange-700',
 }
-const SHIPMENT_TYPES = ['AIR', 'SEA FCL', 'SEA LCL', 'Domestic Courier', 'International Courier']
+const MODE_OPTIONS = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
+const IMPORT_EXPORT_OPTIONS = ['Import', 'Export']
+
+// Full Shipment steps
+const FULL_STEPS = [
+  {s:'ENQUIRY',l:'Enquiry',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',i:DollarSign},{s:'NOMINATED',l:'Nominated',i:User},
+  {s:'BOOKED',l:'Booked',i:Calendar},{s:'SCHEDULED',l:'Scheduled',i:Clock},{s:'AWB_GENERATED',l:'AWB',i:Barcode},
+  {s:'CHECKLIST_APPROVED',l:'Checklist',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',i:FileText},{s:'DO_COLLECTED',l:'DO',i:FileCheck},
+  {s:'OOC_DONE',l:'OOC',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',i:Truck},{s:'DELIVERED',l:'Delivered',i:MapPin},
+  {s:'INVOICE_GENERATED',l:'Invoice',i:Banknote},{s:'INVOICE_SENT',l:'Sent',i:Send}
+]
+
+// CHA Only steps - skip freight-specific steps
+const CHA_STEPS = [
+  {s:'ENQUIRY',l:'Enquiry',i:ClipboardList},
+  {s:'CHECKLIST_APPROVED',l:'Checklist',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',i:FileText},{s:'DO_COLLECTED',l:'DO',i:FileCheck},
+  {s:'OOC_DONE',l:'OOC',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',i:Truck},{s:'DELIVERED',l:'Delivered',i:MapPin},
+  {s:'INVOICE_GENERATED',l:'Invoice',i:Banknote},{s:'INVOICE_SENT',l:'Sent',i:Send}
+]
 
 function InlineField({ value, onSave, type = 'text', placeholder = '—', className = '', options = null }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
@@ -31,7 +49,7 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
 }
 
 export default function ShipmentDetail() {
-  const { id } = useParams(); const { addToast } = useToast(); const [activeTab, setActiveTab] = useState('freight'); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
+  const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const [activeTab, setActiveTab] = useState('freight'); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
   
   const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
@@ -39,10 +57,24 @@ export default function ShipmentDetail() {
     staleTime: 0,
   })
 
+  const isCHAOnly = shipment?.shipmentType === 'CHA Only'
+  const steps = isCHAOnly ? CHA_STEPS : FULL_STEPS
+  const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
+
+  // Set active tab from URL param or default based on shipment type
+  useEffect(() => {
+    const tabParam = searchParams.get('tab')
+    if (tabParam && ['freight', 'cha', 'accounts', 'history'].includes(tabParam)) {
+      setActiveTab(tabParam)
+    } else if (isCHAOnly) {
+      setActiveTab('cha')
+    }
+  }, [searchParams, shipment])
+
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
-        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'}
+        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'}
       }
       return api[eps[section].m](eps[section].u, data)
     },
@@ -70,7 +102,8 @@ export default function ShipmentDetail() {
       @media print{body{padding:20px}}</style></head><body>
       <div class="header"><div><h1>🚢 PAS Freight Services Pvt Ltd</h1><p>Shipment Details Report</p></div><p>${new Date().toLocaleDateString()}</p></div>
       <div class="ref-box"><div class="ref">${shipment.refNo}</div><div class="stage">${shipment.currentStatus.replace(/_/g,' ')}</div></div>
-      ${shipment.shipmentType?`<p style="margin-bottom:15px"><strong>Type:</strong> ${shipment.shipmentType}</p>`:''}
+      ${shipment.shipmentType?`<p style="margin-bottom:15px"><strong>Mode:</strong> ${shipment.shipmentType}</p>`:''}
+      ${shipment.importExport?`<p style="margin-bottom:15px"><strong>Import/Export:</strong> ${shipment.importExport}</p>`:''}
       ${shipment.shipmentStage?`<p style="margin-bottom:15px"><strong>Stage:</strong> ${shipment.shipmentStage}</p>`:''}
       <div class="section"><h2>📦 Freight Forwarding</h2><div class="grid">
       <div class="item"><label>Consignee</label><span>${ff.consigneeName||'—'}</span></div><div class="item"><label>Shipper</label><span>${ff.shipperName||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Terms</label><span>${ff.terms||'—'}</span></div><div class="item"><label>Port Location</label><span>${ff.portLocation||'—'}</span></div><div class="item"><label>Agent</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Packages</label><span>${ff.noOfPackages||'—'}</span></div><div class="item"><label>Selling Rate</label><span>${ff.sellingRate?'₹'+ff.sellingRate:'—'}</span></div><div class="item"><label>Weight</label><span>${ff.weight?ff.weight+' kg':'—'}</span></div><div class="item"><label>CBM</label><span>${ff.cbm||'—'}</span></div><div class="item"><label>Booking Date</label><span>${fmt(ff.bookingDate)}</span></div><div class="item"><label>ETD</label><span>${fmt(ff.etd)}</span></div><div class="item"><label>ETA</label><span>${fmt(ff.eta)}</span></div><div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>AWB Date</label><span>${fmt(ff.awbDate)}</span></div></div></div>
@@ -84,26 +117,55 @@ export default function ShipmentDetail() {
 
   const copyToClipboard = (text, key) => { navigator.clipboard.writeText(text); setCopied(key); addToast('Copied!', 'info'); setTimeout(() => setCopied(null), 2000) }
   const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-amber-50 text-amber-700 border-amber-200','RATES_ADDED':'bg-sky-50 text-sky-700 border-sky-200','NOMINATED':'bg-violet-50 text-violet-700 border-violet-200','BOOKED':'bg-indigo-50 text-indigo-700 border-indigo-200','SCHEDULED':'bg-cyan-50 text-cyan-700 border-cyan-200','AWB_GENERATED':'bg-teal-50 text-teal-700 border-teal-200','CHECKLIST_APPROVED':'bg-emerald-50 text-emerald-700 border-emerald-200','BOE_FILED':'bg-lime-50 text-lime-700 border-lime-200','DO_COLLECTED':'bg-green-50 text-green-700 border-green-200','OOC_DONE':'bg-blue-50 text-blue-700 border-blue-200','GATE_PASS':'bg-purple-50 text-purple-700 border-purple-200','DELIVERED':'bg-green-100 text-green-800 border-green-300','INVOICE_GENERATED':'bg-orange-50 text-orange-700 border-orange-200','INVOICE_SENT':'bg-rose-50 text-rose-700 border-rose-200','COMPLETED':'bg-gray-100 text-gray-700 border-gray-300'}; return b[s]||'bg-gray-50 text-gray-600 border-gray-200' }
-  const steps = [{s:'ENQUIRY',l:'Enquiry',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',i:DollarSign},{s:'NOMINATED',l:'Nominated',i:User},{s:'BOOKED',l:'Booked',i:Calendar},{s:'SCHEDULED',l:'Scheduled',i:Clock},{s:'AWB_GENERATED',l:'AWB',i:Barcode},{s:'CHECKLIST_APPROVED',l:'Checklist',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',i:FileText},{s:'DO_COLLECTED',l:'DO',i:FileCheck},{s:'OOC_DONE',l:'OOC',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',i:Truck},{s:'DELIVERED',l:'Delivered',i:MapPin},{s:'INVOICE_GENERATED',l:'Invoice',i:Banknote},{s:'INVOICE_SENT',l:'Sent',i:Send}]
-  const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
+
   if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" /></div>
   if (!shipment) return <div className="text-center py-16"><Package size={56} className="mx-auto text-gray-300 mb-4" /><h3 className="text-lg font-semibold text-gray-700">Shipment not found</h3><Link to="/" className="inline-flex items-center gap-1 mt-4 text-blue-600"><ArrowLeft size={14} />Back</Link></div>
   const ff = shipment.freightForwarding || {}; const cha = shipment.cha || {}; const accounts = shipment.accounts || {}; const Fmt = d => d ? new Date(d).toLocaleDateString() : null
+
+  // Define tabs - hide Freight for CHA Only
+  const tabs = [
+    ...(!isCHAOnly ? [{ k: 'freight', l: 'Freight', i: Ship }] : []),
+    { k: 'cha', l: 'Customs', i: FileCheck },
+    { k: 'accounts', l: 'Accounts', i: Receipt },
+    { k: 'history', l: 'Timeline', i: Clock }
+  ]
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div><Link to="/" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-3"><ArrowLeft size={15} />Back</Link>
         <div className="bg-white rounded-xl border p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><div className="flex items-center gap-3"><h1 className="text-xl font-bold">{shipment.refNo}</h1><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span></div><p className="text-sm text-gray-500 mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p></div><button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"><Printer size={16} />Print</button></div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3"><div><div className="flex items-center gap-3"><h1 className="text-xl font-bold">{shipment.refNo}</h1><span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span>{isCHAOnly && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200">CHA Only</span>}</div><p className="text-sm text-gray-500 mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p></div><button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"><Printer size={16} />Print</button></div>
           <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-gray-100">
-            <div className="flex items-center gap-2"><Luggage size={14} className="text-gray-400" /><span className="text-xs text-gray-500 font-medium">Type:</span><InlineField value={shipment.shipmentType} options={SHIPMENT_TYPES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set type" /></div>
+            <div className="flex items-center gap-2"><Luggage size={14} className="text-gray-400" /><span className="text-xs text-gray-500 font-medium">Mode:</span><InlineField value={shipment.shipmentType} options={MODE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
+            <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-gray-400" /><span className="text-xs text-gray-500 font-medium">I/E:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
             <div className="flex items-center gap-2"><Flag size={14} className="text-gray-400" /><span className="text-xs text-gray-500 font-medium">Stage:</span><InlineField value={shipment.shipmentStage} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage] || ''}` : ''} placeholder="Set stage" /></div>
             <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-gray-400" /><span className="text-xs text-gray-500 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
           </div>
         </div>
       </div>
-      <div className="bg-white rounded-xl border p-5 overflow-x-auto"><div className="flex items-center gap-0 min-w-max">{steps.map((step,i)=>{const Icon=step.i;const done=i<=cur;const now=i===cur;return <div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done?'opacity-100':'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${now?'border-blue-500 bg-blue-50 scale-110':done?'border-green-500 bg-green-50':'border-gray-300 bg-white'}`}>{done?<CheckCircle2 size={16} className="text-green-600"/>:<Icon size={16} className="text-gray-400"/>}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now?'text-blue-600':'text-gray-500'}`}>{step.l}</span></div>{i<steps.length-1&&<div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i<cur?'bg-green-400':'bg-gray-200'}`}/>}</div>})}</div></div>
-      <div className="flex bg-gray-100 rounded-xl p-1 gap-1">{[{k:'freight',l:'Freight',i:Ship},{k:'cha',l:'Customs',i:FileCheck},{k:'accounts',l:'Accounts',i:Receipt},{k:'history',l:'Timeline',i:Clock}].map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center ${activeTab===t.k?'bg-white text-blue-600 shadow-sm':'text-gray-500'}`}><Icon size={16}/><span className="hidden sm:inline">{t.l}</span></button>})}</div>
+      {/* Progress Bar - different steps for CHA Only vs Full Shipment */}
+      <div className="bg-white rounded-xl border p-5 overflow-x-auto">
+        <div className="flex items-center gap-0 min-w-max">
+          {steps.map((step, i) => {
+            const Icon = step.i
+            const done = i <= cur
+            const now = i === cur
+            return (
+              <div key={step.s} className="flex items-center">
+                <div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}>
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${now ? 'border-blue-500 bg-blue-50 scale-110' : done ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-white'}`}>
+                    {done ? <CheckCircle2 size={16} className="text-green-600" /> : <Icon size={16} className="text-gray-400" />}
+                  </div>
+                  <span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-blue-600' : 'text-gray-500'}`}>{step.l}</span>
+                </div>
+                {i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-green-400' : 'bg-gray-200'}`} />}
+              </div>
+            )
+          })}
+        </div>
+        {isCHAOnly && <p className="text-[10px] text-gray-400 mt-3 text-center italic">CHA Only Bill — Customs clearance workflow</p>}
+      </div>
+      <div className="flex bg-gray-100 rounded-xl p-1 gap-1">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center ${activeTab===t.k?'bg-white text-blue-600 shadow-sm':'text-gray-500'}`}><Icon size={16}/><span className="hidden sm:inline">{t.l}</span></button>})}</div>
       <div className="bg-white rounded-xl border p-6">
         {activeTab==='freight'&&<div className="space-y-4"><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
           <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-2 gap-3"><Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} /><Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} /><Field label="Terms" value={ff.terms} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} /><Field label="Port Location" value={ff.portLocation} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} /></div></Section>

@@ -56,7 +56,10 @@ router.put('/shipments/:id/terms', freightController.updateTerms);
 // UPDATE - Port Location
 router.put('/shipments/:id/portlocation', freightController.updatePortLocation);
 
-// UPDATE - Shipment Type
+// UPDATE - Shipment Type (Mode)
 router.put('/shipments/:id/shipmenttype', freightController.updateShipmentType);
+
+// UPDATE - Import/Export
+router.put('/shipments/:id/importexport', freightController.updateImportExport);
 
 module.exports = router;

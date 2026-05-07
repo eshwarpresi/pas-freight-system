@@ -5,12 +5,13 @@ import { useToast } from '../components/Toast'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
-  FileCheck
+  FileCheck, ArrowUpDown
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 const DRAFT_KEY = 'pas_shipment_draft'
-const SHIPMENT_TYPES = ['AIR', 'SEA FCL', 'SEA LCL', 'Domestic Courier', 'International Courier']
+const IMPORT_EXPORT_TYPES = ['Import', 'Export']
+const MODE_TYPES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
 
 export default function CreateShipment() {
   const navigate = useNavigate()
@@ -33,7 +34,7 @@ export default function CreateShipment() {
   const [formData, setFormData] = useState(() => {
     const saved = localStorage.getItem(DRAFT_KEY)
     if (saved) { try { return JSON.parse(saved) } catch {} }
-    return { refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', shipmentType: '' }
+    return { refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '' }
   })
 
   useEffect(() => {
@@ -78,7 +79,7 @@ export default function CreateShipment() {
         refNo: formData.refNo || generateRefNo(),
         enquiryDate: formData.enquiryDate || new Date().toISOString().split('T')[0],
         noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
-        shipmentType: isCHAOnly ? 'CHA Only' : (formData.shipmentType || '')
+        shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '')
       }
       const response = await api.post('/freight/shipments', submitData)
       localStorage.removeItem(DRAFT_KEY)
@@ -94,7 +95,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', shipmentType: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '' })
     setErrors({}); setTouched({}); setIsCHAOnly(false)
     addToast('Draft cleared', 'info')
   }
@@ -111,7 +112,7 @@ export default function CreateShipment() {
             {isCHAOnly ? <FileCheck size={20} className="text-green-600" /> : <Ship size={20} className="text-blue-600" />}
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">{isCHAOnly ? 'New CHA Bill' : 'New Shipment Enquiry'}</h2>
+            <h2 className="text-2xl font-bold text-gray-900">{isCHAOnly ? 'New CHA Bill' : 'New FF Shipment'}</h2>
             <p className="text-sm text-gray-500 mt-0.5">{isCHAOnly ? 'Customs clearance only' : 'Create a new freight forwarding shipment'}</p>
           </div>
         </div>
@@ -121,7 +122,7 @@ export default function CreateShipment() {
       <div className="mb-6 flex bg-gray-100 rounded-xl p-1">
         <button type="button" onClick={() => setIsCHAOnly(false)}
           className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${!isCHAOnly ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-          🚢 Full Shipment
+          🚢 FF Shipment
         </button>
         <button type="button" onClick={() => setIsCHAOnly(true)}
           className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${isCHAOnly ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
@@ -139,7 +140,7 @@ export default function CreateShipment() {
       <form onSubmit={handleSubmit}>
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
 
-          {/* Reference Details - ONLY for Full Shipment */}
+          {/* Reference Details - ONLY for FF Shipment */}
           {!isCHAOnly && (
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-center gap-2 mb-4"><Hash size={16} className="text-blue-500" /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Reference Details</h3></div>
@@ -167,7 +168,7 @@ export default function CreateShipment() {
             </div>
           )}
 
-          {/* Shipment Details - ONLY for Full Shipment */}
+          {/* Shipment Details - ONLY for FF Shipment */}
           {!isCHAOnly && (
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-center gap-2 mb-4"><Ship size={16} className="text-blue-500" /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Shipment Details</h3></div>
@@ -181,14 +182,29 @@ export default function CreateShipment() {
                   {errors.noOfPackages && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={12} />{errors.noOfPackages}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export Type</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Mode</label>
                   <div className="flex gap-2">
-                    <select name="shipmentType" value={SHIPMENT_TYPES.includes(formData.shipmentType) ? formData.shipmentType : ''} onChange={handleChange}
+                    <select name="mode" value={MODE_TYPES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
+                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                      <option value="">Select mode...</option>
+                      {MODE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <input type="text" name="mode" value={!MODE_TYPES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
+                      placeholder="Or type..."
+                      className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
+                  <div className="flex gap-2">
+                    <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
                       className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
                       <option value="">Select type...</option>
-                      {SHIPMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      {IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
-                    <input type="text" name="shipmentType" value={!SHIPMENT_TYPES.includes(formData.shipmentType) ? formData.shipmentType : ''} onChange={handleChange}
+                    <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
                       placeholder="Or type..."
                       className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>

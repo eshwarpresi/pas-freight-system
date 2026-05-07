@@ -18,7 +18,8 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Ref No', key: 'refNo', width: 18 },
     { header: 'Status', key: 'status', width: 18 },
     { header: 'Stage', key: 'shipmentStage', width: 16 },
-    { header: 'Import / Export Type', key: 'shipmentType', width: 22 },
+    { header: 'Mode', key: 'mode', width: 14 },
+    { header: 'Import / Export', key: 'importExport', width: 16 },
     { header: 'Consignee', key: 'consignee', width: 24 },
     { header: 'Shipper', key: 'shipper', width: 24 },
     { header: 'From', key: 'fromLocation', width: 18 },
@@ -50,8 +51,8 @@ async function exportShipmentsToExcel(shipments, res) {
   ];
   ws.columns = columns;
 
-  const lastCol = 'AF';
-  const colCount = 32;
+  const lastCol = 'AG';
+  const colCount = 33;
 
   // Row 1: Title
   ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD - SHIPMENT REPORT']);
@@ -97,7 +98,8 @@ async function exportShipmentsToExcel(shipments, res) {
       refNo: s.refNo || '',
       status: s.currentStatus?.replace(/_/g, ' ') || '',
       shipmentStage: s.shipmentStage || '',
-      shipmentType: s.shipmentType || '',
+      mode: s.shipmentType || '',
+      importExport: s.importExport || '',
       consignee: ff.consigneeName || '',
       shipper: ff.shipperName || '',
       fromLocation: ff.fromLocation || '',
@@ -142,7 +144,14 @@ async function exportShipmentsToExcel(shipments, res) {
       stageCell.font = { name: 'Arial', size: 9, bold: true };
     }
 
-    const remCell = row.getCell(32);
+    // Color CHA Only rows green
+    if (s.shipmentType === 'CHA Only') {
+      const modeCell = row.getCell(4);
+      modeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DCFCE7' } };
+      modeCell.font = { name: 'Arial', size: 9, bold: true, color: { argb: '166534' } };
+    }
+
+    const remCell = row.getCell(33);
     remCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
     row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
