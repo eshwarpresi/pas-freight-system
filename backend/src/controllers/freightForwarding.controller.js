@@ -1,4 +1,5 @@
 const prisma = require('../utils/prisma');
+const { exportShipmentsToExcel } = require('../utils/excelExport');
 
 const fullShipmentSelect = (id) => ({
   where: { id },
@@ -54,7 +55,7 @@ const deleteAllShipments = async (req, res) => {
   try { await prisma.statusHistory.deleteMany({}); await prisma.freightForwarding.deleteMany({}); await prisma.cHA.deleteMany({}); await prisma.accounts.deleteMany({}); await prisma.shipment.deleteMany({}); res.json({ status: 'success', message: 'All shipments deleted' }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed to delete all' }); }
 };
 
-// EXPORT - added importExport
+// EXPORT
 const exportShipments = async (req, res) => {
   try {
     const { status, search, isArchived } = req.query;
@@ -73,7 +74,6 @@ const exportShipments = async (req, res) => {
       const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, shipmentType: true, importExport: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
       all = all.concat(batch);
     }
-    const { exportShipmentsToExcel } = require('../utils/excelExport');
     await exportShipmentsToExcel(all, res);
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
