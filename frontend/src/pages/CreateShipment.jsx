@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
-  FileCheck, ArrowUpDown
+  FileCheck, ArrowUpDown, Barcode, Weight
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
@@ -34,7 +34,12 @@ export default function CreateShipment() {
   const [formData, setFormData] = useState(() => {
     const saved = localStorage.getItem(DRAFT_KEY)
     if (saved) { try { return JSON.parse(saved) } catch {} }
-    return { refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '' }
+    return { 
+      refNo: '', enquiryDate: new Date().toISOString().split('T')[0], 
+      noOfPackages: '', consigneeName: '', shipperName: '', agent: '', 
+      importExport: '', mode: '',
+      hawb: '', mawb: '', awbDate: '', weight: ''
+    }
   })
 
   useEffect(() => {
@@ -62,7 +67,8 @@ export default function CreateShipment() {
     if (!formData.consigneeName.trim()) newErrors.consigneeName = 'Consignee name is required'
     if (!formData.shipperName.trim()) newErrors.shipperName = 'Shipper name is required'
     if (!isCHAOnly && !formData.refNo.trim()) newErrors.refNo = 'Reference number is required'
-    if (!isCHAOnly && formData.noOfPackages && parseInt(formData.noOfPackages) < 1) newErrors.noOfPackages = 'Must be at least 1'
+    if (formData.noOfPackages && parseInt(formData.noOfPackages) < 1) newErrors.noOfPackages = 'Must be at least 1'
+    if (formData.weight && parseFloat(formData.weight) < 0) newErrors.weight = 'Must be positive'
     setErrors(newErrors)
     setTouched({ refNo: !isCHAOnly, consigneeName: true, shipperName: true })
     if (Object.keys(newErrors).length > 0) { addToast('Please fix the validation errors', 'warning'); return false }
@@ -79,6 +85,7 @@ export default function CreateShipment() {
         refNo: formData.refNo || generateRefNo(),
         enquiryDate: formData.enquiryDate || new Date().toISOString().split('T')[0],
         noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
+        weight: formData.weight ? parseFloat(formData.weight) : null,
         shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '')
       }
       const response = await api.post('/freight/shipments', submitData)
@@ -95,7 +102,12 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '' })
+    setFormData({ 
+      refNo: '', enquiryDate: new Date().toISOString().split('T')[0], 
+      noOfPackages: '', consigneeName: '', shipperName: '', agent: '', 
+      importExport: '', mode: '',
+      hawb: '', mawb: '', awbDate: '', weight: ''
+    })
     setErrors({}); setTouched({}); setIsCHAOnly(false)
     addToast('Draft cleared', 'info')
   }
@@ -213,15 +225,97 @@ export default function CreateShipment() {
             </div>
           )}
 
+          {/* CHA Only - Import/Export + Mode + HAWB/MAWB Details */}
+          {isCHAOnly && (
+            <div className="p-6 border-b border-gray-100">
+              <div className="flex items-center gap-2 mb-4"><FileCheck size={16} className="text-green-500" /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">CHA Bill Details</h3></div>
+              
+              {/* Row 1: Import/Export + Mode */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
+                  <div className="flex gap-2">
+                    <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
+                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white">
+                      <option value="">Select type...</option>
+                      {IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
+                      placeholder="Or type..."
+                      className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Mode</label>
+                  <div className="flex gap-2">
+                    <select name="mode" value={MODE_TYPES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
+                      className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white">
+                      <option value="">Select mode...</option>
+                      {MODE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <input type="text" name="mode" value={!MODE_TYPES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
+                      placeholder="Or type..."
+                      className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 2: HAWB + MAWB */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB No</label>
+                  <div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="text" name="hawb" value={formData.hawb} onChange={handleChange} placeholder="e.g., 123-45678901"
+                      className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">MAWB No</label>
+                  <div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="text" name="mawb" value={formData.mawb} onChange={handleChange} placeholder="e.g., 125-45678902"
+                      className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: HAWB/MAWB Date + No of Packages + Weight */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB / MAWB Date</label>
+                  <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange}
+                      className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">No of Packages</label>
+                  <div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} placeholder="e.g., 5" min="1"
+                      className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 ${errors.noOfPackages ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+                  </div>
+                  {errors.noOfPackages && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={12} />{errors.noOfPackages}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Package Weight (kg)</label>
+                  <div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="number" name="weight" value={formData.weight} onChange={handleChange} placeholder="e.g., 250.5" min="0" step="0.01"
+                      className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 ${errors.weight ? 'border-red-300 bg-red-50' : 'border-gray-300'}`} />
+                  </div>
+                  {errors.weight && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={12} />{errors.weight}</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Parties Involved - Always shown */}
           <div className="p-6 border-b border-gray-100">
-            <div className="flex items-center gap-2 mb-4"><Building2 size={16} className="text-blue-500" /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Parties Involved</h3></div>
+            <div className="flex items-center gap-2 mb-4"><Building2 size={16} className={isCHAOnly ? 'text-green-500' : 'text-blue-500'} /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Parties Involved</h3></div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label>
                 <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} onBlur={handleBlur} placeholder="e.g., ABC Imports Ltd"
-                    className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${getFieldClass('consigneeName')}`} />
+                    className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${isCHAOnly ? 'focus:ring-green-500' : 'focus:ring-blue-500'} ${getFieldClass('consigneeName')}`} />
                 </div>
                 {errors.consigneeName && touched.consigneeName && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={12} />{errors.consigneeName}</p>}
               </div>
@@ -229,7 +323,7 @@ export default function CreateShipment() {
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label>
                 <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} onBlur={handleBlur} placeholder="e.g., XYZ Exports Co"
-                    className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${getFieldClass('shipperName')}`} />
+                    className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${isCHAOnly ? 'focus:ring-green-500' : 'focus:ring-blue-500'} ${getFieldClass('shipperName')}`} />
                 </div>
                 {errors.shipperName && touched.shipperName && <p className="text-xs text-red-500 mt-1 flex items-center gap-1"><AlertCircle size={12} />{errors.shipperName}</p>}
               </div>
@@ -238,11 +332,11 @@ export default function CreateShipment() {
 
           {/* Agent - Always shown */}
           <div className="p-6">
-            <div className="flex items-center gap-2 mb-4"><Globe size={16} className="text-blue-500" /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Agent Information</h3></div>
+            <div className="flex items-center gap-2 mb-4"><Globe size={16} className={isCHAOnly ? 'text-green-500' : 'text-blue-500'} /><h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Agent Information</h3></div>
             <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label>
               <div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" name="agent" value={formData.agent} onChange={handleChange} placeholder="e.g., Global Freight Agents"
-                  className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${isCHAOnly ? 'focus:ring-green-500' : 'focus:ring-blue-500'}`} />
               </div>
             </div>
           </div>

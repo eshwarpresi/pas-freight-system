@@ -5,15 +5,39 @@ const fullShipmentSelect = (id) => ({
   include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 20 } }
 });
 
-// CREATE NEW SHIPMENT - added importExport
+// CREATE NEW SHIPMENT - added hawb, mawb, awbDate, weight for CHA bills
 const createShipment = async (req, res) => {
   try {
-    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport } = req.body;
+    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const exists = await prisma.shipment.findUnique({ where: { refNo }, select: { id: true } });
     if (exists) return res.status(400).json({ status: 'error', message: 'Shipment with this Reference Number already exists' });
     const shipment = await prisma.shipment.create({
-      data: { refNo, currentStatus: 'ENQUIRY', shipmentType, importExport, freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent } }, statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo} | Consignee: ${consigneeName || 'N/A'} | Shipper: ${shipperName || 'N/A'}` } } },
+      data: { 
+        refNo, 
+        currentStatus: 'ENQUIRY', 
+        shipmentType, 
+        importExport, 
+        freightForwarding: { 
+          create: { 
+            enquiryDate: enquiryDate ? new Date(enquiryDate) : null, 
+            noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, 
+            consigneeName, 
+            shipperName, 
+            agent,
+            hawb: hawb || null,
+            mawb: mawb || null,
+            awbDate: awbDate ? new Date(awbDate) : null,
+            weight: weight ? parseFloat(weight) : null
+          } 
+        }, 
+        statusHistory: { 
+          create: { 
+            status: 'ENQUIRY', 
+            remarks: `Shipment created | Ref: ${refNo} | Consignee: ${consigneeName || 'N/A'} | Shipper: ${shipperName || 'N/A'}` 
+          } 
+        } 
+      },
       include: { freightForwarding: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
     });
     res.status(201).json({ status: 'success', data: shipment });

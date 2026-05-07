@@ -97,9 +97,16 @@ export default function Dashboard() {
     return b[s]||'bg-gray-100/80 text-gray-600 ring-gray-200'
   }
 
-  const getTypeBadge = (type) => {
+  const getModeBadge = (type) => {
     if (type === 'CHA Only') return 'bg-green-100/80 text-green-700 ring-green-200'
+    if (!type) return 'bg-gray-100/80 text-gray-400 ring-gray-200'
     return 'bg-blue-100/80 text-blue-700 ring-blue-200'
+  }
+
+  const getImportExportBadge = (val) => {
+    if (val === 'Import') return 'bg-purple-100/80 text-purple-700 ring-purple-200'
+    if (val === 'Export') return 'bg-orange-100/80 text-orange-700 ring-orange-200'
+    return 'bg-gray-100/80 text-gray-400 ring-gray-200'
   }
 
   const quickFilters = [
@@ -135,8 +142,8 @@ export default function Dashboard() {
           {/* Shipment Type Filter Toggle */}
           <div className="flex bg-white/60 backdrop-blur rounded-lg p-0.5 border border-white/50 mr-1">
             <button onClick={()=>updateShipmentTypeFilter('')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${!shipmentTypeFilter?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>All</button>
-            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>Shipments</button>
-            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}><FileCheck size={12}/>CHA Only</button>
+            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>FF</button>
+            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}><FileCheck size={12}/>CHA</button>
           </div>
           <div className="flex bg-white/60 backdrop-blur rounded-lg p-0.5 border border-white/50">
             <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${!showArchived?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>Active</button>
@@ -273,7 +280,8 @@ export default function Dashboard() {
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5" />
                   </th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Ref No</th>
-                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Type</th>
+                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Mode</th>
+                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">I/E</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Consignee</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">HAWB</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">BOE No</th>
@@ -295,8 +303,13 @@ export default function Dashboard() {
                       </Link>
                     </td>
                     <td className="px-3 py-3 hidden md:table-cell">
-                      <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getTypeBadge(s.shipmentType)}`}>
-                        {s.shipmentType || <span className="text-gray-300">—</span>}
+                      <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>
+                        {s.shipmentType || '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 hidden lg:table-cell">
+                      <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>
+                        {s.importExport || '—'}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-sm text-gray-700 font-medium">
