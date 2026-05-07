@@ -9,143 +9,124 @@ async function exportShipmentsToExcel(shipments, res) {
   const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold'];
   const STAGE_COLORS = { 'Draft': 'E5E7EB', 'Created': 'DBEAFE', 'Confirmed': 'FEF3C7', 'Booked': 'DDD6FE', 'Scheduled': 'CFFAFE', 'In Progress': 'FEF9C3', 'Completed': 'DCFCE7', 'Cancelled': 'FEE2E2', 'On Hold': 'FED7AA' };
 
-  // Pre-calculate counts for reuse
   const chaBillCount = shipments.filter(s => s.shipmentType === 'CHA Only').length;
   const freightShipmentCount = shipments.length - chaBillCount;
+  const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 
   // =============================================
-  // SHEET 1: SHIPMENTS - All details
+  // SHEET 1: ALL SHIPMENTS
   // =============================================
-  const ws = workbook.addWorksheet('Shipments', {
+  const ws = workbook.addWorksheet('All Shipments', {
     properties: { tabColor: { argb: '1E40AF' } },
     pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
   });
 
   const columns = [
-    // BASIC INFO
     { header: 'Ref No', key: 'refNo', width: 18 },
     { header: 'Status', key: 'status', width: 18 },
-    { header: 'Stage', key: 'shipmentStage', width: 16 },
+    { header: 'Stage', key: 'stage', width: 16 },
     { header: 'Transport Mode', key: 'mode', width: 16 },
-    { header: 'Import / Export', key: 'importExport', width: 16 },
-    { header: 'Shipment Type', key: 'shipmentType', width: 16 },
-    // PARTIES
+    { header: 'Import/Export', key: 'importExport', width: 14 },
+    { header: 'Type', key: 'type', width: 20 },
     { header: 'Consignee', key: 'consignee', width: 24 },
     { header: 'Shipper', key: 'shipper', width: 24 },
-    { header: 'Agent / Forwarder', key: 'agent', width: 20 },
-    // ROUTE
-    { header: 'From', key: 'fromLocation', width: 18 },
-    { header: 'To', key: 'toLocation', width: 18 },
-    { header: 'Terms', key: 'terms', width: 14 },
-    { header: 'Port Location', key: 'portLocation', width: 16 },
-    // CARGO
-    { header: 'No of Pkgs', key: 'packages', width: 10 },
+    { header: 'Agent', key: 'agent', width: 20 },
+    { header: 'From', key: 'from', width: 18 },
+    { header: 'To', key: 'to', width: 18 },
+    { header: 'Terms', key: 'terms', width: 12 },
+    { header: 'Port', key: 'port', width: 16 },
+    { header: 'Pkgs', key: 'pkgs', width: 8 },
     { header: 'Weight (kg)', key: 'weight', width: 12 },
     { header: 'CBM', key: 'cbm', width: 10 },
-    { header: 'Selling Rate (₹)', key: 'rate', width: 16 },
-    // FREIGHT DATES
-    { header: 'Enquiry Date', key: 'enquiryDate', width: 15 },
-    { header: 'Booking Date', key: 'booking', width: 15 },
+    { header: 'Rate (₹)', key: 'rate', width: 14 },
+    { header: 'Booking', key: 'booking', width: 14 },
     { header: 'ETD', key: 'etd', width: 14 },
     { header: 'ETA', key: 'eta', width: 14 },
-    // AWB
-    { header: 'MAWB / MBL', key: 'mawb', width: 17 },
-    { header: 'HAWB / HBL', key: 'hawb', width: 17 },
-    { header: 'AWB Date', key: 'awbDate', width: 14 },
-    // CHA / CUSTOMS
-    { header: 'Job No', key: 'jobNo', width: 14 },
-    { header: 'Checklist Date', key: 'checklistDate', width: 15 },
+    { header: 'MAWB', key: 'mawb', width: 16 },
+    { header: 'HAWB', key: 'hawb', width: 16 },
+    { header: 'AWB Date', key: 'awbDate', width: 13 },
+    { header: 'Job No', key: 'jobNo', width: 13 },
     { header: 'BOE No', key: 'boeNo', width: 14 },
-    { header: 'BOE Date', key: 'boeDate', width: 14 },
-    { header: 'DO Collection Date', key: 'doDate', width: 18 },
-    { header: 'OOC Date', key: 'oocDate', width: 14 },
-    { header: 'Gate Pass Date', key: 'gatePass', width: 16 },
-    { header: 'Delivery Date', key: 'delivery', width: 16 },
-    { header: 'Tracking No', key: 'tracking', width: 20 },
-    // ACCOUNTS
-    { header: 'Invoice No', key: 'invoiceNo', width: 16 },
-    { header: 'Invoice Date', key: 'invoiceDate', width: 15 },
-    { header: 'Invoice Sent Date', key: 'invoiceSent', width: 17 },
-    // META
-    { header: 'Created Date', key: 'createdAt', width: 15 },
-    { header: 'Remarks', key: 'remarks', width: 35 },
+    { header: 'BOE Date', key: 'boeDate', width: 13 },
+    { header: 'DO Date', key: 'doDate', width: 13 },
+    { header: 'OOC Date', key: 'oocDate', width: 13 },
+    { header: 'Gate Pass', key: 'gatePass', width: 13 },
+    { header: 'Delivery', key: 'delivery', width: 14 },
+    { header: 'Tracking No', key: 'tracking', width: 18 },
+    { header: 'Invoice No', key: 'invoiceNo', width: 15 },
+    { header: 'Invoice Date', key: 'invoiceDate', width: 14 },
+    { header: 'Sent Date', key: 'invoiceSent', width: 13 },
+    { header: 'Created', key: 'created', width: 14 },
+    { header: 'Remarks', key: 'remarks', width: 30 },
   ];
   ws.columns = columns;
 
-  const lastCol = 'AN';
-  const colCount = 40;
+  const lastCol = 'AK';
+  const colCount = 37;
 
-  // ---- Row 1: Title ----
-  ws.insertRow(1, ['']);
+  // ---- Title ----
   ws.mergeCells(`A1:${lastCol}1`);
-  const titleCell = ws.getCell('A1');
-  titleCell.value = '🚢 PAS FREIGHT SERVICES PVT LTD — SHIPMENT EXPORT REPORT';
-  titleCell.font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FFFFFF' } };
-  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
-  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getRow(1).height = 42;
+  const t1 = ws.getCell('A1');
+  t1.value = 'PAS FREIGHT SERVICES PVT LTD';
+  t1.font = { name: 'Calibri', size: 16, bold: true, color: { argb: '1E40AF' } };
+  t1.alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(1).height = 32;
 
-  // ---- Row 2: Meta info ----
-  ws.insertRow(2, ['']);
   ws.mergeCells(`A2:${lastCol}2`);
-  const metaCell = ws.getCell('A2');
-  metaCell.value = `Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}   |   Total Shipments: ${shipments.length}   |   Freight: ${freightShipmentCount}   |   CHA Only: ${chaBillCount}`;
-  metaCell.font = { name: 'Arial', size: 10, color: { argb: '4B5563' } };
-  metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0F4FF' } };
-  metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getRow(2).height = 26;
+  const t2 = ws.getCell('A2');
+  t2.value = `Shipment Export Report  |  ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}  |  Total: ${shipments.length}  |  Freight: ${freightShipmentCount}  |  CHA: ${chaBillCount}`;
+  t2.font = { name: 'Calibri', size: 10, color: { argb: '6B7280' } };
+  t2.alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(2).height = 22;
 
-  // ---- Row 3: Column Headers ----
-  const headerRow = ws.getRow(3);
-  headerRow.height = 34;
+  // ---- Headers ----
+  const hRow = ws.getRow(3);
+  hRow.height = 30;
   columns.forEach((col, i) => {
-    const cell = headerRow.getCell(i + 1);
+    const cell = hRow.getCell(i + 1);
     cell.value = col.header;
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '2563EB' } };
+    cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
     cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = {
-      top: { style: 'medium', color: { argb: '1E3A8A' } },
-      bottom: { style: 'medium', color: { argb: '1E3A8A' } },
-      left: { style: 'thin', color: { argb: '1E40AF' } },
-      right: { style: 'thin', color: { argb: '1E40AF' } }
+      top: { style: 'thin', color: { argb: '1E3A8A' } },
+      bottom: { style: 'thin', color: { argb: '1E3A8A' } },
+      left: { style: 'thin', color: { argb: '1E3A8A' } },
+      right: { style: 'thin', color: { argb: '1E3A8A' } }
     };
   });
 
-  // Dropdown for Stage column (C = 3)
+  // Dropdown for Stage
   ws.dataValidations.add(`C4:C${3 + shipments.length + 500}`, {
     type: 'list', allowBlank: true, formulae: [`"${STAGE_OPTIONS.join(',')}"`],
-    showErrorMessage: true, errorTitle: 'Invalid Stage', error: 'Please select a valid Shipment Stage.'
+    showErrorMessage: true, errorTitle: 'Invalid Stage', error: 'Please select a valid Stage.'
   });
 
-  // ---- Data Rows ----
-  shipments.forEach((s, index) => {
-    const ff = s.freightForwarding || {}; 
-    const cha = s.cha || {}; 
+  // ---- Data ----
+  shipments.forEach((s, i) => {
+    const ff = s.freightForwarding || {};
+    const cha = s.cha || {};
     const acc = s.accounts || {};
     const isCHA = s.shipmentType === 'CHA Only';
-    
-    const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 
     const row = ws.addRow({
       refNo: s.refNo || '',
       status: s.currentStatus?.replace(/_/g, ' ') || '',
-      shipmentStage: s.shipmentStage || '',
-      mode: s.shipmentType === 'CHA Only' ? '' : (s.shipmentType || ''),
+      stage: s.shipmentStage || '',
+      mode: isCHA ? '—' : (s.shipmentType || ''),
       importExport: s.importExport || '',
-      shipmentType: isCHA ? 'CHA Only (Customs)' : 'Freight Shipment',
+      type: isCHA ? 'CHA Only' : 'Freight',
       consignee: ff.consigneeName || '',
       shipper: ff.shipperName || '',
       agent: ff.agent || '',
-      fromLocation: ff.fromLocation || '',
-      toLocation: ff.toLocation || '',
+      from: ff.fromLocation || '',
+      to: ff.toLocation || '',
       terms: ff.terms || '',
-      portLocation: ff.portLocation || '',
-      packages: ff.noOfPackages || '',
+      port: ff.portLocation || '',
+      pkgs: ff.noOfPackages || '',
       weight: ff.weight ? `${ff.weight} kg` : '',
       cbm: ff.cbm || '',
       rate: ff.sellingRate ? `₹${parseFloat(ff.sellingRate).toLocaleString('en-IN')}` : '',
-      enquiryDate: fmt(ff.enquiryDate),
       booking: fmt(ff.bookingDate),
       etd: fmt(ff.etd),
       eta: fmt(ff.eta),
@@ -153,7 +134,6 @@ async function exportShipmentsToExcel(shipments, res) {
       hawb: ff.hawb || '',
       awbDate: fmt(ff.awbDate),
       jobNo: cha.jobNo || '',
-      checklistDate: fmt(cha.checklistDate),
       boeNo: cha.boeNo || '',
       boeDate: fmt(cha.boeDate),
       doDate: fmt(cha.doCollectionDate),
@@ -164,217 +144,241 @@ async function exportShipmentsToExcel(shipments, res) {
       invoiceNo: acc.invoiceNumber || '',
       invoiceDate: fmt(acc.invoiceDate),
       invoiceSent: fmt(acc.sendingDate),
-      createdAt: fmt(s.createdAt),
+      created: fmt(s.createdAt),
       remarks: s.remarks || '',
     });
 
-    row.height = 24;
+    row.height = 22;
+    row.font = { name: 'Calibri', size: 9 };
     row.alignment = { horizontal: 'center', vertical: 'middle' };
-    row.font = { name: 'Arial', size: 9 };
 
-    // Alternating row colors
-    if (index % 2 === 0) {
-      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
-    }
+    // Alternating rows
+    if (i % 2 === 0) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F9FAFB' } };
 
-    // CHA Only rows - green tint
-    if (isCHA) {
-      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
-      const typeCell = row.getCell(6);
-      typeCell.font = { name: 'Arial', size: 9, bold: true, color: { argb: '166534' } };
-    }
+    // CHA Only - green tint
+    if (isCHA) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
 
-    // Stage column coloring
-    const stageCell = row.getCell(3);
+    // Stage color
     if (s.shipmentStage && STAGE_COLORS[s.shipmentStage]) {
-      stageCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[s.shipmentStage] } };
-      stageCell.font = { name: 'Arial', size: 9, bold: true };
+      row.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[s.shipmentStage] } };
     }
 
-    // Status badge coloring
-    const statusCell = row.getCell(2);
-    const statusColors = {
-      'DELIVERED': 'DCFCE7', 'INVOICE SENT': 'FFE4E6', 'INVOICE GENERATED': 'FFF7ED',
-      'ENQUIRY': 'FEF3C7', 'BOOKED': 'E0E7FF', 'CHECKLIST APPROVED': 'D1FAE5'
-    };
-    const currentStatusClean = s.currentStatus?.replace(/_/g, ' ');
-    if (statusColors[currentStatusClean]) {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: statusColors[currentStatusClean] } };
-    }
+    // Ref No bold
+    row.getCell(1).font = { name: 'Calibri', size: 9, bold: true, color: { argb: '1E40AF' } };
 
-    // Remarks - left aligned
-    row.getCell(40).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-
-    // Ref No - bold blue
-    row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
+    // Remarks left align
+    row.getCell(37).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
     // Borders
     row.eachCell(cell => {
       cell.border = {
-        top: { style: 'thin', color: { argb: 'D1D5DB' } },
-        left: { style: 'thin', color: { argb: 'D1D5DB' } },
-        bottom: { style: 'thin', color: { argb: 'D1D5DB' } },
-        right: { style: 'thin', color: { argb: 'D1D5DB' } }
+        top: { style: 'thin', color: { argb: 'E5E7EB' } },
+        left: { style: 'thin', color: { argb: 'E5E7EB' } },
+        bottom: { style: 'thin', color: { argb: 'E5E7EB' } },
+        right: { style: 'thin', color: { argb: 'E5E7EB' } }
       };
     });
   });
 
-  // ---- Filters & Freeze ----
+  // Freeze & Filter
   ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + shipments.length, column: colCount } };
   ws.views = [{ state: 'frozen', ySplit: 3 }];
 
-  // ---- Footer ----
-  const footerRow = ws.addRow(['']);
-  ws.mergeCells(`A${footerRow.number}:${lastCol}${footerRow.number}`);
-  ws.getCell(`A${footerRow.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential | Auto-generated Report`;
-  ws.getCell(`A${footerRow.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
-  ws.getCell(`A${footerRow.number}`).alignment = { horizontal: 'center' };
-
-  // Logo
-  try {
-    const fs = require('fs'); let lp = path.join(__dirname, '..', 'logo.webp'), ext = 'webp';
-    if (!fs.existsSync(lp)) { lp = path.join(__dirname, '..', 'logo.png'); ext = 'png'; }
-    if (fs.existsSync(lp)) { const id = workbook.addImage({ filename: lp, extension: ext }); ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 90, height: 50 } }); }
-  } catch (e) {}
+  // Footer
+  const fr = ws.addRow(['']);
+  ws.mergeCells(`A${fr.number}:${lastCol}${fr.number}`);
+  ws.getCell(`A${fr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd  |  Confidential`;
+  ws.getCell(`A${fr.number}`).font = { name: 'Calibri', size: 8, italic: true, color: { argb: '9CA3AF' } };
+  ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
 
   // =============================================
-  // SHEET 2: SUMMARY
+  // SHEET 2: SUMMARY DASHBOARD
   // =============================================
   const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '059669' } } });
-  
-  // Title
-  ss.mergeCells('A1:F1');
-  const ssTitle = ss.getCell('A1');
-  ssTitle.value = '📊 SHIPMENT SUMMARY';
-  ssTitle.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFF' } };
-  ssTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '059669' } };
-  ssTitle.alignment = { horizontal: 'center', vertical: 'middle' };
-  ss.getRow(1).height = 36;
 
-  // Status Breakdown
-  ss.getCell('A3').value = 'STATUS BREAKDOWN';
-  ss.mergeCells('A3:C3');
-  ss.getCell('A3').font = { name: 'Arial', size: 12, bold: true, color: { argb: '059669' } };
-  ss.getRow(3).height = 24;
+  // ---- Top Cards Row ----
+  ss.mergeCells('A1:C2');
+  const card1 = ss.getCell('A1');
+  card1.value = { richText: [{ font: { size: 24, bold: true, color: { argb: '1E40AF' } }, text: `${shipments.length}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nTotal Shipments' }] };
+  card1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  card1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFF6FF' } };
+  card1.border = { top: { style: 'thin', color: { argb: 'BFDBFE' } }, bottom: { style: 'thin', color: { argb: 'BFDBFE' } }, left: { style: 'thin', color: { argb: 'BFDBFE' } }, right: { style: 'thin', color: { argb: 'BFDBFE' } } };
+  ss.getRow(1).height = 28; ss.getRow(2).height = 22;
 
-  const statusHeaders = ss.getRow(4);
-  statusHeaders.values = ['Status', 'Count', 'Percentage'];
-  statusHeaders.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-  statusHeaders.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '059669' } };
-  statusHeaders.alignment = { horizontal: 'center', vertical: 'middle' };
-  statusHeaders.height = 26;
+  ss.mergeCells('D1:F2');
+  const card2 = ss.getCell('D1');
+  card2.value = { richText: [{ font: { size: 24, bold: true, color: { argb: '059669' } }, text: `${freightShipmentCount}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nFreight Shipments' }] };
+  card2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  card2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'ECFDF5' } };
+  card2.border = { top: { style: 'thin', color: { argb: 'A7F3D0' } }, bottom: { style: 'thin', color: { argb: 'A7F3D0' } }, left: { style: 'thin', color: { argb: 'A7F3D0' } }, right: { style: 'thin', color: { argb: 'A7F3D0' } } };
+
+  ss.mergeCells('G1:I2');
+  const card3 = ss.getCell('G1');
+  card3.value = { richText: [{ font: { size: 24, bold: true, color: { argb: '16A34A' } }, text: `${chaBillCount}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nCHA Only Bills' }] };
+  card3.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  card3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
+  card3.border = { top: { style: 'thin', color: { argb: '86EFAC' } }, bottom: { style: 'thin', color: { argb: '86EFAC' } }, left: { style: 'thin', color: { argb: '86EFAC' } }, right: { style: 'thin', color: { argb: '86EFAC' } } };
+
+  // ---- Status Breakdown ----
+  ss.getCell('A4').value = 'STATUS BREAKDOWN';
+  ss.mergeCells('A4:I4');
+  ss.getCell('A4').font = { name: 'Calibri', size: 12, bold: true, color: { argb: '1E40AF' } };
+  ss.getRow(4).height = 26;
+
+  const sHead = ss.getRow(5);
+  sHead.values = ['Status', 'Count', '%', '', '', '', '', '', ''];
+  sHead.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+  sHead.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
+  sHead.alignment = { horizontal: 'center', vertical: 'middle' };
+  sHead.height = 24;
+  sHead.getCell(1).border = { top: { style: 'thin', color: { argb: '1E3A8A' } }, bottom: { style: 'thin', color: { argb: '1E3A8A' } }, left: { style: 'thin', color: { argb: '1E3A8A' } }, right: { style: 'thin', color: { argb: '1E3A8A' } } };
 
   const counts = {};
   shipments.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
   const sortedStatuses = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   sortedStatuses.forEach(([status, count]) => {
-    const r = ss.addRow({ status, count, pct: shipments.length > 0 ? `${Math.round((count / shipments.length) * 100)}%` : '0%' });
+    const r = ss.addRow([status, count, `${Math.round((count / shipments.length) * 100)}%`, '', '', '', '', '', '']);
     r.alignment = { horizontal: 'center', vertical: 'middle' };
-    r.font = { name: 'Arial', size: 10 };
+    r.font = { name: 'Calibri', size: 10 };
+    r.height = 22;
   });
-  const totalRow = ss.addRow({ status: 'TOTAL', count: shipments.length, pct: '100%' });
-  totalRow.font = { name: 'Arial', size: 10, bold: true };
-  totalRow.alignment = { horizontal: 'center' };
-  totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
+  const tr = ss.addRow(['TOTAL', shipments.length, '100%', '', '', '', '', '', '']);
+  tr.font = { name: 'Calibri', size: 10, bold: true };
+  tr.alignment = { horizontal: 'center' };
+  tr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
 
-  // Stage Breakdown
-  const stageStartRow = sortedStatuses.length + 7;
-  ss.getCell(`A${stageStartRow}`).value = 'STAGE BREAKDOWN';
-  ss.mergeCells(`A${stageStartRow}:C${stageStartRow}`);
-  ss.getCell(`A${stageStartRow}`).font = { name: 'Arial', size: 12, bold: true, color: { argb: '7C3AED' } };
-  ss.getRow(stageStartRow).height = 24;
+  // ---- Stage Breakdown ----
+  const stageStart = sortedStatuses.length + 8;
+  ss.getCell(`A${stageStart}`).value = 'STAGE BREAKDOWN';
+  ss.mergeCells(`A${stageStart}:I${stageStart}`);
+  ss.getCell(`A${stageStart}`).font = { name: 'Calibri', size: 12, bold: true, color: { argb: '7C3AED' } };
+  ss.getRow(stageStart).height = 26;
 
-  const sh2 = ss.getRow(stageStartRow + 1);
-  sh2.values = ['Stage', 'Count', 'Percentage'];
-  sh2.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-  sh2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '7C3AED' } };
-  sh2.alignment = { horizontal: 'center', vertical: 'middle' };
-  sh2.height = 26;
+  const sHead2 = ss.getRow(stageStart + 1);
+  sHead2.values = ['Stage', 'Count', '%', '', '', '', '', '', ''];
+  sHead2.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+  sHead2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '7C3AED' } };
+  sHead2.alignment = { horizontal: 'center', vertical: 'middle' };
+  sHead2.height = 24;
 
   const stageCounts = {};
   shipments.forEach(s => { const st = s.shipmentStage || 'Not Set'; stageCounts[st] = (stageCounts[st] || 0) + 1; });
   Object.entries(stageCounts).sort((a, b) => b[1] - a[1]).forEach(([stage, count]) => {
-    const r = ss.addRow({ status: stage, count, pct: shipments.length > 0 ? `${Math.round((count / shipments.length) * 100)}%` : '0%' });
-    r.alignment = { horizontal: 'center' };
-    r.font = { name: 'Arial', size: 10 };
+    const r = ss.addRow([stage, count, `${Math.round((count / shipments.length) * 100)}%`, '', '', '', '', '', '']);
+    r.alignment = { horizontal: 'center', vertical: 'middle' };
+    r.font = { name: 'Calibri', size: 10 };
+    r.height = 22;
     if (STAGE_COLORS[stage]) r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[stage] } };
   });
 
-  // Type Breakdown (Freight vs CHA)
-  const typeStartRow = stageStartRow + Object.keys(stageCounts).length + 4;
-  ss.getCell(`A${typeStartRow}`).value = 'SHIPMENT TYPE BREAKDOWN';
-  ss.mergeCells(`A${typeStartRow}:C${typeStartRow}`);
-  ss.getCell(`A${typeStartRow}`).font = { name: 'Arial', size: 12, bold: true, color: { argb: '1E40AF' } };
-  ss.getRow(typeStartRow).height = 24;
-
-  const thRow = ss.getRow(typeStartRow + 1);
-  thRow.values = ['Type', 'Count', 'Percentage'];
-  thRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-  thRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
-  thRow.alignment = { horizontal: 'center', vertical: 'middle' };
-  thRow.height = 26;
-
-  // Use pre-calculated counts (no redeclaration)
-  const frRow = ss.addRow({ status: 'Freight Shipments', count: freightShipmentCount, pct: shipments.length > 0 ? `${Math.round((freightShipmentCount / shipments.length) * 100)}%` : '0%' });
-  frRow.alignment = { horizontal: 'center' }; frRow.font = { name: 'Arial', size: 10 };
-  frRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DBEAFE' } };
-  
-  const chRow = ss.addRow({ status: 'CHA Only Bills', count: chaBillCount, pct: shipments.length > 0 ? `${Math.round((chaBillCount / shipments.length) * 100)}%` : '0%' });
-  chRow.alignment = { horizontal: 'center' }; chRow.font = { name: 'Arial', size: 10 };
-  chRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DCFCE7' } };
-
-  // Column widths
-  ss.getColumn(1).width = 28;
-  ss.getColumn(2).width = 14;
-  ss.getColumn(3).width = 16;
-  ss.getColumn(4).width = 10;
-  ss.getColumn(5).width = 10;
-  ss.getColumn(6).width = 10;
+  ss.getColumn(1).width = 22;
+  ss.getColumn(2).width = 10;
+  ss.getColumn(3).width = 10;
 
   // =============================================
-  // SHEET 3: CHA ONLY SUMMARY (if any exist)
+  // SHEET 3: CHA ONLY BILLS (detailed)
   // =============================================
   if (chaBillCount > 0) {
     const cs = workbook.addWorksheet('CHA Only Bills', { properties: { tabColor: { argb: '16A34A' } } });
-    
-    cs.mergeCells('A1:G1');
-    cs.getCell('A1').value = '🛃 CHA ONLY BILLS';
-    cs.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFF' } };
-    cs.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '16A34A' } };
-    cs.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-    cs.getRow(1).height = 36;
-
-    const chaHeaders = ['Ref No', 'Consignee', 'Shipper', 'Agent', 'HAWB', 'MAWB', 'Status'];
-    const chaRow = cs.getRow(3);
-    chaHeaders.forEach((h, i) => {
-      chaRow.getCell(i + 1).value = h;
-      chaRow.getCell(i + 1).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-      chaRow.getCell(i + 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '16A34A' } };
-      chaRow.getCell(i + 1).alignment = { horizontal: 'center', vertical: 'middle' };
-    });
-    chaRow.height = 26;
-
     const chaShipments = shipments.filter(s => s.shipmentType === 'CHA Only');
+
+    // Title
+    cs.mergeCells('A1:P1');
+    const ct = cs.getCell('A1');
+    ct.value = '🛃 CHA ONLY BILLS — DETAILED REPORT';
+    ct.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
+    ct.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '16A34A' } };
+    ct.alignment = { horizontal: 'center', vertical: 'middle' };
+    cs.getRow(1).height = 32;
+
+    cs.mergeCells('A2:P2');
+    cs.getCell('A2').value = `Total CHA Bills: ${chaBillCount}  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+    cs.getCell('A2').font = { name: 'Calibri', size: 9, color: { argb: '6B7280' } };
+    cs.getCell('A2').alignment = { horizontal: 'center' };
+    cs.getRow(2).height = 20;
+
+    const chaCols = [
+      { header: 'Ref No', key: 'ref', width: 18 },
+      { header: 'Status', key: 'status', width: 16 },
+      { header: 'Import/Export', key: 'ie', width: 13 },
+      { header: 'Consignee', key: 'con', width: 22 },
+      { header: 'Shipper', key: 'ship', width: 22 },
+      { header: 'Agent', key: 'agt', width: 18 },
+      { header: 'HAWB No', key: 'hawb', width: 17 },
+      { header: 'MAWB No', key: 'mawb', width: 17 },
+      { header: 'AWB Date', key: 'awbd', width: 13 },
+      { header: 'Pkgs', key: 'pkgs', width: 7 },
+      { header: 'Weight (kg)', key: 'wt', width: 12 },
+      { header: 'Job No', key: 'job', width: 13 },
+      { header: 'BOE No', key: 'boe', width: 14 },
+      { header: 'BOE Date', key: 'boed', width: 13 },
+      { header: 'DO Date', key: 'dod', width: 13 },
+      { header: 'OOC Date', key: 'ooc', width: 13 },
+      { header: 'Gate Pass', key: 'gp', width: 13 },
+      { header: 'Delivery', key: 'del', width: 13 },
+      { header: 'Invoice No', key: 'inv', width: 15 },
+      { header: 'Invoice Date', key: 'invd', width: 14 },
+      { header: 'Remarks', key: 'rem', width: 25 },
+    ];
+
+    const cHead = cs.getRow(3);
+    cHead.height = 28;
+    chaCols.forEach((col, i) => {
+      const cell = cHead.getCell(i + 1);
+      cell.value = col.header;
+      cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '16A34A' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = { top: { style: 'thin', color: { argb: '15803D' } }, bottom: { style: 'thin', color: { argb: '15803D' } }, left: { style: 'thin', color: { argb: '15803D' } }, right: { style: 'thin', color: { argb: '15803D' } } };
+    });
+
     chaShipments.forEach((s, i) => {
       const ff = s.freightForwarding || {};
-      const r = cs.addRow([s.refNo, ff.consigneeName || '', ff.shipperName || '', ff.agent || '', ff.hawb || '', ff.mawb || '', s.currentStatus?.replace(/_/g, ' ') || '']);
+      const cha = s.cha || {};
+      const acc = s.accounts || {};
+
+      const r = cs.addRow([
+        s.refNo,
+        s.currentStatus?.replace(/_/g, ' '),
+        s.importExport || '',
+        ff.consigneeName || '',
+        ff.shipperName || '',
+        ff.agent || '',
+        ff.hawb || '',
+        ff.mawb || '',
+        fmt(ff.awbDate),
+        ff.noOfPackages || '',
+        ff.weight ? `${ff.weight} kg` : '',
+        cha.jobNo || '',
+        cha.boeNo || '',
+        fmt(cha.boeDate),
+        fmt(cha.doCollectionDate),
+        fmt(cha.oocDate),
+        fmt(cha.gatePassDate),
+        fmt(cha.deliveryDate),
+        acc.invoiceNumber || '',
+        fmt(acc.invoiceDate),
+        s.remarks || '',
+      ]);
+
+      r.height = 22;
+      r.font = { name: 'Calibri', size: 9 };
       r.alignment = { horizontal: 'center', vertical: 'middle' };
-      r.font = { name: 'Arial', size: 10 };
       if (i % 2 === 0) r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
+      r.getCell(1).font = { name: 'Calibri', size: 9, bold: true, color: { argb: '166534' } };
+
+      r.eachCell(cell => {
+        cell.border = { top: { style: 'thin', color: { argb: 'D1D5DB' } }, left: { style: 'thin', color: { argb: 'D1D5DB' } }, bottom: { style: 'thin', color: { argb: 'D1D5DB' } }, right: { style: 'thin', color: { argb: 'D1D5DB' } } };
+      });
     });
 
     cs.getColumn(1).width = 18;
-    cs.getColumn(2).width = 24;
-    cs.getColumn(3).width = 24;
-    cs.getColumn(4).width = 20;
-    cs.getColumn(5).width = 18;
-    cs.getColumn(6).width = 18;
-    cs.getColumn(7).width = 20;
+    chaCols.forEach((col, i) => { if (col.width) cs.getColumn(i + 1).width = col.width; });
     cs.views = [{ state: 'frozen', ySplit: 3 }];
   }
 
   // =============================================
-  // SEND FILE
+  // SEND
   // =============================================
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename=PAS_Shipments_${new Date().toISOString().split('T')[0]}.xlsx`);
