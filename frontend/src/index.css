@@ -3,19 +3,25 @@
 /* Custom styles */
 body {
   font-family: 'Inter', sans-serif;
-  background: linear-gradient(135deg, #e8f0fe 0%, #ecfdf5 50%, #fff7ed 100%);
+  background: linear-gradient(135deg, #eef2ff 0%, #f0fdf4 30%, #fef3c7 60%, #fdf2f8 100%);
   min-height: 100vh;
   background-attachment: fixed;
 }
 
-/* Brand colors */
+/* Brand colors - vibrant palette */
 :root {
-  --brand-blue: #1e40af;
+  --brand-indigo: #4f46e5;
+  --brand-indigo-light: #e0e7ff;
+  --brand-blue: #3b82f6;
   --brand-blue-light: #dbeafe;
-  --brand-green: #059669;
-  --brand-green-light: #d1fae5;
-  --brand-orange: #ea580c;
-  --brand-orange-light: #fff7ed;
+  --brand-emerald: #10b981;
+  --brand-emerald-light: #d1fae5;
+  --brand-amber: #f59e0b;
+  --brand-amber-light: #fef3c7;
+  --brand-rose: #f43f5e;
+  --brand-rose-light: #ffe4e6;
+  --brand-violet: #8b5cf6;
+  --brand-violet-light: #ede9fe;
 }
 
 /* Smooth animations */
@@ -24,8 +30,39 @@ body {
   to { transform: translateY(0); opacity: 1; }
 }
 
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(79, 70, 229, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(79, 70, 229, 0.4); }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
 .animate-in {
-  animation: slide-up 0.2s ease-out;
+  animation: slide-up 0.3s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Animated gradient backgrounds */
+.bg-animated {
+  background: linear-gradient(-45deg, #eef2ff, #f0fdf4, #fef3c7, #fdf2f8);
+  background-size: 400% 400%;
+  animation: gradient-shift 15s ease infinite;
 }
 
 /* Scrollbar styling */
@@ -39,10 +76,41 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #93c5fd;
+  background: linear-gradient(180deg, #a5b4fc, #818cf8);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #1e40af;
+  background: linear-gradient(180deg, #6366f1, #4f46e5);
+}
+
+/* Glass morphism utilities */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Selection styling */
+::selection {
+  background: var(--brand-indigo-light);
+  color: var(--brand-indigo);
+}
+
+/* Focus ring styling */
+*:focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Smooth transitions for all elements */
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
 }
