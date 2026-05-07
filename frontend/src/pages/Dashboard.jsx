@@ -50,10 +50,13 @@ export default function Dashboard() {
       const res = await api.get('/freight/shipments', { params })
       return res.data
     },
-    staleTime: 10000,
+    staleTime: 30000,
+    gcTime: 300000,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
-    placeholderData: (prev) => prev
+    placeholderData: (prev) => prev,
+    retry: 1,
+    retryDelay: 1000,
   })
 
   const shipments = data?.data || []
