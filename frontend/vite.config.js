@@ -13,11 +13,19 @@ export default defineConfig({
     chunkSizeWarningLimit: 500,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          query: ['@tanstack/react-query'],
-          icons: ['lucide-react'],
-          excel: ['exceljs'],
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router')) {
+            return 'vendor';
+          }
+          if (id.includes('node_modules/@tanstack/react-query')) {
+            return 'query';
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'icons';
+          }
+          if (id.includes('node_modules/exceljs')) {
+            return 'excel';
+          }
         }
       }
     },
@@ -28,7 +36,4 @@ export default defineConfig({
   server: {
     hmr: { overlay: true }
   },
-  esbuild: {
-    drop: ['console', 'debugger'],
-  }
 })
