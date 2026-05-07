@@ -9,7 +9,7 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box, FileCheck
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
@@ -119,10 +119,10 @@ export default function Dashboard() {
   const isEmpty = !isLoading&&!isError&&shipments.length===0
 
   const statCards = [
-    { label: 'Total', value: totalCount, icon: Box, color: 'text-blue-600', bg: 'bg-blue-100/80' },
-    { label: 'Active', value: analytics.pending + analytics.inTransit + analytics.customs, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-100/80' },
-    { label: 'Completed', value: analytics.delivered, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-100/80' },
-    { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, color: 'text-orange-600', bg: 'bg-orange-100/80' },
+    { label: 'Total Shipments', value: totalCount, icon: Box, color: 'text-blue-600', bg: 'bg-blue-100/80', desc: 'All shipments' },
+    { label: 'In Progress', value: analytics.pending + analytics.inTransit + analytics.customs, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-100/80', desc: 'Enquiry to Customs' },
+    { label: 'Delivered', value: analytics.delivered, icon: CheckCircle2, color: 'text-green-600', bg: 'bg-green-100/80', desc: 'Successfully completed' },
+    { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, color: 'text-orange-600', bg: 'bg-orange-100/80', desc: 'Invoice generated/sent' },
   ]
 
   return (
@@ -140,10 +140,10 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2.5">
           {/* Shipment Type Filter Toggle */}
-          <div className="flex bg-white/60 backdrop-blur rounded-lg p-0.5 border border-white/50 mr-1">
+          <div className="flex bg-white/60 backdrop-blur rounded-lg p-0.5 border border-white/50">
             <button onClick={()=>updateShipmentTypeFilter('')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${!shipmentTypeFilter?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>All</button>
-            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>FF</button>
-            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}><FileCheck size={12}/>CHA</button>
+            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>Freight</button>
+            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all duration-200 flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}><FileCheck size={12}/>CHA Only</button>
           </div>
           <div className="flex bg-white/60 backdrop-blur rounded-lg p-0.5 border border-white/50">
             <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all duration-200 ${!showArchived?'bg-white text-gray-800 shadow-sm':'text-gray-500 hover:text-gray-700'}`}>Active</button>
@@ -168,6 +168,7 @@ export default function Dashboard() {
               </div>
               <p className="text-2xl font-bold text-gray-800 tracking-tight">{stat.value.toLocaleString()}</p>
               <p className="text-[11px] text-gray-500 mt-0.5 font-medium">{stat.label}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{stat.desc}</p>
             </div>
           )
         })}
@@ -176,7 +177,10 @@ export default function Dashboard() {
       {/* Progress Bar */}
       <div className="bg-white/70 backdrop-blur rounded-xl border border-white/50 p-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Delivery Progress</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Delivery Progress</span>
+            <Info size={12} className="text-gray-400" title="Percentage of shipments marked as Delivered" />
+          </div>
           <span className="text-xs font-bold text-gray-800">{analytics.deliveryRate}%</span>
         </div>
         <div className="w-full bg-gray-200/50 rounded-full h-1.5 overflow-hidden">
@@ -238,7 +242,7 @@ export default function Dashboard() {
         <div className="bg-white/70 backdrop-blur rounded-xl border border-white/50 p-16 text-center">
           <div className="w-14 h-14 bg-amber-100/80 rounded-xl flex items-center justify-center mx-auto mb-4"><FileSearch size={24} className="text-amber-500"/></div>
           <h3 className="text-base font-semibold text-gray-800 mb-1">No Results</h3>
-          <p className="text-sm text-gray-500 mb-4">Try adjusting your search.</p>
+          <p className="text-sm text-gray-500 mb-4">Try adjusting your search or filters.</p>
           <button onClick={()=>{updateSearch('');updateStatus('');updateShipmentTypeFilter('')}} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"><X size={14}/> Clear Filters</button>
         </div>
       )}
@@ -246,8 +250,8 @@ export default function Dashboard() {
       {!isError && isEmpty && !hasFilters && !showArchived && (
         <div className="bg-white/70 backdrop-blur rounded-xl border border-white/50 p-16 text-center">
           <div className="w-14 h-14 bg-blue-100/80 rounded-xl flex items-center justify-center mx-auto mb-4"><Inbox size={24} className="text-blue-500"/></div>
-          <h3 className="text-base font-semibold text-gray-800 mb-1">No Shipments Yet</h3>
-          <p className="text-sm text-gray-500 mb-4">Create your first shipment to get started.</p>
+          <h3 className="text-base font-semibold text-gray-800 mb-1">Welcome to PAS Freight</h3>
+          <p className="text-sm text-gray-500 mb-4">Create your first shipment to get started. Choose between Freight Shipment (full logistics) or CHA Only Bill (customs only).</p>
           <Link to="/create" className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-all"><Plus size={14}/> Create Shipment</Link>
         </div>
       )}
@@ -256,15 +260,15 @@ export default function Dashboard() {
         <div className="bg-white/70 backdrop-blur rounded-xl border border-white/50 p-16 text-center">
           <div className="w-14 h-14 bg-gray-100/80 rounded-xl flex items-center justify-center mx-auto mb-4"><ArchiveIcon size={24} className="text-gray-500"/></div>
           <h3 className="text-base font-semibold text-gray-800 mb-1">Archive Empty</h3>
-          <p className="text-sm text-gray-500 mb-4">Completed shipments appear here.</p>
-          <button onClick={()=>toggleArchived(false)} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"><Package size={14}/> View Active</button>
+          <p className="text-sm text-gray-500 mb-4">Archived shipments will appear here.</p>
+          <button onClick={()=>toggleArchived(false)} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-all"><Package size={14}/> View Active Shipments</button>
         </div>
       )}
 
       {isLoading && (
         <div className="bg-white/70 backdrop-blur rounded-xl border border-white/50 p-16 text-center">
           <div className="w-8 h-8 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Loading...</p>
+          <p className="text-sm text-gray-500">Loading shipments...</p>
         </div>
       )}
 
@@ -280,8 +284,8 @@ export default function Dashboard() {
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5" />
                   </th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Ref No</th>
-                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Mode</th>
-                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">I/E</th>
+                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Transport Mode</th>
+                  <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Import/Export</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Consignee</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">HAWB</th>
                   <th className="text-left px-3 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">BOE No</th>
