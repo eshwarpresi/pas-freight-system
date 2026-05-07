@@ -9,6 +9,10 @@ async function exportShipmentsToExcel(shipments, res) {
   const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold'];
   const STAGE_COLORS = { 'Draft': 'E5E7EB', 'Created': 'DBEAFE', 'Confirmed': 'FEF3C7', 'Booked': 'DDD6FE', 'Scheduled': 'CFFAFE', 'In Progress': 'FEF9C3', 'Completed': 'DCFCE7', 'Cancelled': 'FEE2E2', 'On Hold': 'FED7AA' };
 
+  // Pre-calculate counts for reuse
+  const chaBillCount = shipments.filter(s => s.shipmentType === 'CHA Only').length;
+  const freightShipmentCount = shipments.length - chaBillCount;
+
   // =============================================
   // SHEET 1: SHIPMENTS - All details
   // =============================================
@@ -72,7 +76,7 @@ async function exportShipmentsToExcel(shipments, res) {
   const colCount = 40;
 
   // ---- Row 1: Title ----
-  ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD']);
+  ws.insertRow(1, ['']);
   ws.mergeCells(`A1:${lastCol}1`);
   const titleCell = ws.getCell('A1');
   titleCell.value = '🚢 PAS FREIGHT SERVICES PVT LTD — SHIPMENT EXPORT REPORT';
@@ -85,9 +89,7 @@ async function exportShipmentsToExcel(shipments, res) {
   ws.insertRow(2, ['']);
   ws.mergeCells(`A2:${lastCol}2`);
   const metaCell = ws.getCell('A2');
-  const chaCount = shipments.filter(s => s.shipmentType === 'CHA Only').length;
-  const freightCount = shipments.length - chaCount;
-  metaCell.value = `Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}   |   Total Shipments: ${shipments.length}   |   Freight: ${freightCount}   |   CHA Only: ${chaCount}`;
+  metaCell.value = `Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}   |   Total Shipments: ${shipments.length}   |   Freight: ${freightShipmentCount}   |   CHA Only: ${chaBillCount}`;
   metaCell.font = { name: 'Arial', size: 10, color: { argb: '4B5563' } };
   metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0F4FF' } };
   metaCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -178,7 +180,6 @@ async function exportShipmentsToExcel(shipments, res) {
     // CHA Only rows - green tint
     if (isCHA) {
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
-      // Bold the Shipment Type column
       const typeCell = row.getCell(6);
       typeCell.font = { name: 'Arial', size: 9, bold: true, color: { argb: '166534' } };
     }
@@ -196,8 +197,9 @@ async function exportShipmentsToExcel(shipments, res) {
       'DELIVERED': 'DCFCE7', 'INVOICE SENT': 'FFE4E6', 'INVOICE GENERATED': 'FFF7ED',
       'ENQUIRY': 'FEF3C7', 'BOOKED': 'E0E7FF', 'CHECKLIST APPROVED': 'D1FAE5'
     };
-    if (statusColors[s.currentStatus?.replace(/_/g, ' ')]) {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: statusColors[s.currentStatus.replace(/_/g, ' ')] } };
+    const currentStatusClean = s.currentStatus?.replace(/_/g, ' ');
+    if (statusColors[currentStatusClean]) {
+      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: statusColors[currentStatusClean] } };
     }
 
     // Remarks - left aligned
@@ -312,10 +314,8 @@ async function exportShipmentsToExcel(shipments, res) {
   thRow.alignment = { horizontal: 'center', vertical: 'middle' };
   thRow.height = 26;
 
-  const freightCount = shipments.filter(s => s.shipmentType !== 'CHA Only').length;
-  const chaBillCount = shipments.filter(s => s.shipmentType === 'CHA Only').length;
-  
-  const frRow = ss.addRow({ status: 'Freight Shipments', count: freightCount, pct: shipments.length > 0 ? `${Math.round((freightCount / shipments.length) * 100)}%` : '0%' });
+  // Use pre-calculated counts (no redeclaration)
+  const frRow = ss.addRow({ status: 'Freight Shipments', count: freightShipmentCount, pct: shipments.length > 0 ? `${Math.round((freightShipmentCount / shipments.length) * 100)}%` : '0%' });
   frRow.alignment = { horizontal: 'center' }; frRow.font = { name: 'Arial', size: 10 };
   frRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DBEAFE' } };
   
