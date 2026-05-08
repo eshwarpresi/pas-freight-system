@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
-const API_BASE = 'https://pas-freight-api.onrender.com'
 
 // Skeleton component for loading state
 function TableSkeleton() {
@@ -48,6 +47,7 @@ export default function Dashboard() {
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [showFilters, setShowFilters] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -71,7 +71,6 @@ export default function Dashboard() {
       if (statusFilter) params.status = statusFilter
       if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
       const res = await api.get('/freight/shipments', { params })
-      // Cache in sessionStorage for instant reload
       try { sessionStorage.setItem('cached_shipments', JSON.stringify(res.data)) } catch {}
       return res.data
     },
@@ -92,6 +91,29 @@ export default function Dashboard() {
   const shipments = data?.data || []
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const res = await api.get('/freight/export', { 
+        params: { isArchived: showArchived },
+        responseType: 'blob'
+      })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `PAS_Shipments_${new Date().toISOString().split('T')[0]}.xlsx`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      addToast('Export downloaded!', 'success')
+    } catch (err) {
+      addToast('Failed to export', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
@@ -183,7 +205,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -210,7 +231,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {statCards.map((stat, i) => {
           const Icon = stat.icon
@@ -232,7 +252,6 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Progress Bar */}
       <div className="bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur rounded-xl border border-indigo-200/50 p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -246,7 +265,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
         <div className="relative flex-1 w-full">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
@@ -258,14 +276,14 @@ export default function Dashboard() {
           <button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border transition-all ${showFilters?'bg-gradient-to-r from-indigo-100 to-blue-100 border-indigo-300 text-indigo-600':'bg-white/80 border-indigo-200/50 text-gray-500 hover:bg-white'}`}>
             <SlidersHorizontal size={15} />
           </button>
-          <a href={`${API_BASE}/api/freight/export?isArchived=${showArchived}`} target="_blank"
-            className="px-3.5 py-2.5 bg-gradient-to-r from-white to-indigo-50 backdrop-blur border border-indigo-200/50 rounded-lg hover:from-indigo-100 hover:to-blue-100 text-xs font-semibold text-indigo-600 flex items-center gap-2 transition-all">
-            <Download size={14}/> Export
-          </a>
+          <button onClick={handleExport} disabled={exporting}
+            className="px-3.5 py-2.5 bg-gradient-to-r from-white to-indigo-50 backdrop-blur border border-indigo-200/50 rounded-lg hover:from-indigo-100 hover:to-blue-100 text-xs font-semibold text-indigo-600 flex items-center gap-2 transition-all disabled:opacity-50">
+            {exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14}/>}
+            {exporting ? 'Exporting...' : 'Export'}
+          </button>
         </div>
       </div>
 
-      {/* Filters Panel */}
       {showFilters && (
         <div className="flex flex-wrap gap-2 p-3.5 bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur rounded-xl border border-indigo-200/50">
           <span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider flex items-center mr-1"><Filter size={11} className="mr-1"/>Status</span>
@@ -275,7 +293,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Bulk Actions */}
       {selected.length > 0 && (
         <div className="bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur border border-indigo-300/50 rounded-xl px-4 py-3 flex items-center justify-between">
           <span className="text-sm text-indigo-700 font-medium">{selected.length} selected</span>
@@ -286,7 +303,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Error State */}
       {isError && (
         <div className="bg-white/80 backdrop-blur rounded-xl border border-red-200/50 p-16 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-red-400 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><AlertCircle size={28} className="text-white"/></div>
@@ -296,7 +312,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Empty States */}
       {!isError && isEmpty && hasFilters && (
         <div className="bg-white/80 backdrop-blur rounded-xl border border-amber-200/50 p-16 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div>
@@ -324,10 +339,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* SKELETON LOADING - Shows immediately */}
       {showSkeleton && <TableSkeleton />}
 
-      {/* ===== DESKTOP TABLE ===== */}
       {!showSkeleton && !isError && shipments.length > 0 && (
         <>
           <div className="hidden md:block bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 overflow-hidden shadow-lg">
@@ -336,8 +349,7 @@ export default function Dashboard() {
                 <thead>
                   <tr className="bg-gradient-to-r from-indigo-50 to-blue-50">
                     <th className="w-10 pl-4 py-3">
-                      <input type="checkbox" checked={selected.length===shipments.length && shipments.length>0} onChange={toggleSelectAll}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" />
+                      <input type="checkbox" checked={selected.length===shipments.length && shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" />
                     </th>
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">Ref No</th>
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">Transport Mode</th>
@@ -354,41 +366,16 @@ export default function Dashboard() {
                   {shipments.map(s => (
                     <tr key={s.id} className="group hover:bg-gradient-to-r hover:from-indigo-50 hover:to-transparent transition-colors">
                       <td className="pl-4 py-3">
-                        <input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)}
-                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" />
+                        <input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" />
                       </td>
-                      <td className="px-3 py-3">
-                        <Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors">
-                          {s.refNo}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>
-                          {s.shipmentType || '—'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>
-                          {s.importExport || '—'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-sm text-gray-700 font-medium">
-                        {s.freightForwarding?.consigneeName || <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-3 py-3 text-sm text-gray-500">
-                        {s.freightForwarding?.hawb || <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-3 py-3 text-sm text-gray-500">
-                        {s.cha?.boeNo || <span className="text-gray-300">—</span>}
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>
-                          {s.currentStatus.replace(/_/g,' ')}
-                        </span>
-                      </td>
-                      <td className="px-3 py-3 text-sm text-gray-500">
-                        {new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
-                      </td>
+                      <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 hover:text-indigo-800 transition-colors">{s.refNo}</Link></td>
+                      <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType || '—'}</span></td>
+                      <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport || '—'}</span></td>
+                      <td className="px-3 py-3 text-sm text-gray-700 font-medium">{s.freightForwarding?.consigneeName || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-3 py-3 text-sm text-gray-500">{s.freightForwarding?.hawb || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-3 py-3 text-sm text-gray-500">{s.cha?.boeNo || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
+                      <td className="px-3 py-3 text-sm text-gray-500">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
                       <td className="pr-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md transition-all flex items-center gap-1.5"><Eye size={12}/> View</Link>
@@ -406,7 +393,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* MOBILE CARDS */}
           <div className="md:hidden space-y-3">
             {shipments.map(s => (
               <div key={s.id} className="bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 p-4 shadow-sm hover:shadow-md transition-all">
@@ -426,18 +412,14 @@ export default function Dashboard() {
                   <input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" />
                   <div className="flex items-center gap-1">
                     <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>
-                    {showArchived ? (
-                      <button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>
-                    ) : (
-                      <button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:bg-amber-50 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>
-                    )}
+                    {showArchived ? <button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>
+                    : <button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:bg-amber-50 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>}
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Pagination */}
           <div className="bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-xs text-gray-500">
               <span className="font-semibold text-indigo-700">{startItem}-{endItem}</span>
