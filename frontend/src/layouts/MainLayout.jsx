@@ -1,14 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Package, Menu, X, 
-  Box, Archive, ChevronRight, Command
+  Box, Archive, ChevronRight, Command,
+  LogOut, User, ChevronDown
 } from 'lucide-react'
+import api from '../lib/api'
 
-export default function MainLayout() {
+export default function MainLayout({ user }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
 
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: 'Overview', shortcut: 'O' },
@@ -17,10 +20,30 @@ export default function MainLayout() {
 
   const goToArchives = () => {
     navigate('/')
-    // Store a flag in sessionStorage so Dashboard opens archive tab
     sessionStorage.setItem('showArchived', 'true')
     window.location.href = '/'
   }
+
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout')
+    } catch (e) {}
+    localStorage.removeItem('pas_token')
+    delete api.defaults.headers.common['Authorization']
+    navigate('/login')
+  }
+
+  // Close user menu on click outside
+  useEffect(() => {
+    const handler = () => setUserMenuOpen(false)
+    if (userMenuOpen) {
+      document.addEventListener('click', handler)
+      return () => document.removeEventListener('click', handler)
+    }
+  }, [userMenuOpen])
+
+  const displayName = user?.name || user?.email?.split('@')[0] || 'User'
+  const userInitial = displayName.charAt(0).toUpperCase()
 
   return (
     <div className="min-h-screen bg-[#f8f9fb]">
@@ -54,6 +77,19 @@ export default function MainLayout() {
           </button>
         </div>
         
+        {/* User Info (sidebar) */}
+        <div className="px-4 py-3 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md">
+              {userInitial}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-gray-900 truncate">{displayName}</p>
+              <p className="text-[10px] text-gray-400 truncate">{user?.email || ''}</p>
+            </div>
+          </div>
+        </div>
+
         {/* Navigation */}
         <nav className="p-3 space-y-0.5">
           <p className="px-3 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Menu</p>
@@ -116,6 +152,44 @@ export default function MainLayout() {
 
       {/* Main Content */}
       <div className="lg:ml-[260px]">
+        {/* Top Header Bar (desktop) */}
+        <header className="hidden lg:flex sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-gray-100 px-6 py-3 items-center justify-end">
+          {/* User Menu Dropdown */}
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button 
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-md">
+                {userInitial}
+              </div>
+              <span className="text-sm font-medium text-gray-700">{displayName}</span>
+              <ChevronDown size={14} className="text-gray-400" />
+            </button>
+
+            {/* Dropdown */}
+            {userMenuOpen && (
+              <div className="absolute right-0 mt-1 w-56 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50 animate-in">
+                <div className="px-4 py-2 border-b border-gray-100">
+                  <p className="text-sm font-semibold text-gray-900">{displayName}</p>
+                  <p className="text-xs text-gray-400">{user?.email}</p>
+                </div>
+                <div className="py-1">
+                  <button className="w-full text-left px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2">
+                    <User size={14} /> Profile
+                  </button>
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  >
+                    <LogOut size={14} /> Sign Out
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </header>
+
         {/* Mobile Header */}
         <header className="lg:hidden sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-gray-100 px-4 py-3 flex items-center justify-between">
           <button onClick={() => setSidebarOpen(true)}
@@ -128,7 +202,9 @@ export default function MainLayout() {
             </div>
             <h1 className="text-sm font-bold text-gray-900">PAS Freight</h1>
           </div>
-          <div className="w-10" />
+          <button onClick={handleLogout} className="p-2 hover:bg-red-50 rounded-lg transition-colors">
+            <LogOut size={18} className="text-red-500" />
+          </button>
         </header>
 
         {/* Page Content */}
