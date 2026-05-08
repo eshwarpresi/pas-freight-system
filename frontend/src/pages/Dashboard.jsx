@@ -15,6 +15,29 @@ import {
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
 const API_BASE = 'https://pas-freight-api.onrender.com'
 
+// Skeleton component for loading state
+function TableSkeleton() {
+  return (
+    <div className="bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 overflow-hidden shadow-lg animate-pulse">
+      <div className="p-4 space-y-3">
+        {[...Array(5)].map((_, i) => (
+          <div key={i} className="flex items-center gap-4">
+            <div className="w-4 h-4 bg-gray-200 rounded" />
+            <div className="h-4 bg-gray-200 rounded w-24" />
+            <div className="h-4 bg-gray-200 rounded w-20" />
+            <div className="h-4 bg-gray-200 rounded w-20" />
+            <div className="h-4 bg-gray-200 rounded w-32 flex-1" />
+            <div className="h-4 bg-gray-200 rounded w-16" />
+            <div className="h-4 bg-gray-200 rounded w-16" />
+            <div className="h-6 bg-gray-200 rounded-full w-20" />
+            <div className="h-4 bg-gray-200 rounded w-16" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { addToast } = useToast()
   const [search, setSearch] = useState('')
@@ -48,13 +71,20 @@ export default function Dashboard() {
       if (statusFilter) params.status = statusFilter
       if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
       const res = await api.get('/freight/shipments', { params })
+      // Cache in sessionStorage for instant reload
+      try { sessionStorage.setItem('cached_shipments', JSON.stringify(res.data)) } catch {}
       return res.data
     },
-    staleTime: 30000,
-    gcTime: 300000,
+    staleTime: 60000,
+    gcTime: 600000,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
-    placeholderData: (prev) => prev,
+    placeholderData: () => {
+      try {
+        const cached = sessionStorage.getItem('cached_shipments')
+        return cached ? JSON.parse(cached) : undefined
+      } catch { return undefined }
+    },
     retry: 1,
     retryDelay: 1000,
   })
@@ -135,6 +165,7 @@ export default function Dashboard() {
   const endItem = Math.min(page*perPage,totalCount)
   const hasFilters = search||statusFilter||shipmentTypeFilter
   const isEmpty = !isLoading&&!isError&&shipments.length===0
+  const showSkeleton = isLoading && !data
 
   const statGradients = [
     'from-blue-500 to-indigo-600',
@@ -255,7 +286,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Empty States */}
+      {/* Error State */}
       {isError && (
         <div className="bg-white/80 backdrop-blur rounded-xl border border-red-200/50 p-16 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-red-400 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><AlertCircle size={28} className="text-white"/></div>
@@ -265,6 +296,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Empty States */}
       {!isError && isEmpty && hasFilters && (
         <div className="bg-white/80 backdrop-blur rounded-xl border border-amber-200/50 p-16 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div>
@@ -278,7 +310,7 @@ export default function Dashboard() {
         <div className="bg-white/80 backdrop-blur rounded-xl border border-indigo-200/50 p-16 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div>
           <h3 className="text-base font-semibold text-gray-800 mb-1">Welcome to PAS Freight</h3>
-          <p className="text-sm text-gray-500 mb-4">Create your first shipment to get started. Choose between Freight Shipment (full logistics) or CHA Only Bill (customs only).</p>
+          <p className="text-sm text-gray-500 mb-4">Create your first shipment to get started.</p>
           <Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold hover:from-indigo-700 hover:to-blue-700 transition-all shadow-lg"><Plus size={14}/> Create Shipment</Link>
         </div>
       )}
@@ -292,15 +324,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      {isLoading && (
-        <div className="bg-white/80 backdrop-blur rounded-xl border border-indigo-200/50 p-16 text-center">
-          <div className="w-10 h-10 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-indigo-500 font-medium">Loading shipments...</p>
-        </div>
-      )}
+      {/* SKELETON LOADING - Shows immediately */}
+      {showSkeleton && <TableSkeleton />}
 
-      {/* ===== DESKTOP TABLE (md+) ===== */}
-      {!isLoading && !isError && shipments.length > 0 && (
+      {/* ===== DESKTOP TABLE ===== */}
+      {!showSkeleton && !isError && shipments.length > 0 && (
         <>
           <div className="hidden md:block bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 overflow-hidden shadow-lg">
             <div className="overflow-x-auto">
@@ -363,20 +391,11 @@ export default function Dashboard() {
                       </td>
                       <td className="pr-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Link to={`/shipment/${s.id}`}
-                            className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md transition-all flex items-center gap-1.5">
-                            <Eye size={12}/> View
-                          </Link>
+                          <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md transition-all flex items-center gap-1.5"><Eye size={12}/> View</Link>
                           {showArchived ? (
-                            <button onClick={()=>unarchiveMutation.mutate(s.id)}
-                              className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition-all flex items-center gap-1.5">
-                              <ArchiveRestore size={12}/> Restore
-                            </button>
+                            <button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-md transition-all flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>
                           ) : (
-                            <button onClick={()=>archiveMutation.mutate(s.id)}
-                              className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-md transition-all flex items-center gap-1.5">
-                              <Archive size={12}/> Archive
-                            </button>
+                            <button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-md transition-all flex items-center gap-1.5"><Archive size={12}/> Archive</button>
                           )}
                         </div>
                       </td>
@@ -387,15 +406,13 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* ===== MOBILE CARDS (< md) ===== */}
+          {/* MOBILE CARDS */}
           <div className="md:hidden space-y-3">
             {shipments.map(s => (
               <div key={s.id} className="bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 p-4 shadow-sm hover:shadow-md transition-all">
                 <div className="flex items-center justify-between mb-3">
                   <Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600">{s.refNo}</Link>
-                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>
-                    {s.currentStatus.replace(/_/g,' ')}
-                  </span>
+                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div><span className="text-gray-400">Consignee:</span> <span className="text-gray-700 font-medium">{s.freightForwarding?.consigneeName || '—'}</span></div>
@@ -406,8 +423,7 @@ export default function Dashboard() {
                   <div><span className="text-gray-400">Date:</span> <span className="text-gray-700">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
                 </div>
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
-                  <input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" />
+                  <input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5" />
                   <div className="flex items-center gap-1">
                     <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>
                     {showArchived ? (
@@ -427,8 +443,7 @@ export default function Dashboard() {
               <span className="font-semibold text-indigo-700">{startItem}-{endItem}</span>
               <span className="text-gray-400">of</span>
               <span className="font-semibold text-indigo-700">{totalCount.toLocaleString()}</span>
-              <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}}
-                className="ml-2 border border-indigo-200 rounded-md px-2 py-1 text-[11px] font-semibold text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+              <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}} className="ml-2 border border-indigo-200 rounded-md px-2 py-1 text-[11px] font-semibold text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
                 {PER_PAGE_OPTIONS.map(n=><option key={n} value={n}>{n}</option>)}
               </select>
             </div>
