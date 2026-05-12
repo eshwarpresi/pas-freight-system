@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Package, Menu, X, 
-  Box, Archive, ChevronRight, Command,
+  Box, Command,
   LogOut, User, ChevronDown
 } from 'lucide-react'
 import api from '../lib/api'
@@ -18,12 +18,6 @@ export default function MainLayout({ user }) {
     { path: '/create', icon: Package, label: 'New Shipment', shortcut: 'N' },
   ]
 
-  const goToArchives = () => {
-    navigate('/')
-    sessionStorage.setItem('showArchived', 'true')
-    window.location.href = '/'
-  }
-
   const handleLogout = async () => {
     try {
       await api.post('/auth/logout')
@@ -33,7 +27,6 @@ export default function MainLayout({ user }) {
     navigate('/login')
   }
 
-  // Close user menu on click outside
   useEffect(() => {
     const handler = () => setUserMenuOpen(false)
     if (userMenuOpen) {
@@ -47,20 +40,17 @@ export default function MainLayout({ user }) {
 
   return (
     <div className="min-h-screen bg-[#f8f9fb]">
-      {/* Mobile Overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden transition-all"
           onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`
         fixed top-0 left-0 h-full w-[260px] bg-white border-r border-gray-100 z-50
         transform transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]
         lg:translate-x-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        {/* Logo Area */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-gray-100">
           <Link to="/" className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center">
@@ -77,7 +67,6 @@ export default function MainLayout({ user }) {
           </button>
         </div>
         
-        {/* User Info (sidebar) */}
         <div className="px-4 py-3 border-b border-gray-100">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md">
@@ -90,7 +79,6 @@ export default function MainLayout({ user }) {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="p-3 space-y-0.5">
           <p className="px-3 py-2 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Menu</p>
           {navItems.map((item) => {
@@ -121,40 +109,15 @@ export default function MainLayout({ user }) {
           })}
         </nav>
 
-        {/* Bottom Section */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-100">
-          <div className="bg-gray-50 rounded-xl p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <Archive size={14} className="text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-gray-700">Archive</p>
-                <p className="text-[10px] text-gray-400">Completed shipments</p>
-              </div>
-            </div>
-            <button 
-              onClick={goToArchives}
-              className="flex items-center justify-between w-full text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <span>View archives</span>
-              <ChevronRight size={12} />
-            </button>
-          </div>
-          <div className="mt-3 flex items-center gap-2 px-1">
-            <div className="w-5 h-5 bg-gray-200 rounded-full flex items-center justify-center">
-              <Command size={10} className="text-gray-500" />
-            </div>
+          <div className="flex items-center gap-2 px-1">
             <span className="text-[10px] text-gray-400 font-medium">© 2026 PAS Freight</span>
           </div>
         </div>
       </aside>
 
-      {/* Main Content */}
       <div className="lg:ml-[260px]">
-        {/* Top Header Bar (desktop) */}
         <header className="hidden lg:flex sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-gray-100 px-6 py-3 items-center justify-end">
-          {/* User Menu Dropdown */}
           <div className="relative" onClick={e => e.stopPropagation()}>
             <button 
               onClick={() => setUserMenuOpen(!userMenuOpen)}
@@ -167,7 +130,6 @@ export default function MainLayout({ user }) {
               <ChevronDown size={14} className="text-gray-400" />
             </button>
 
-            {/* Dropdown */}
             {userMenuOpen && (
               <div className="absolute right-0 mt-1 w-56 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-50 animate-in">
                 <div className="px-4 py-2 border-b border-gray-100">
@@ -190,7 +152,6 @@ export default function MainLayout({ user }) {
           </div>
         </header>
 
-        {/* Mobile Header */}
         <header className="lg:hidden sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-gray-100 px-4 py-3 flex items-center justify-between">
           <button onClick={() => setSidebarOpen(true)}
             className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
@@ -207,7 +168,6 @@ export default function MainLayout({ user }) {
           </button>
         </header>
 
-        {/* Page Content */}
         <main className="p-6 md:p-8 lg:p-10 max-w-[1400px]">
           <Outlet />
         </main>
