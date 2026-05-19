@@ -9,12 +9,11 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
 
-// Skeleton component for loading state
 function TableSkeleton() {
   return (
     <div className="bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 overflow-hidden shadow-lg animate-pulse">
@@ -29,6 +28,7 @@ function TableSkeleton() {
             <div className="h-4 bg-gray-200 rounded w-16" />
             <div className="h-4 bg-gray-200 rounded w-16" />
             <div className="h-6 bg-gray-200 rounded-full w-20" />
+            <div className="h-4 bg-gray-200 rounded w-16" />
             <div className="h-4 bg-gray-200 rounded w-16" />
           </div>
         ))}
@@ -343,6 +343,7 @@ export default function Dashboard() {
 
       {!showSkeleton && !isError && shipments.length > 0 && (
         <>
+          {/* DESKTOP TABLE */}
           <div className="hidden md:block bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 overflow-hidden shadow-lg">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -355,6 +356,7 @@ export default function Dashboard() {
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">Transport Mode</th>
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">Import/Export</th>
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">Consignee</th>
+                    <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">Created By</th>
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">HAWB</th>
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">BOE No</th>
                     <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase tracking-wider">Status</th>
@@ -372,6 +374,9 @@ export default function Dashboard() {
                       <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType || '—'}</span></td>
                       <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport || '—'}</span></td>
                       <td className="px-3 py-3 text-sm text-gray-700 font-medium">{s.freightForwarding?.consigneeName || <span className="text-gray-300">—</span>}</td>
+                      <td className="px-3 py-3 text-xs text-gray-500">
+                        <span className="flex items-center gap-1"><User size={10} className="text-gray-400"/>{s.createdByName || <span className="text-gray-300">—</span>}</span>
+                      </td>
                       <td className="px-3 py-3 text-sm text-gray-500">{s.freightForwarding?.hawb || <span className="text-gray-300">—</span>}</td>
                       <td className="px-3 py-3 text-sm text-gray-500">{s.cha?.boeNo || <span className="text-gray-300">—</span>}</td>
                       <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
@@ -393,6 +398,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* MOBILE CARDS */}
           <div className="md:hidden space-y-3">
             {shipments.map(s => (
               <div key={s.id} className="bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 p-4 shadow-sm hover:shadow-md transition-all">
@@ -403,6 +409,7 @@ export default function Dashboard() {
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div><span className="text-gray-400">Consignee:</span> <span className="text-gray-700 font-medium">{s.freightForwarding?.consigneeName || '—'}</span></div>
                   <div><span className="text-gray-400">Mode:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getModeBadge(s.shipmentType)}`}>{s.shipmentType || '—'}</span></div>
+                  <div><span className="text-gray-400">Created By:</span> <span className="text-gray-700 flex items-center gap-1"><User size={10}/>{s.createdByName || '—'}</span></div>
                   <div><span className="text-gray-400">HAWB:</span> <span className="text-gray-700">{s.freightForwarding?.hawb || '—'}</span></div>
                   <div><span className="text-gray-400">BOE:</span> <span className="text-gray-700">{s.cha?.boeNo || '—'}</span></div>
                   <div><span className="text-gray-400">I/E:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getImportExportBadge(s.importExport)}`}>{s.importExport || '—'}</span></div>

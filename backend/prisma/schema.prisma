@@ -21,6 +21,8 @@ model User {
   role      String   @default("OPERATIONS") // ADMIN, OPERATIONS, ACCOUNTS
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  shipments Shipment[] @relation("CreatedShipments")
 }
 
 // ==========================================
@@ -40,6 +42,11 @@ model Shipment {
   remarks       String?  // Manual notes/comments
   shipmentType  String?  // Mode: AIR, SEA FCL, SEA LCL, Courier etc.
   importExport  String?  // Import or Export
+  
+  // WHO CREATED THIS
+  createdById   String?
+  createdByUser User?    @relation("CreatedShipments", fields: [createdById], references: [id])
+  createdByName String?  // Denormalized for easy display
   
   freightForwarding FreightForwarding?
   cha               CHA?
@@ -62,7 +69,6 @@ model FreightForwarding {
   shipperName     String?
   agent           String?
   
-  // From, To & Terms
   fromLocation    String?
   toLocation      String?
   terms           String?
@@ -81,7 +87,6 @@ model FreightForwarding {
   hawb            String?
   awbDate         DateTime?
   
-  // Port Location with dropdown
   portLocation    String?
   
   createdAt       DateTime @default(now())

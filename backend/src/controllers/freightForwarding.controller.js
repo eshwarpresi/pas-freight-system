@@ -1,13 +1,11 @@
 const prisma = require('../utils/prisma');
 const { exportShipmentsToExcel } = require('../utils/excelExport');
 
-// Helper: Update existing status entry if found, otherwise create new
 async function upsertStatusEntry(shipmentId, status, remarks) {
   const existing = await prisma.statusHistory.findFirst({
     where: { shipmentId, status },
     orderBy: { createdAt: 'desc' }
   });
-  
   if (existing) {
     await prisma.statusHistory.update({
       where: { id: existing.id },
@@ -25,16 +23,23 @@ const fullShipmentSelect = (id) => ({
   include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 20 } }
 });
 
-// CREATE NEW SHIPMENT
+// CREATE NEW SHIPMENT - now saves who created it
 const createShipment = async (req, res) => {
   try {
     const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const exists = await prisma.shipment.findUnique({ where: { refNo }, select: { id: true } });
     if (exists) return res.status(400).json({ status: 'error', message: 'Shipment with this Reference Number already exists' });
+    
+    // Get logged-in user info from JWT token
+    const createdById = req.user?.id || null;
+    const createdByName = req.user?.name || req.user?.email || null;
+    
     const shipment = await prisma.shipment.create({
       data: { 
-        refNo, currentStatus: 'ENQUIRY', shipmentType, importExport, 
+        refNo, currentStatus: 'ENQUIRY', shipmentType, importExport,
+        createdById,
+        createdByName,
         freightForwarding: { 
           create: { 
             enquiryDate: enquiryDate ? new Date(enquiryDate) : null, 
@@ -45,7 +50,7 @@ const createShipment = async (req, res) => {
             weight: weight ? parseFloat(weight) : null
           } 
         }, 
-        statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}` } } 
+        statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}`, changedBy: createdByName } } 
       },
       include: { freightForwarding: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
     });
@@ -77,14 +82,14 @@ const exportShipments = async (req, res) => {
     const totalCount = await prisma.shipment.count({ where });
     const BATCH_SIZE = 5000; let all = [];
     for (let skip = 0; skip < totalCount; skip += BATCH_SIZE) {
-      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, shipmentType: true, importExport: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
+      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, shipmentType: true, importExport: true, createdByName: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
       all = all.concat(batch);
     }
     await exportShipmentsToExcel(all, res);
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
 
-// GET ALL
+// GET ALL - now returns createdByName
 const getAllShipments = async (req, res) => {
   try {
     const { status, search, isArchived, shipmentType, page = 1, limit = 25 } = req.query;
@@ -94,7 +99,7 @@ const getAllShipments = async (req, res) => {
     if (shipmentType) { if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only'; else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: 'CHA Only' }; }
     if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }];
     const [shipments, total] = await Promise.all([
-      prisma.shipment.findMany({ where, select: { id: true, refNo: true, currentStatus: true, shipmentStage: true, shipmentType: true, importExport: true, createdAt: true, freightForwarding: { select: { consigneeName: true, hawb: true } }, cha: { select: { boeNo: true } } }, orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l }),
+      prisma.shipment.findMany({ where, select: { id: true, refNo: true, currentStatus: true, shipmentStage: true, shipmentType: true, importExport: true, createdByName: true, createdAt: true, freightForwarding: { select: { consigneeName: true, hawb: true } }, cha: { select: { boeNo: true } } }, orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l }),
       prisma.shipment.count({ where })
     ]);
     res.json({ status: 'success', data: shipments, pagination: { total, page: p, limit: l, totalPages: Math.ceil(total/l) } });
