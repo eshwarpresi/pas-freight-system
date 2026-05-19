@@ -125,40 +125,56 @@ export default function CreateShipment() {
     setLoading(true)
     try {
       if (isEditMode) {
-        // Update ALL fields using individual endpoints
         const updatePromises = []
         
-        // Shipment level fields
-        updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: formData.importExport }))
+        // Update Transport Mode (shipmentType)
+        updatePromises.push(
+          api.put(`/freight/shipments/${editId}/shipmenttype`, { 
+            shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') 
+          })
+        )
         
-        // Freight Forwarding fields
-        updatePromises.push(api.put(`/freight/shipments/${editId}/fromlocation`, { fromLocation: formData.consigneeName ? formData.consigneeName : '' }))
-        // Note: consigneeName doesn't have its own endpoint - we update it via the shipment detail inline edit
-        // The key editable fields from this form:
-        updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { 
-          hawb: formData.hawb, 
-          mawb: formData.mawb, 
-          awbDate: formData.awbDate || null 
-        }))
+        // Update Import/Export
+        updatePromises.push(
+          api.put(`/freight/shipments/${editId}/importexport`, { 
+            importExport: formData.importExport 
+          })
+        )
         
+        // Update AWB (HAWB, MAWB, AWB Date)
+        updatePromises.push(
+          api.put(`/freight/shipments/${editId}/awb`, { 
+            hawb: formData.hawb || '', 
+            mawb: formData.mawb || '', 
+            awbDate: formData.awbDate || null 
+          })
+        )
+        
+        // Update Rates (Weight)
         if (formData.weight) {
-          updatePromises.push(api.put(`/freight/shipments/${editId}/rates`, { 
-            weight: parseFloat(formData.weight),
-            sellingRate: undefined,
-            cbm: undefined
-          }))
+          updatePromises.push(
+            api.put(`/freight/shipments/${editId}/rates`, { 
+              weight: parseFloat(formData.weight)
+            })
+          )
         }
         
+        // Update CBM (as Packages count)
         if (formData.noOfPackages) {
-          updatePromises.push(api.put(`/freight/shipments/${editId}/cbm`, { cbm: formData.noOfPackages }))
+          updatePromises.push(
+            api.put(`/freight/shipments/${editId}/cbm`, { 
+              cbm: parseInt(formData.noOfPackages) 
+            })
+          )
         }
+        
+        // Note: consigneeName, shipperName, agent don't have update endpoints
+        // They can be edited inline on the Shipment Detail page
 
         await Promise.all(updatePromises)
         addToast('Shipment updated successfully!', 'success')
         setTimeout(() => navigate(`/shipment/${editId}`), 500)
       } else {
-        // Create new shipment
         const submitData = { 
           ...formData, 
           refNo: formData.refNo || generateRefNo(),
@@ -182,12 +198,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ 
-      refNo: '', enquiryDate: new Date().toISOString().split('T')[0], 
-      noOfPackages: '', consigneeName: '', shipperName: '', agent: '', 
-      importExport: '', mode: '',
-      hawb: '', mawb: '', awbDate: '', weight: ''
-    })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '' })
     setErrors({}); setTouched({}); setIsCHAOnly(false)
     addToast('Draft cleared', 'info')
   }
@@ -220,7 +231,7 @@ export default function CreateShipment() {
               {isEditMode ? `Edit: ${formData.refNo}` : isCHAOnly ? 'New CHA Bill' : 'New Freight Shipment'}
             </h2>
             <p className="text-sm text-gray-500 mt-0.5">
-              {isEditMode ? 'Update shipment details' : isCHAOnly ? 'Customs clearance only — no freight details needed' : 'Full freight forwarding shipment with customs & accounts'}
+              {isEditMode ? 'Update shipment details' : isCHAOnly ? 'Customs clearance only' : 'Full freight forwarding shipment'}
             </p>
           </div>
         </div>
@@ -229,19 +240,10 @@ export default function CreateShipment() {
       {!isEditMode && (
         <div className="mb-6">
           <div className="flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 border border-indigo-100">
-            <button type="button" onClick={() => setIsCHAOnly(false)}
-              className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${!isCHAOnly ? 'bg-white text-indigo-700 shadow-md' : 'text-gray-500 hover:text-indigo-600'}`}>
-              🚢 Freight Shipment
-            </button>
-            <button type="button" onClick={() => setIsCHAOnly(true)}
-              className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${isCHAOnly ? 'bg-white text-emerald-700 shadow-md' : 'text-gray-500 hover:text-emerald-600'}`}>
-              🛃 CHA Only Bill
-            </button>
+            <button type="button" onClick={() => setIsCHAOnly(false)} className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${!isCHAOnly ? 'bg-white text-indigo-700 shadow-md' : 'text-gray-500 hover:text-indigo-600'}`}>🚢 Freight Shipment</button>
+            <button type="button" onClick={() => setIsCHAOnly(true)} className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${isCHAOnly ? 'bg-white text-emerald-700 shadow-md' : 'text-gray-500 hover:text-emerald-600'}`}>🛃 CHA Only Bill</button>
           </div>
-          <p className="text-[11px] text-indigo-400 mt-2 text-center">
-            <Info size={11} className="inline mr-1" />
-            {isCHAOnly ? 'CHA (Customs House Agent) bills are for customs clearance only.' : 'Freight shipments include full logistics.'}
-          </p>
+          <p className="text-[11px] text-indigo-400 mt-2 text-center"><Info size={11} className="inline mr-1" />{isCHAOnly ? 'CHA bills are for customs clearance only.' : 'Freight shipments include full logistics.'}</p>
         </div>
       )}
 
@@ -260,25 +262,14 @@ export default function CreateShipment() {
               <div className="flex items-center gap-2 mb-1"><Hash size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Reference Details</h3></div>
               <p className="text-[11px] text-indigo-400 mb-4">Unique identification for this shipment</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <input type="text" name="refNo" value={formData.refNo} onChange={handleChange} disabled={isEditMode}
-                        className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')} ${isEditMode ? 'bg-gray-100 cursor-not-allowed' : ''}`} />
-                    </div>
-                    {!isEditMode && (
-                      <button type="button" onClick={() => { setFormData(prev => ({ ...prev, refNo: generateRefNo() })) }}
-                        className="px-3 py-2.5 bg-gradient-to-r from-indigo-100 to-blue-100 hover:from-indigo-200 hover:to-blue-200 rounded-lg text-xs font-medium text-indigo-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>
-                    )}
+                    <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} disabled={isEditMode} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')} ${isEditMode ? 'bg-gray-100 cursor-not-allowed' : ''}`} /></div>
+                    {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-indigo-100 to-blue-100 hover:from-indigo-200 hover:to-blue-200 rounded-lg text-xs font-medium text-indigo-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
                   </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Enquiry Date</label>
-                  <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
-                    <input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange}
-                      className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                  </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Enquiry Date</label>
+                  <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
                 </div>
               </div>
             </div>
@@ -289,34 +280,19 @@ export default function CreateShipment() {
               <div className="flex items-center gap-2 mb-1"><Ship size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Shipment Details</h3></div>
               <p className="text-[11px] text-indigo-400 mb-4">Transport mode and cargo information</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label>
-                  <div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
-                    <input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1"
-                      className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                  </div>
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
                   <div className="flex gap-2">
-                    <select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
-                      className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}>
-                      <option value="">Select mode...</option>
-                      {TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <input type="text" name="mode" value={!TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
-                      placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    <select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select mode...</option>{TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <input type="text" name="mode" value={!TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
                   <div className="flex gap-2">
-                    <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
-                      className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}>
-                      <option value="">Select type...</option>
-                      {IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
-                      placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select type...</option>{IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
                   </div>
                 </div>
               </div>
@@ -328,88 +304,28 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30">
                 <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-emerald-500" /><h3 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">Parties Involved</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label>
-                    <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                      <input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange}
-                        className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${getFieldClass('consigneeName')}`} />
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label>
-                    <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                      <input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange}
-                        className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${getFieldClass('shipperName')}`} />
-                    </div>
-                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${getFieldClass('consigneeName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 ${getFieldClass('shipperName')}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-emerald-100">
                 <div className="flex items-center gap-2 mb-1"><Globe size={16} className="text-emerald-500" /><h3 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">Agent Information</h3></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label>
-                  <div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                    <input type="text" name="agent" value={formData.agent} onChange={handleChange}
-                      className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                  </div>
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
               </div>
               <div className="p-6">
                 <div className="flex items-center gap-2 mb-1"><FileCheck size={16} className="text-emerald-500" /><h3 className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">CHA Bill Details</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
-                    <div className="flex gap-2">
-                      <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
-                        className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
-                        <option value="">Select type...</option>
-                        {IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange}
-                        placeholder="Or type..." className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
-                    <div className="flex gap-2">
-                      <select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
-                        className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
-                        <option value="">Select mode...</option>
-                        {TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                      <input type="text" name="mode" value={!TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange}
-                        placeholder="Or type..." className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label><div className="flex gap-2"><select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"><option value="">Select type...</option>{IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select><input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label><div className="flex gap-2"><select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} className="flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"><option value="">Select mode...</option>{TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}</select><input type="text" name="mode" value={!TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} placeholder="Or type..." className="w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB No</label>
-                    <div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                      <input type="text" name="hawb" value={formData.hawb} onChange={handleChange}
-                        className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">MAWB No</label>
-                    <div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                      <input type="text" name="mawb" value={formData.mawb} onChange={handleChange}
-                        className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB No</label><div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="text" name="hawb" value={formData.hawb} onChange={handleChange} className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">MAWB No</label><div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="text" name="mawb" value={formData.mawb} onChange={handleChange} className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB / MAWB Date</label>
-                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                      <input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange}
-                        className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Packages</label>
-                    <div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                      <input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1"
-                        className="w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Weight (kg)</label>
-                    <div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" />
-                      <input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01"
-                        className="w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-                    </div>
-                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB / MAWB Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange} className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className="w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className="w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" /></div></div>
                 </div>
               </div>
             </>
@@ -420,28 +336,13 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Parties Involved</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label>
-                    <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
-                      <input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange}
-                        className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getFieldClass('consigneeName')}`} />
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label>
-                    <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
-                      <input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange}
-                        className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getFieldClass('shipperName')}`} />
-                    </div>
-                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getFieldClass('consigneeName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${getFieldClass('shipperName')}`} /></div></div>
                 </div>
               </div>
               <div className="p-6">
                 <div className="flex items-center gap-2 mb-1"><Globe size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Agent Information</h3></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label>
-                  <div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
-                    <input type="text" name="agent" value={formData.agent} onChange={handleChange}
-                      className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  </div>
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" /></div></div>
               </div>
             </>
           )}
@@ -450,8 +351,7 @@ export default function CreateShipment() {
             <p className="text-xs text-gray-500"><span className="text-red-500">*</span> Required fields</p>
             <div className="flex gap-3">
               <Link to="/" className="px-5 py-2.5 border border-indigo-200 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 transition-colors">Cancel</Link>
-              <button type="submit" disabled={loading}
-                className={`px-6 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-all flex items-center gap-2 shadow-lg ${isCHAOnly && !isEditMode ? 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-emerald-200' : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-indigo-200'}`}>
+              <button type="submit" disabled={loading} className={`px-6 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-all flex items-center gap-2 shadow-lg ${isCHAOnly && !isEditMode ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-emerald-200' : 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-200'}`}>
                 {loading ? <><Loader2 size={16} className="animate-spin" />Saving...</> : <>{isEditMode ? <Pencil size={16} /> : isCHAOnly ? <FileCheck size={16} /> : <Ship size={16} />}{isEditMode ? 'Update Shipment' : isCHAOnly ? 'Create CHA Bill' : 'Create Shipment'}</>}
               </button>
             </div>
