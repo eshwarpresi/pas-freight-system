@@ -129,6 +129,9 @@ export default function CreateShipment() {
       if (isEditMode) {
         const updatePromises = []
         
+        // Update Ref No
+        updatePromises.push(api.put(`/freight/shipments/${editId}/refno`, { refNo: formData.refNo }))
+        
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: formData.importExport }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
@@ -243,7 +246,7 @@ export default function CreateShipment() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
-                    <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} disabled={isEditMode} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')} ${isEditMode ? 'bg-gray-100 cursor-not-allowed' : ''}`} /></div>
+                    <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')}`} /></div>
                     {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-indigo-100 to-blue-100 rounded-lg text-xs font-medium text-indigo-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
                   </div>
                 </div>
@@ -275,7 +278,6 @@ export default function CreateShipment() {
                   </div>
                 </div>
               </div>
-              {/* Weight Details */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} placeholder="e.g., 250" step="0.01" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} placeholder="e.g., 200" step="0.01" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
