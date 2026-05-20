@@ -25,25 +25,13 @@ const createShipment = async (req, res) => {
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const exists = await prisma.shipment.findUnique({ where: { refNo }, select: { id: true } });
     if (exists) return res.status(400).json({ status: 'error', message: 'Shipment with this Reference Number already exists' });
-    
     const createdById = req.user?.id || null;
     const createdByName = req.user?.name || req.user?.email || null;
-    
     const shipment = await prisma.shipment.create({
       data: { 
         refNo, currentStatus: 'ENQUIRY', shipmentType, importExport,
         createdById, createdByName,
-        freightForwarding: { 
-          create: { 
-            enquiryDate: enquiryDate ? new Date(enquiryDate) : null, 
-            noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, 
-            consigneeName, shipperName, agent,
-            hawb: hawb || null, mawb: mawb || null,
-            awbDate: awbDate ? new Date(awbDate) : null,
-            weight: weight ? parseFloat(weight) : null,
-            grossWeight: grossWeight ? parseFloat(grossWeight) : null
-          } 
-        }, 
+        freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null } }, 
         statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}`, changedBy: createdByName } } 
       },
       include: { freightForwarding: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
@@ -68,11 +56,7 @@ const exportShipments = async (req, res) => {
     const { status, search, isArchived } = req.query;
     const where = { isArchived: isArchived === 'true' };
     if (status) where.currentStatus = status;
-    if (search) where.OR = [
-      { refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } },
-      { freightForwarding: { hawb: { contains: search } } }, { cha: { boeNo: { contains: search } } },
-      { accounts: { invoiceNumber: { contains: search } } }
-    ];
+    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }];
     const totalCount = await prisma.shipment.count({ where });
     const BATCH_SIZE = 5000; let all = [];
     for (let skip = 0; skip < totalCount; skip += BATCH_SIZE) {
@@ -107,16 +91,22 @@ const getShipmentById = async (req, res) => {
 
 // UPDATE REFERENCE NUMBER
 const updateRefNo = async (req, res) => {
-  try {
-    const { refNo } = req.body;
-    if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number is required' });
-    const existing = await prisma.shipment.findFirst({ where: { refNo, id: { not: req.params.id } }, select: { id: true } });
-    if (existing) return res.status(400).json({ status: 'error', message: 'Shipment with this Reference Number already exists' });
-    await prisma.shipment.update({ where: { id: req.params.id }, data: { refNo } });
-    await upsertStatusEntry(req.params.id, 'REFNO_UPDATED', `Ref No: ${refNo}`);
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { refNo } = req.body; if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number is required' }); const existing = await prisma.shipment.findFirst({ where: { refNo, id: { not: req.params.id } }, select: { id: true } }); if (existing) return res.status(400).json({ status: 'error', message: 'Shipment with this Reference Number already exists' }); await prisma.shipment.update({ where: { id: req.params.id }, data: { refNo } }); await upsertStatusEntry(req.params.id, 'REFNO_UPDATED', `Ref No: ${refNo}`); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// UPDATE CONSIGNEE
+const updateConsignee = async (req, res) => {
+  try { const val = req.body.consigneeName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { consigneeName: val } } } }); await upsertStatusEntry(req.params.id, 'CONSIGNEE_UPDATED', `Consignee: ${val}`); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// UPDATE SHIPPER
+const updateShipper = async (req, res) => {
+  try { const val = req.body.shipperName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { shipperName: val } } } }); await upsertStatusEntry(req.params.id, 'SHIPPER_UPDATED', `Shipper: ${val}`); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// UPDATE AGENT
+const updateAgent = async (req, res) => {
+  try { const val = req.body.agent; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { agent: val } } } }); await upsertStatusEntry(req.params.id, 'AGENT_UPDATED', `Agent: ${val}`); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE SHIPMENT TYPE
@@ -154,22 +144,9 @@ const updateTerms = async (req, res) => {
   try { const val = req.body.terms; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { terms: val } } } }); await upsertStatusEntry(req.params.id, 'TERMS', `Terms: ${val}`); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// UPDATE RATES - supports grossWeight
+// UPDATE RATES
 const updateRates = async (req, res) => {
-  try {
-    const { sellingRate, weight, cbm, grossWeight } = req.body;
-    const data = {}; const parts = [];
-    if (sellingRate !== undefined) { data.sellingRate = parseFloat(sellingRate); parts.push(`Rate: ₹${sellingRate}`); }
-    if (weight !== undefined) { data.weight = parseFloat(weight); parts.push(`Chargeable Wt: ${weight}kg`); }
-    if (cbm !== undefined) { data.cbm = parseFloat(cbm); parts.push(`CBM: ${cbm}`); }
-    if (grossWeight !== undefined) { data.grossWeight = parseFloat(grossWeight); parts.push(`Gross Wt: ${grossWeight}kg`); }
-    if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'RATES_ADDED', freightForwarding: { update: { data } } } });
-      if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_ADDED', parts.join(' | '));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { sellingRate, weight, cbm, grossWeight } = req.body; const data = {}; const parts = []; if (sellingRate !== undefined) { data.sellingRate = parseFloat(sellingRate); parts.push(`Rate: ₹${sellingRate}`); } if (weight !== undefined) { data.weight = parseFloat(weight); parts.push(`Chargeable Wt: ${weight}kg`); } if (cbm !== undefined) { data.cbm = parseFloat(cbm); parts.push(`CBM: ${cbm}`); } if (grossWeight !== undefined) { data.grossWeight = parseFloat(grossWeight); parts.push(`Gross Wt: ${grossWeight}kg`); } if (Object.keys(data).length > 0) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'RATES_ADDED', freightForwarding: { update: { data } } } }); if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_ADDED', parts.join(' | ')); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE CBM
@@ -202,4 +179,4 @@ const updateAWB = async (req, res) => {
   try { const data = {}; const parts = []; if (req.body.mawb !== undefined) { data.mawb = req.body.mawb; parts.push(`MAWB: ${req.body.mawb}`); } if (req.body.hawb !== undefined) { data.hawb = req.body.hawb; parts.push(`HAWB: ${req.body.hawb}`); } if (req.body.awbDate) { data.awbDate = new Date(req.body.awbDate); parts.push(`AWB Date: ${req.body.awbDate}`); } if (Object.keys(data).length > 0) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'AWB_GENERATED', freightForwarding: { update: { data } } } }); if (parts.length > 0) await upsertStatusEntry(req.params.id, 'AWB_GENERATED', parts.join(' | ')); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-module.exports = { createShipment, deleteShipment, deleteAllShipments, exportShipments, getAllShipments, getShipmentById, updateRefNo, updateShipmentType, updateImportExport, updateStage, updateRemarks, updateFromLocation, updateToLocation, updateTerms, updateRates, updateCBM, updatePortLocation, updateNomination, updateBooking, updateSchedule, updateAWB };
+module.exports = { createShipment, deleteShipment, deleteAllShipments, exportShipments, getAllShipments, getShipmentById, updateRefNo, updateConsignee, updateShipper, updateAgent, updateShipmentType, updateImportExport, updateStage, updateRemarks, updateFromLocation, updateToLocation, updateTerms, updateRates, updateCBM, updatePortLocation, updateNomination, updateBooking, updateSchedule, updateAWB };
