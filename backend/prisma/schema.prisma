@@ -75,6 +75,7 @@ model FreightForwarding {
   
   sellingRate     Decimal?
   weight          Decimal?
+  grossWeight     Decimal?
   cbm             Decimal?
   
   nominationDate  DateTime?

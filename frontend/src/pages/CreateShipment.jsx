@@ -129,9 +129,6 @@ export default function CreateShipment() {
       if (isEditMode) {
         const updatePromises = []
         
-        // Update Ref No
-        updatePromises.push(api.put(`/freight/shipments/${editId}/refno`, { refNo: formData.refNo }))
-        
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: formData.importExport }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
@@ -277,10 +274,6 @@ export default function CreateShipment() {
                     <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
                   </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} placeholder="e.g., 250" step="0.01" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} placeholder="e.g., 200" step="0.01" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
               </div>
             </div>
           )}
