@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
 import { 
@@ -16,6 +17,7 @@ export default function CreateShipment() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { addToast } = useToast()
+  const queryClient = useQueryClient()
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
   const [touched, setTouched] = useState({})
@@ -129,6 +131,10 @@ export default function CreateShipment() {
       if (isEditMode) {
         const updatePromises = []
         
+        // Update ALL fields including Consignee, Shipper, Agent
+        updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { consigneeName: formData.consigneeName }))
+        updatePromises.push(api.put(`/freight/shipments/${editId}/shipper`, { shipperName: formData.shipperName }))
+        updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { agent: formData.agent }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: formData.importExport }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
@@ -146,6 +152,8 @@ export default function CreateShipment() {
 
         await Promise.all(updatePromises)
         addToast('Shipment updated successfully!', 'success')
+        queryClient.removeQueries({ queryKey: ['shipment', editId] })
+        queryClient.removeQueries({ queryKey: ['shipments'] })
         setTimeout(() => navigate(`/shipment/${editId}?t=${Date.now()}`), 500)
       } else {
         const submitData = { 

@@ -14,7 +14,7 @@ async function exportShipmentsToExcel(shipments, res) {
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 
   // =============================================
-  // SHEET 1: ALL SHIPMENTS (Original Clean Design)
+  // SHEET 1: ALL SHIPMENTS
   // =============================================
   const ws = workbook.addWorksheet('All Shipments', {
     properties: { tabColor: { argb: '1E40AF' } },
@@ -27,6 +27,7 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Stage', key: 'shipmentStage', width: 16 },
     { header: 'Transport Mode', key: 'mode', width: 16 },
     { header: 'Import / Export', key: 'importExport', width: 16 },
+    { header: 'Created By', key: 'createdBy', width: 18 },
     { header: 'Consignee', key: 'consignee', width: 24 },
     { header: 'Shipper', key: 'shipper', width: 24 },
     { header: 'From', key: 'fromLocation', width: 18 },
@@ -35,7 +36,8 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Port Location', key: 'portLocation', width: 16 },
     { header: 'Agent', key: 'agent', width: 18 },
     { header: 'Pkgs', key: 'packages', width: 7 },
-    { header: 'Weight (kg)', key: 'weight', width: 12 },
+    { header: 'Gross Weight (kg)', key: 'grossWeight', width: 15 },
+    { header: 'Chargeable Weight (kg)', key: 'weight', width: 18 },
     { header: 'CBM', key: 'cbm', width: 10 },
     { header: 'Selling Rate', key: 'rate', width: 14 },
     { header: 'Booking Date', key: 'booking', width: 15 },
@@ -58,8 +60,8 @@ async function exportShipmentsToExcel(shipments, res) {
   ];
   ws.columns = columns;
 
-  const lastCol = 'AG';
-  const colCount = 33;
+  const lastCol = 'AI';
+  const colCount = 35;
 
   // Row 1: Title
   ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD - SHIPMENT REPORT']);
@@ -108,6 +110,7 @@ async function exportShipmentsToExcel(shipments, res) {
       shipmentStage: s.shipmentStage || '',
       mode: s.shipmentType || '',
       importExport: s.importExport || '',
+      createdBy: s.createdByName || '',
       consignee: ff.consigneeName || '',
       shipper: ff.shipperName || '',
       fromLocation: ff.fromLocation || '',
@@ -116,6 +119,7 @@ async function exportShipmentsToExcel(shipments, res) {
       portLocation: ff.portLocation || '',
       agent: ff.agent || '',
       packages: ff.noOfPackages || '',
+      grossWeight: ff.grossWeight || '',
       weight: ff.weight || '',
       cbm: ff.cbm || '',
       rate: ff.sellingRate ? `₹${parseFloat(ff.sellingRate).toLocaleString()}` : '',
@@ -152,14 +156,13 @@ async function exportShipmentsToExcel(shipments, res) {
       stageCell.font = { name: 'Arial', size: 9, bold: true };
     }
 
-    // Color CHA Only rows green
     if (isCHA) {
       const modeCell = row.getCell(4);
       modeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DCFCE7' } };
       modeCell.font = { name: 'Arial', size: 9, bold: true, color: { argb: '166534' } };
     }
 
-    const remCell = row.getCell(33);
+    const remCell = row.getCell(35);
     remCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
     row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
@@ -194,7 +197,6 @@ async function exportShipmentsToExcel(shipments, res) {
   // =============================================
   const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '059669' } } });
 
-  // Top cards
   ss.mergeCells('A1:C2');
   const card1 = ss.getCell('A1');
   card1.value = { richText: [{ font: { size: 24, bold: true, color: { argb: '1E40AF' } }, text: `${shipments.length}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nTotal Shipments' }] };
@@ -217,7 +219,6 @@ async function exportShipmentsToExcel(shipments, res) {
   card3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
   card3.border = { top: { style: 'thin', color: { argb: '86EFAC' } }, bottom: { style: 'thin', color: { argb: '86EFAC' } }, left: { style: 'thin', color: { argb: '86EFAC' } }, right: { style: 'thin', color: { argb: '86EFAC' } } };
 
-  // Status Breakdown
   ss.getCell('A4').value = 'STATUS BREAKDOWN';
   ss.mergeCells('A4:I4');
   ss.getCell('A4').font = { name: 'Calibri', size: 12, bold: true, color: { argb: '1E40AF' } };
@@ -244,7 +245,6 @@ async function exportShipmentsToExcel(shipments, res) {
   tr.alignment = { horizontal: 'center' };
   tr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
 
-  // Stage Breakdown
   const stageStart = Object.keys(counts).length + 8;
   ss.getCell(`A${stageStart}`).value = 'STAGE BREAKDOWN';
   ss.mergeCells(`A${stageStart}:I${stageStart}`);
@@ -273,20 +273,20 @@ async function exportShipmentsToExcel(shipments, res) {
   ss.getColumn(3).width = 10;
 
   // =============================================
-  // SHEET 3: CHA ONLY BILLS (detailed)
+  // SHEET 3: CHA ONLY BILLS
   // =============================================
   if (chaBillCount > 0) {
     const cs = workbook.addWorksheet('CHA Only Bills', { properties: { tabColor: { argb: '16A34A' } } });
     const chaShipments = shipments.filter(s => s.shipmentType === 'CHA Only');
 
-    cs.mergeCells('A1:U1');
+    cs.mergeCells('A1:V1');
     cs.getCell('A1').value = '🛃 CHA ONLY BILLS — DETAILED REPORT';
     cs.getCell('A1').font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
     cs.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '16A34A' } };
     cs.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
     cs.getRow(1).height = 32;
 
-    cs.mergeCells('A2:U2');
+    cs.mergeCells('A2:V2');
     cs.getCell('A2').value = `Total CHA Bills: ${chaBillCount}  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
     cs.getCell('A2').font = { name: 'Calibri', size: 9, color: { argb: '6B7280' } };
     cs.getCell('A2').alignment = { horizontal: 'center' };
@@ -295,6 +295,7 @@ async function exportShipmentsToExcel(shipments, res) {
     const chaCols = [
       { header: 'Ref No', w: 18 },
       { header: 'Status', w: 16 },
+      { header: 'Created By', w: 16 },
       { header: 'Import/Export', w: 13 },
       { header: 'Consignee', w: 22 },
       { header: 'Shipper', w: 22 },
@@ -303,7 +304,8 @@ async function exportShipmentsToExcel(shipments, res) {
       { header: 'MAWB No', w: 17 },
       { header: 'AWB Date', w: 13 },
       { header: 'Pkgs', w: 7 },
-      { header: 'Weight (kg)', w: 12 },
+      { header: 'Gross Weight (kg)', w: 15 },
+      { header: 'Chargeable Weight (kg)', w: 18 },
       { header: 'Job No', w: 13 },
       { header: 'BOE No', w: 14 },
       { header: 'BOE Date', w: 13 },
@@ -334,6 +336,7 @@ async function exportShipmentsToExcel(shipments, res) {
       const r = cs.addRow([
         s.refNo,
         s.currentStatus?.replace(/_/g, ' '),
+        s.createdByName || '',
         s.importExport || '',
         ff.consigneeName || '',
         ff.shipperName || '',
@@ -342,6 +345,7 @@ async function exportShipmentsToExcel(shipments, res) {
         ff.mawb || '',
         fmt(ff.awbDate),
         ff.noOfPackages || '',
+        ff.grossWeight || '',
         ff.weight ? `${ff.weight} kg` : '',
         cha.jobNo || '',
         cha.boeNo || '',
