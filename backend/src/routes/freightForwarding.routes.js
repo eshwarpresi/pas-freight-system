@@ -62,4 +62,13 @@ router.put('/shipments/:id/shipmenttype', freightController.updateShipmentType);
 // UPDATE - Import/Export
 router.put('/shipments/:id/importexport', freightController.updateImportExport);
 
+// UPDATE - Consignee
+router.put('/shipments/:id/consignee', freightController.updateConsignee);
+
+// UPDATE - Shipper
+router.put('/shipments/:id/shipper', freightController.updateShipper);
+
+// UPDATE - Agent
+router.put('/shipments/:id/agent', freightController.updateAgent);
+
 module.exports = router;
