@@ -20,9 +20,6 @@ router.delete('/shipments/:id', freightController.deleteShipment);
 // DELETE - All Shipments
 router.delete('/shipments', freightController.deleteAllShipments);
 
-// UPDATE - Reference Number
-router.put('/shipments/:id/refno', freightController.updateRefNo);
-
 // UPDATE - Rates
 router.put('/shipments/:id/rates', freightController.updateRates);
 
