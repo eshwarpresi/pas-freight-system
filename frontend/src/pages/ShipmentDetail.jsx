@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -49,19 +49,14 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
   return <div onClick={() => setEditing(true)} className={`cursor-pointer group flex items-center gap-1 ${className}`}><span className={value ? '' : 'text-gray-400 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
 }
 
-// Combo field: dropdown + manual input side by side
 function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }) {
   const isInOptions = options.includes(value || '')
   return (
     <div>
       <label className="block text-xs text-indigo-400 mb-1">{label}</label>
       <div className="flex gap-2">
-        <div className="flex-1">
-          <InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" />
-        </div>
-        <div className="flex-1">
-          <InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} />
-        </div>
+        <div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div>
+        <div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div>
       </div>
     </div>
   )
@@ -74,8 +69,12 @@ export default function ShipmentDetail() {
   
   const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
-    queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`); return r.data.data },
+    queryFn: async () => { 
+      const r = await api.get(`/freight/shipments/${id}`, { params: { _t: Date.now() } }); 
+      return r.data.data 
+    },
     staleTime: 0,
+    gcTime: 0,
   })
 
   const isCHAOnly = shipment?.shipmentType === 'CHA Only'
@@ -129,7 +128,7 @@ export default function ShipmentDetail() {
       ${shipment.importExport?`<p style="margin-bottom:15px"><strong>Import/Export:</strong> ${shipment.importExport}</p>`:''}
       ${shipment.shipmentStage?`<p style="margin-bottom:15px"><strong>Stage:</strong> ${shipment.shipmentStage}</p>`:''}
       <div class="section"><h2>📦 Freight Forwarding</h2><div class="grid">
-      <div class="item"><label>Consignee</label><span>${ff.consigneeName||'—'}</span></div><div class="item"><label>Shipper</label><span>${ff.shipperName||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Terms</label><span>${ff.terms||'—'}</span></div><div class="item"><label>Port Location</label><span>${ff.portLocation||'—'}</span></div><div class="item"><label>Agent</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Packages</label><span>${ff.noOfPackages||'—'}</span></div><div class="item"><label>Selling Rate</label><span>${ff.sellingRate?'₹'+ff.sellingRate:'—'}</span></div><div class="item"><label>Weight</label><span>${ff.weight?ff.weight+' kg':'—'}</span></div><div class="item"><label>CBM</label><span>${ff.cbm||'—'}</span></div><div class="item"><label>Booking Date</label><span>${fmd(ff.bookingDate)}</span></div><div class="item"><label>ETD</label><span>${fmd(ff.etd)}</span></div><div class="item"><label>ETA</label><span>${fmd(ff.eta)}</span></div><div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>AWB Date</label><span>${fmd(ff.awbDate)}</span></div></div></div>
+      <div class="item"><label>Consignee</label><span>${ff.consigneeName||'—'}</span></div><div class="item"><label>Shipper</label><span>${ff.shipperName||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Terms</label><span>${ff.terms||'—'}</span></div><div class="item"><label>Port Location</label><span>${ff.portLocation||'—'}</span></div><div class="item"><label>Agent</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Packages</label><span>${ff.noOfPackages||'—'}</span></div><div class="item"><label>Gross Weight</label><span>${ff.grossWeight?ff.grossWeight+' kg':'—'}</span></div><div class="item"><label>Chargeable Weight</label><span>${ff.weight?ff.weight+' kg':'—'}</span></div><div class="item"><label>CBM</label><span>${ff.cbm||'—'}</span></div><div class="item"><label>Booking Date</label><span>${fmd(ff.bookingDate)}</span></div><div class="item"><label>ETD</label><span>${fmd(ff.etd)}</span></div><div class="item"><label>ETA</label><span>${fmd(ff.eta)}</span></div><div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>AWB Date</label><span>${fmd(ff.awbDate)}</span></div></div></div>
       <div class="section"><h2>🛃 Customs Clearance</h2><div class="grid">
       <div class="item"><label>Job No</label><span>${cha.jobNo||'—'}</span></div><div class="item"><label>Checklist Date</label><span>${fmd(cha.checklistDate)}</span></div><div class="item"><label>BOE No</label><span>${cha.boeNo||'—'}</span></div><div class="item"><label>BOE Date</label><span>${fmd(cha.boeDate)}</span></div><div class="item"><label>DO Collection</label><span>${fmd(cha.doCollectionDate)}</span></div><div class="item"><label>OOC Date</label><span>${fmd(cha.oocDate)}</span></div><div class="item"><label>Gate Pass</label><span>${fmd(cha.gatePassDate)}</span></div><div class="item"><label>Delivery Date</label><span>${fmd(cha.deliveryDate)}</span></div><div class="item"><label>Tracking No</label><span>${cha.trackingNumber||'—'}</span></div></div></div>
       <div class="section"><h2>💰 Accounts</h2><div class="grid"><div class="item"><label>Invoice No</label><span>${acc.invoiceNumber||'—'}</span></div><div class="item"><label>Invoice Date</label><span>${fmd(acc.invoiceDate)}</span></div><div class="item"><label>Sending Date</label><span>${fmd(acc.sendingDate)}</span></div></div></div>
@@ -164,7 +163,10 @@ export default function ShipmentDetail() {
               </div>
               <p className="text-sm text-gray-500 mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
             </div>
-            <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200"><Printer size={16} />Print</button>
+            <div className="flex items-center gap-2">
+              <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200"><Pencil size={16} />Edit</Link>
+              <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200"><Printer size={16} />Print</button>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-indigo-100">
             <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
@@ -180,7 +182,6 @@ export default function ShipmentDetail() {
         </div>
       </div>
       
-      {/* Progress Bar */}
       <div className="bg-white rounded-xl border border-indigo-100 p-5 overflow-x-auto shadow-sm">
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">{isCHAOnly ? 'CHA Workflow' : 'Shipment Workflow'}</span>
@@ -209,7 +210,6 @@ export default function ShipmentDetail() {
         </div>
       </div>
       
-      {/* Tabs */}
       <div className="hidden sm:flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 border border-indigo-100">
         {tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500 hover:text-indigo-500'}`}><Icon size={16}/><span>{t.l}</span></button>})}
       </div>
@@ -227,7 +227,13 @@ export default function ShipmentDetail() {
               <ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." />
             </div>
           </Section>
-          <Section title="Rates" icon={DollarSign}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Selling Rate (₹)" value={ff.sellingRate} onSave={v => updateMutation.mutate({ section: 'rates', data: { sellingRate: v } })} type="number" /><Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /><Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" /></div></Section>
+          <Section title="Weight Details" icon={Scale}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => updateMutation.mutate({ section: 'rates', data: { grossWeight: v } })} type="number" />
+              <Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" />
+              <Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" />
+            </div>
+          </Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>

@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
-  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil
+  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale
 } from 'lucide-react'
 
 const DRAFT_KEY = 'pas_shipment_draft'
@@ -41,7 +41,7 @@ export default function CreateShipment() {
       refNo: '', enquiryDate: new Date().toISOString().split('T')[0], 
       noOfPackages: '', consigneeName: '', shipperName: '', agent: '', 
       importExport: '', mode: '',
-      hawb: '', mawb: '', awbDate: '', weight: ''
+      hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: ''
     }
   })
 
@@ -74,7 +74,8 @@ export default function CreateShipment() {
         hawb: ff.hawb || '',
         mawb: ff.mawb || '',
         awbDate: ff.awbDate ? new Date(ff.awbDate).toISOString().split('T')[0] : '',
-        weight: ff.weight || ''
+        weight: ff.weight || '',
+        grossWeight: ff.grossWeight || ''
       })
     } catch (err) {
       addToast('Failed to load shipment for editing', 'error')
@@ -113,6 +114,7 @@ export default function CreateShipment() {
     if (!isCHAOnly && !isEditMode && !formData.refNo.trim()) newErrors.refNo = 'Reference number is required'
     if (formData.noOfPackages && parseInt(formData.noOfPackages) < 1) newErrors.noOfPackages = 'Must be at least 1'
     if (formData.weight && parseFloat(formData.weight) < 0) newErrors.weight = 'Must be positive'
+    if (formData.grossWeight && parseFloat(formData.grossWeight) < 0) newErrors.grossWeight = 'Must be positive'
     setErrors(newErrors)
     setTouched({ refNo: !isCHAOnly, consigneeName: true, shipperName: true })
     if (Object.keys(newErrors).length > 0) { addToast('Please fix the validation errors', 'warning'); return false }
@@ -127,53 +129,24 @@ export default function CreateShipment() {
       if (isEditMode) {
         const updatePromises = []
         
-        // Update Transport Mode (shipmentType)
-        updatePromises.push(
-          api.put(`/freight/shipments/${editId}/shipmenttype`, { 
-            shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') 
-          })
-        )
+        updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') }))
+        updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: formData.importExport }))
+        updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
         
-        // Update Import/Export
-        updatePromises.push(
-          api.put(`/freight/shipments/${editId}/importexport`, { 
-            importExport: formData.importExport 
-          })
-        )
-        
-        // Update AWB (HAWB, MAWB, AWB Date)
-        updatePromises.push(
-          api.put(`/freight/shipments/${editId}/awb`, { 
-            hawb: formData.hawb || '', 
-            mawb: formData.mawb || '', 
-            awbDate: formData.awbDate || null 
-          })
-        )
-        
-        // Update Rates (Weight)
-        if (formData.weight) {
-          updatePromises.push(
-            api.put(`/freight/shipments/${editId}/rates`, { 
-              weight: parseFloat(formData.weight)
-            })
-          )
+        if (formData.weight || formData.grossWeight) {
+          updatePromises.push(api.put(`/freight/shipments/${editId}/rates`, { 
+            weight: formData.weight ? parseFloat(formData.weight) : undefined,
+            grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : undefined
+          }))
         }
         
-        // Update CBM (as Packages count)
         if (formData.noOfPackages) {
-          updatePromises.push(
-            api.put(`/freight/shipments/${editId}/cbm`, { 
-              cbm: parseInt(formData.noOfPackages) 
-            })
-          )
+          updatePromises.push(api.put(`/freight/shipments/${editId}/cbm`, { cbm: parseInt(formData.noOfPackages) }))
         }
-        
-        // Note: consigneeName, shipperName, agent don't have update endpoints
-        // They can be edited inline on the Shipment Detail page
 
         await Promise.all(updatePromises)
         addToast('Shipment updated successfully!', 'success')
-        setTimeout(() => navigate(`/shipment/${editId}`), 500)
+        setTimeout(() => navigate(`/shipment/${editId}?t=${Date.now()}`), 500)
       } else {
         const submitData = { 
           ...formData, 
@@ -181,6 +154,7 @@ export default function CreateShipment() {
           enquiryDate: formData.enquiryDate || new Date().toISOString().split('T')[0],
           noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
           weight: formData.weight ? parseFloat(formData.weight) : null,
+          grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : null,
           shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '')
         }
         const response = await api.post('/freight/shipments', submitData)
@@ -198,7 +172,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '' })
     setErrors({}); setTouched({}); setIsCHAOnly(false)
     addToast('Draft cleared', 'info')
   }
@@ -226,7 +200,7 @@ export default function CreateShipment() {
           <div className={`w-12 h-12 bg-gradient-to-br ${isCHAOnly ? 'from-emerald-400 to-green-500' : 'from-indigo-500 to-blue-600'} rounded-xl flex items-center justify-center shadow-lg ${isCHAOnly ? 'shadow-emerald-200' : 'shadow-indigo-200'}`}>
             {isEditMode ? <Pencil size={22} className="text-white" /> : isCHAOnly ? <FileCheck size={22} className="text-white" /> : <Ship size={22} className="text-white" />}
           </div>
-          <div>
+          <div className="flex-1">
             <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
               {isEditMode ? `Edit: ${formData.refNo}` : isCHAOnly ? 'New CHA Bill' : 'New Freight Shipment'}
             </h2>
@@ -234,6 +208,11 @@ export default function CreateShipment() {
               {isEditMode ? 'Update shipment details' : isCHAOnly ? 'Customs clearance only' : 'Full freight forwarding shipment'}
             </p>
           </div>
+          {isEditMode && (
+            <Link to={`/shipment/${editId}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:from-indigo-600 hover:to-blue-700 text-sm font-medium shadow-lg shadow-indigo-200">
+              <Eye size={16} /> View Shipment
+            </Link>
+          )}
         </div>
       </div>
 
@@ -265,7 +244,7 @@ export default function CreateShipment() {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
                   <div className="flex gap-2">
                     <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} disabled={isEditMode} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')} ${isEditMode ? 'bg-gray-100 cursor-not-allowed' : ''}`} /></div>
-                    {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-indigo-100 to-blue-100 hover:from-indigo-200 hover:to-blue-200 rounded-lg text-xs font-medium text-indigo-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
+                    {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-indigo-100 to-blue-100 rounded-lg text-xs font-medium text-indigo-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
                   </div>
                 </div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Enquiry Date</label>
@@ -295,6 +274,11 @@ export default function CreateShipment() {
                     <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
                   </div>
                 </div>
+              </div>
+              {/* Weight Details */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} placeholder="e.g., 250" step="0.01" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} placeholder="e.g., 200" step="0.01" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
               </div>
             </div>
           )}
