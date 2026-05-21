@@ -131,24 +131,45 @@ export default function CreateShipment() {
       if (isEditMode) {
         const updatePromises = []
         
-        // Update ALL fields including Consignee, Shipper, Agent
-        updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { consigneeName: formData.consigneeName }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/shipper`, { shipperName: formData.shipperName }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { agent: formData.agent }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: formData.importExport }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
+        // Update shipment type (mode)
+        updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { 
+          shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') 
+        }))
         
+        // Update import/export
+        updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { 
+          importExport: formData.importExport 
+        }))
+        
+        // Update AWB details
+        updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { 
+          hawb: formData.hawb || '', 
+          mawb: formData.mawb || '', 
+          awbDate: formData.awbDate || null 
+        }))
+        
+        // Update rates (weight and gross weight together)
         if (formData.weight || formData.grossWeight) {
           updatePromises.push(api.put(`/freight/shipments/${editId}/rates`, { 
             weight: formData.weight ? parseFloat(formData.weight) : undefined,
             grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : undefined
           }))
         }
+
+        // Update consignee (controller function EXISTS in your backend)
+        updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { 
+          consigneeName: formData.consigneeName 
+        }))
         
-        if (formData.noOfPackages) {
-          updatePromises.push(api.put(`/freight/shipments/${editId}/cbm`, { cbm: parseInt(formData.noOfPackages) }))
-        }
+        // Update shipper (controller function EXISTS in your backend)
+        updatePromises.push(api.put(`/freight/shipments/${editId}/shipper`, { 
+          shipperName: formData.shipperName 
+        }))
+        
+        // Update agent (controller function EXISTS in your backend)
+        updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { 
+          agent: formData.agent 
+        }))
 
         await Promise.all(updatePromises)
         addToast('Shipment updated successfully!', 'success')
