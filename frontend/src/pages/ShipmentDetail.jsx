@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -96,7 +96,7 @@ export default function ShipmentDetail() {
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
-        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'}
+        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'}
       }
       return api[eps[section].m](eps[section].u, data)
     },
@@ -219,6 +219,10 @@ export default function ShipmentDetail() {
 
       <div className="bg-white rounded-xl border border-indigo-100 p-4 sm:p-6 shadow-sm">
         {activeTab==='freight'&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
+          <Section title="Notification Settings" icon={Mail}>
+            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
+            <p className="text-[10px] text-indigo-400 mt-1">Emails will be sent to this address on key status updates (Booked, Scheduled, AWB, Delivered).</p>
+          </Section>
           <Section title="Route Details" icon={MapPinned}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." />
@@ -248,7 +252,7 @@ export default function ShipmentDetail() {
 
 function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-100"><I size={16} className="text-indigo-400 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-indigo-400">{l}</p><p className="text-sm font-medium text-gray-800 truncate">{v||'—'}</p></div></div>}
 function Section({ title, icon: Icon, children }) { return <div className="border border-indigo-100 rounded-xl overflow-hidden shadow-sm"><div className="flex items-center gap-2 p-4 bg-gradient-to-r from-indigo-50 to-blue-50/50 border-b border-indigo-100"><Icon size={14} className="text-indigo-400" /><p className="text-sm font-semibold text-indigo-600">{title}</p></div><div className="p-4">{children}</div></div> }
-function Field({ label, value, onSave, type = 'text' }) {
+function Field({ label, value, onSave, type = 'text', placeholder = 'Not set' }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
   useEffect(() => { setVal(value || '') }, [value])
@@ -259,7 +263,7 @@ function Field({ label, value, onSave, type = 'text' }) {
       className="w-full px-3 py-2 border border-indigo-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white" step={type === 'number' ? '0.01' : undefined} />
   ) : (
     <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-indigo-100 rounded-lg text-sm cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors flex items-center justify-between group">
-      <span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || 'Not set'}</span>
+      <span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || placeholder}</span>
       <Pencil size={10} className="text-gray-300 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" />
     </div>
   )}</div>

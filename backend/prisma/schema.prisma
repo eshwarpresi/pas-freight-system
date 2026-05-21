@@ -90,6 +90,7 @@ model FreightForwarding {
   awbDate         DateTime?
   
   portLocation    String?
+  notificationEmail String? // Email for status notifications
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
