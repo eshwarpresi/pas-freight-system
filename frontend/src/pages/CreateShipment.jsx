@@ -156,17 +156,17 @@ export default function CreateShipment() {
           }))
         }
 
-        // Update consignee (controller function EXISTS in your backend)
+        // Update consignee
         updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { 
           consigneeName: formData.consigneeName 
         }))
         
-        // Update shipper (controller function EXISTS in your backend)
+        // Update shipper
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipper`, { 
           shipperName: formData.shipperName 
         }))
         
-        // Update agent (controller function EXISTS in your backend)
+        // Update agent
         updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { 
           agent: formData.agent 
         }))
@@ -175,7 +175,10 @@ export default function CreateShipment() {
         addToast('Shipment updated successfully!', 'success')
         queryClient.removeQueries({ queryKey: ['shipment', editId] })
         queryClient.removeQueries({ queryKey: ['shipments'] })
-        setTimeout(() => navigate(`/shipment/${editId}?t=${Date.now()}`), 500)
+        // Force hard reload to bypass React Query cache
+        setTimeout(() => {
+          window.location.href = `/#/shipment/${editId}?t=${Date.now()}`
+        }, 300)
       } else {
         const submitData = { 
           ...formData, 
