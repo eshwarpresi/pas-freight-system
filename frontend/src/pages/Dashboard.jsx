@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
+import OnlineUsers from '../components/OnlineUsers'
 import { 
   Package, Clock, Download, Archive, Search, Plus,
   CheckCircle2, Truck, FileSpreadsheet,
@@ -149,7 +150,11 @@ export default function Dashboard() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1"><span className="text-[11px] font-semibold tracking-wider text-indigo-600 uppercase bg-gradient-to-r from-indigo-100 to-blue-100 px-2.5 py-0.5 rounded-md">Shipments</span><span className="text-xs text-gray-500 font-medium">{totalCount} total</span></div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-semibold tracking-wider text-indigo-600 uppercase bg-gradient-to-r from-indigo-100 to-blue-100 px-2.5 py-0.5 rounded-md">Shipments</span>
+            <span className="text-xs text-gray-500 font-medium">{totalCount} total</span>
+            <OnlineUsers />
+          </div>
           <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent tracking-tight">{showArchived ? 'Archive' : 'Overview'}</h1>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">

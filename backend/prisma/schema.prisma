@@ -19,6 +19,7 @@ model User {
   email     String   @unique
   password  String
   role      String   @default("OPERATIONS") // ADMIN, OPERATIONS, ACCOUNTS
+  lastActive DateTime? // Track when user was last active
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   

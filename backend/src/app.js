@@ -60,6 +60,19 @@ function optionalAuth(req, res, next) {
   next();
 }
 
+// ========== ONLINE TRACKING MIDDLEWARE ==========
+async function trackUserActivity(req, res, next) {
+  if (req.user?.id) {
+    try {
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { lastActive: new Date() }
+      }).catch(() => {}); // Silently fail if user doesn't exist yet
+    } catch (err) {}
+  }
+  next();
+}
+
 // ========== PUBLIC ROUTES (no auth needed) ==========
 
 // Health check
@@ -147,7 +160,7 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ 
       where: { id: req.user.id },
-      select: { id: true, email: true, name: true, role: true, createdAt: true }
+      select: { id: true, email: true, name: true, role: true, lastActive: true, createdAt: true }
     });
     if (!user) return res.status(404).json({ status: 'error', message: 'User not found' });
     res.json({ status: 'success', data: user });
@@ -162,6 +175,23 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ status: 'success', message: 'Logged out successfully' });
 });
 
+// Get online users count
+app.get('/api/users/online', authenticateToken, async (req, res) => {
+  try {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const onlineUsers = await prisma.user.findMany({
+      where: { lastActive: { gte: fiveMinutesAgo } },
+      select: { id: true, name: true, email: true, lastActive: true }
+    });
+    res.json({ 
+      status: 'success', 
+      data: { count: onlineUsers.length, users: onlineUsers }
+    });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: 'Failed to get online users' });
+  }
+});
+
 // ========== PROTECTED ROUTES (auth required) ==========
 
 // Import Routes
@@ -170,11 +200,11 @@ const chaRoutes = require('./routes/cha.routes');
 const accountsRoutes = require('./routes/accounts.routes');
 const archiveRoutes = require('./routes/archive.routes');
 
-// Apply auth middleware to ALL shipment routes
-app.use('/api/freight', authenticateToken, freightForwardingRoutes);
-app.use('/api/cha', authenticateToken, chaRoutes);
-app.use('/api/accounts', authenticateToken, accountsRoutes);
-app.use('/api/archive', authenticateToken, archiveRoutes);
+// Apply auth + tracking middleware to ALL shipment routes
+app.use('/api/freight', authenticateToken, trackUserActivity, freightForwardingRoutes);
+app.use('/api/cha', authenticateToken, trackUserActivity, chaRoutes);
+app.use('/api/accounts', authenticateToken, trackUserActivity, accountsRoutes);
+app.use('/api/archive', authenticateToken, trackUserActivity, archiveRoutes);
 
 // ========== ERROR HANDLERS ==========
 app.use((req, res) => {
