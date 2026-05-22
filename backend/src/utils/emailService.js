@@ -1,11 +1,13 @@
 const nodemailer = require('nodemailer');
 
-// Configure email transporter
+// Configure email transporter with proper settings
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
-    user: process.env.EMAIL_USER || 'your-email@gmail.com',
-    pass: process.env.EMAIL_PASS || 'your-app-password'
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
   }
 });
 
@@ -33,24 +35,18 @@ async function sendStatusEmail(shipment) {
     const ff = shipment.freightForwarding || {};
     const statusLabel = STATUS_LABELS[shipment.currentStatus] || shipment.currentStatus;
 
-    // Get notification email from FreightForwarding or created user
     let toEmail = ff.notificationEmail;
-    console.log('📧 Email attempt - toEmail from FF:', toEmail, '| status:', shipment.currentStatus);
+    console.log('📧 Email to:', toEmail, '| status:', shipment.currentStatus);
     
-    if (!toEmail && shipment.createdById) {
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
-      const user = await prisma.user.findUnique({ where: { id: shipment.createdById } });
-      toEmail = user?.email;
-      console.log('📧 Email fallback - user email:', toEmail);
-    }
-
     if (!toEmail) {
-      console.log('📧 Email skipped - no recipient email found');
+      console.log('📧 No notification email set, skipping');
       return;
     }
 
-    console.log('📧 Attempting to send email to:', toEmail);
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      console.log('❌ EMAIL_USER or EMAIL_PASS not set in environment');
+      return;
+    }
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
@@ -76,22 +72,24 @@ async function sendStatusEmail(shipment) {
           </div>
         </div>
         <div style="padding: 16px 24px; background: #f1f5f9; text-align: center; border-top: 1px solid #e5e7eb;">
-          <p style="margin: 0; color: #94a3b8; font-size: 11px;">© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | This is an automated notification</p>
+          <p style="margin: 0; color: #94a3b8; font-size: 11px;">© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd</p>
         </div>
       </div>
     `;
 
-    await transporter.sendMail({
-      from: `"PAS Freight System" <${process.env.EMAIL_USER || 'noreply@pasfreight.com'}>`,
+    console.log('📧 Sending mail via', process.env.EMAIL_USER, 'to', toEmail);
+    
+    const info = await transporter.sendMail({
+      from: `"PAS Freight" <${process.env.EMAIL_USER}>`,
       to: toEmail,
       subject: `📦 ${statusLabel} - ${shipment.refNo} | PAS Freight`,
       html
     });
 
-    console.log(`📧 Email sent to ${toEmail} for ${shipment.refNo} (${statusLabel})`);
+    console.log('✅ Email sent! Message ID:', info.messageId);
   } catch (error) {
-    console.error('❌ Email send error:', error.message);
-    console.error('❌ Full error:', error);
+    console.error('❌ Email failed:', error.message);
+    if (error.code) console.error('❌ Error code:', error.code);
   }
 }
 
