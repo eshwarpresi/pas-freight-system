@@ -16,6 +16,7 @@
     "exceljs": "^4.4.0",
     "express": "^4.22.1",
     "google-auth-library": "^10.6.2",
+    "googleapis": "^172.0.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.10.1",
