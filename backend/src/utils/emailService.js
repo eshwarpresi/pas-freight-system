@@ -1,4 +1,4 @@
-const { google } = require('google-auth-library');
+const { OAuth2Client } = require('google-auth-library');
 const nodemailer = require('nodemailer');
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -7,7 +7,7 @@ const REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN;
 const EMAIL_USER = process.env.EMAIL_USER;
 
 async function createTransporter() {
-  const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, 'https://developers.google.com/oauthplayground');
+  const oauth2Client = new OAuth2Client(CLIENT_ID, CLIENT_SECRET, 'https://developers.google.com/oauthplayground');
   oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
   const accessToken = await oauth2Client.getAccessToken();
   
