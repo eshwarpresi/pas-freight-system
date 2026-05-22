@@ -28,27 +28,29 @@ const STATUS_LABELS = {
   'COMPLETED': 'Completed'
 };
 
-// Key statuses that trigger emails
-const NOTIFY_STATUSES = ['BOOKED', 'SCHEDULED', 'AWB_GENERATED', 'DELIVERED', 'COMPLETED'];
-
 async function sendStatusEmail(shipment) {
   try {
-    // Only send for key status changes
-    if (!NOTIFY_STATUSES.includes(shipment.currentStatus)) return;
-
     const ff = shipment.freightForwarding || {};
     const statusLabel = STATUS_LABELS[shipment.currentStatus] || shipment.currentStatus;
 
     // Get notification email from FreightForwarding or created user
     let toEmail = ff.notificationEmail;
+    console.log('📧 Email attempt - toEmail from FF:', toEmail, '| status:', shipment.currentStatus);
+    
     if (!toEmail && shipment.createdById) {
       const { PrismaClient } = require('@prisma/client');
       const prisma = new PrismaClient();
       const user = await prisma.user.findUnique({ where: { id: shipment.createdById } });
       toEmail = user?.email;
+      console.log('📧 Email fallback - user email:', toEmail);
     }
 
-    if (!toEmail) return; // No email to send to
+    if (!toEmail) {
+      console.log('📧 Email skipped - no recipient email found');
+      return;
+    }
+
+    console.log('📧 Attempting to send email to:', toEmail);
 
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden;">
@@ -88,8 +90,8 @@ async function sendStatusEmail(shipment) {
 
     console.log(`📧 Email sent to ${toEmail} for ${shipment.refNo} (${statusLabel})`);
   } catch (error) {
-    console.error('Email send error:', error.message);
-    // Don't throw - email failure shouldn't break the API
+    console.error('❌ Email send error:', error.message);
+    console.error('❌ Full error:', error);
   }
 }
 
