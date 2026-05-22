@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -66,6 +66,8 @@ export default function ShipmentDetail() {
   const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
   const [initialTabSet, setInitialTabSet] = useState(false)
   const [activeTab, setActiveTab] = useState('freight')
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [showEmailDropdown, setShowEmailDropdown] = useState(false)
   
   const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
@@ -107,6 +109,36 @@ export default function ShipmentDetail() {
     },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
+
+  const handleSendTestEmail = async () => {
+    const ff = shipment?.freightForwarding || {}
+    if (!ff.notificationEmail) {
+      addToast('Please set a notification email first', 'warning')
+      return
+    }
+    setSendingEmail(true)
+    setShowEmailDropdown(false)
+    try {
+      await api.put(`/freight/shipments/${id}/rates`, { notificationEmail: ff.notificationEmail })
+      addToast('Test email sent! Check your inbox.', 'success')
+    } catch (err) {
+      addToast('Failed to send test email', 'error')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
+  const handleOpenGmail = () => {
+    const ff = shipment?.freightForwarding || {}
+    if (!ff.notificationEmail) {
+      addToast('Please set a notification email first', 'warning')
+      return
+    }
+    setShowEmailDropdown(false)
+    const subject = encodeURIComponent(`Shipment Update: ${shipment.refNo} - ${shipment.currentStatus.replace(/_/g, ' ')}`)
+    const body = encodeURIComponent(`Reference: ${shipment.refNo}\nStatus: ${shipment.currentStatus.replace(/_/g, ' ')}\nConsignee: ${ff.consigneeName || 'N/A'}\nShipper: ${ff.shipperName || 'N/A'}\nMode: ${shipment.shipmentType || 'N/A'}\n\nView details: ${window.location.href}`)
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${ff.notificationEmail}&su=${subject}&body=${body}`, '_blank')
+  }
 
   const handlePrint = () => {
     const ff = shipment?.freightForwarding || {}; const cha = shipment?.cha || {}; const acc = shipment?.accounts || {}
@@ -166,6 +198,24 @@ export default function ShipmentDetail() {
             <div className="flex items-center gap-2">
               <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200"><Pencil size={16} />Edit</Link>
               <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200"><Printer size={16} />Print</button>
+              {/* Send Email Dropdown */}
+              <div className="relative">
+                <button onClick={() => setShowEmailDropdown(!showEmailDropdown)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-lg hover:from-sky-500 hover:to-blue-600 text-sm font-medium shadow-lg shadow-sky-200">
+                  <Send size={16} />Send Email <ChevronDown size={14} />
+                </button>
+                {showEmailDropdown && (
+                  <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-xl border border-gray-200 z-20 py-1">
+                    <button onClick={handleSendTestEmail} disabled={sendingEmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2 disabled:opacity-50 transition-colors">
+                      {sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="text-indigo-500" />}
+                      {sendingEmail ? 'Sending...' : 'Send via System'}
+                    </button>
+                    <button onClick={handleOpenGmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2 transition-colors">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.649 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068A1.485 1.485 0 011.5 3H2l10 7.25L22 3h.5c.425 0 .8.162 1.069.432.27.268.431.643.431 1.068z"/></svg>
+                      Open in Gmail
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-indigo-100">
