@@ -131,6 +131,17 @@ export default function CreateShipment() {
       if (isEditMode) {
         const updatePromises = []
         
+        // Update reference number
+        updatePromises.push(api.put(`/freight/shipments/${editId}/refno`, { refNo: formData.refNo }))
+        
+        // Update all freight forwarding fields (enquiryDate, noOfPackages, weight, grossWeight)
+        updatePromises.push(api.put(`/freight/shipments/${editId}/rates`, { 
+          enquiryDate: formData.enquiryDate || null,
+          noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
+          weight: formData.weight ? parseFloat(formData.weight) : undefined,
+          grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : undefined
+        }))
+        
         // Update shipment type (mode)
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { 
           shipmentType: isCHAOnly ? 'CHA Only' : (formData.mode || '') 
@@ -148,14 +159,6 @@ export default function CreateShipment() {
           awbDate: formData.awbDate || null 
         }))
         
-        // Update rates (weight and gross weight together)
-        if (formData.weight || formData.grossWeight) {
-          updatePromises.push(api.put(`/freight/shipments/${editId}/rates`, { 
-            weight: formData.weight ? parseFloat(formData.weight) : undefined,
-            grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : undefined
-          }))
-        }
-
         // Update consignee
         updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { 
           consigneeName: formData.consigneeName 
@@ -175,7 +178,6 @@ export default function CreateShipment() {
         addToast('Shipment updated successfully!', 'success')
         queryClient.removeQueries({ queryKey: ['shipment', editId] })
         queryClient.removeQueries({ queryKey: ['shipments'] })
-        // Force hard reload to bypass React Query cache
         setTimeout(() => {
           window.location.href = `/#/shipment/${editId}?t=${Date.now()}`
         }, 300)
