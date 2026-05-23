@@ -1,11 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { resolve } from 'path'
+import { writeFileSync } from 'fs'
 
 export default defineConfig({
   plugins: [
     react(),
-    tailwindcss()
+    tailwindcss(),
+    {
+      name: 'render-redirect',
+      closeBundle() {
+        writeFileSync(resolve(__dirname, 'dist', '_redirects'), '/*    /index.html   200\n')
+      }
+    }
   ],
   build: {
     minify: 'esbuild',
