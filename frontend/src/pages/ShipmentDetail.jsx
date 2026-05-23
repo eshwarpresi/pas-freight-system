@@ -71,12 +71,8 @@ export default function ShipmentDetail() {
   
   const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
-    queryFn: async () => { 
-      const r = await api.get(`/freight/shipments/${id}`, { params: { _t: Date.now() } }); 
-      return r.data.data 
-    },
-    staleTime: 0,
-    gcTime: 0,
+    queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`, { params: { _t: Date.now() } }); return r.data.data },
+    staleTime: 0, gcTime: 0,
   })
 
   const isCHAOnly = shipment?.shipmentType === 'CHA Only'
@@ -87,11 +83,8 @@ export default function ShipmentDetail() {
   useEffect(() => {
     if (shipment && !initialTabSet) {
       const tabParam = searchParams.get('tab')
-      if (tabParam && ['freight', 'cha', 'accounts', 'history'].includes(tabParam)) {
-        setActiveTab(tabParam)
-      } else if (shipment.shipmentType === 'CHA Only') {
-        setActiveTab('cha')
-      }
+      if (tabParam && ['freight', 'cha', 'accounts', 'history'].includes(tabParam)) setActiveTab(tabParam)
+      else if (shipment.shipmentType === 'CHA Only') setActiveTab('cha')
       setInitialTabSet(true)
     }
   }, [shipment, initialTabSet, searchParams])
@@ -99,15 +92,11 @@ export default function ShipmentDetail() {
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
-        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'}
+        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'}
       }
       return api[eps[section].m](eps[section].u, data)
     },
-    onSuccess: () => {
-      addToast('Saved!', 'success');
-      queryClient.invalidateQueries({ queryKey: ['shipments'] });
-      queryClient.invalidateQueries({ queryKey: ['shipment', id] });
-    },
+    onSuccess: () => { addToast('Saved!', 'success'); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipment', id] }); },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
 
@@ -143,13 +132,13 @@ export default function ShipmentDetail() {
       .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.item{padding:6px 0;border-bottom:1px solid #f3f4f6}.item label{font-size:9px;color:#9ca3af;display:block;text-transform:uppercase}.item span{font-size:13px;color:#1f2937;font-weight:500}
       .remarks-box{margin-top:10px;padding:10px;background:#fffbeb;border-left:3px solid #f59e0b;font-size:12px}.footer{margin-top:30px;border-top:1px solid #e5e7eb;padding-top:10px;font-size:10px;color:#9ca3af;text-align:center}
       @media print{body{padding:20px}}</style></head><body>
-      <div class="header"><div><h1>🚢 PAS Freight Services Pvt Ltd</h1><p>Shipment Details Report</p></div><p>${new Date().toLocaleDateString()}</p></div>
+      <div class="header"><div><h1>PAS Freight Services Pvt Ltd</h1><p>Shipment Details Report</p></div><p>${new Date().toLocaleDateString()}</p></div>
       <div class="ref-box"><div class="ref">${shipment.refNo}</div><div class="stage">${shipment.currentStatus.replace(/_/g,' ')}</div></div>
-      <div class="section"><h2>📦 Freight Forwarding</h2><div class="grid">
+      <div class="section"><h2>Freight Forwarding</h2><div class="grid">
       <div class="item"><label>Consignee</label><span>${ff.consigneeName||'—'}</span></div><div class="item"><label>Shipper</label><span>${ff.shipperName||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Terms</label><span>${ff.terms||'—'}</span></div><div class="item"><label>Port Location</label><span>${ff.portLocation||'—'}</span></div><div class="item"><label>Agent</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Packages</label><span>${ff.noOfPackages||'—'}</span></div><div class="item"><label>Gross Weight</label><span>${ff.grossWeight?ff.grossWeight+' kg':'—'}</span></div><div class="item"><label>Chargeable Weight</label><span>${ff.weight?ff.weight+' kg':'—'}</span></div><div class="item"><label>CBM</label><span>${ff.cbm||'—'}</span></div><div class="item"><label>Booking Date</label><span>${fmd(ff.bookingDate)}</span></div><div class="item"><label>ETD</label><span>${fmd(ff.etd)}</span></div><div class="item"><label>ETA</label><span>${fmd(ff.eta)}</span></div><div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>AWB Date</label><span>${fmd(ff.awbDate)}</span></div></div></div>
-      <div class="section"><h2>🛃 Customs Clearance</h2><div class="grid">
-      <div class="item"><label>Job No</label><span>${cha.jobNo||'—'}</span></div><div class="item"><label>Checklist Date</label><span>${fmd(cha.checklistDate)}</span></div><div class="item"><label>BOE No</label><span>${cha.boeNo||'—'}</span></div><div class="item"><label>BOE Date</label><span>${fmd(cha.boeDate)}</span></div><div class="item"><label>DO Collection</label><span>${fmd(cha.doCollectionDate)}</span></div><div class="item"><label>LEO Date</label><span>${fmd(cha.leoDate)}</span></div><div class="item"><label>Hand Over</label><span>${fmd(cha.handOverDate)}</span></div><div class="item"><label>Delivery Date</label><span>${fmd(cha.deliveryDate)}</span></div><div class="item"><label>Tracking No</label><span>${cha.trackingNumber||'—'}</span></div></div></div>
-      <div class="section"><h2>💰 Accounts</h2><div class="grid"><div class="item"><label>Invoice No</label><span>${acc.invoiceNumber||'—'}</span></div><div class="item"><label>Invoice Date</label><span>${fmd(acc.invoiceDate)}</span></div><div class="item"><label>Sending Date</label><span>${fmd(acc.sendingDate)}</span></div></div></div>
+      <div class="section"><h2>Customs Clearance</h2><div class="grid">
+      <div class="item"><label>Job No</label><span>${cha.jobNo||'—'}</span></div><div class="item"><label>Checklist Date</label><span>${fmd(cha.checklistDate)}</span></div><div class="item"><label>SB No</label><span>${cha.sbNo||'—'}</span></div><div class="item"><label>SB Date</label><span>${fmd(cha.sbDate)}</span></div><div class="item"><label>DO Collection</label><span>${fmd(cha.doCollectionDate)}</span></div><div class="item"><label>LEO Date</label><span>${fmd(cha.leoDate)}</span></div><div class="item"><label>Hand Over</label><span>${fmd(cha.handOverDate)}</span></div></div></div>
+      <div class="section"><h2>Accounts</h2><div class="grid"><div class="item"><label>Invoice No</label><span>${acc.invoiceNumber||'—'}</span></div><div class="item"><label>Invoice Date</label><span>${fmd(acc.invoiceDate)}</span></div><div class="item"><label>Sending Date</label><span>${fmd(acc.sendingDate)}</span></div></div></div>
       ${shipment.remarks?`<div class="remarks-box"><strong>Remarks:</strong> ${shipment.remarks}</div>`:''}
       <div class="footer">© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd</div><script>window.onload=function(){window.print()}</script></body></html>`)
     pw.document.close()
@@ -185,17 +174,11 @@ export default function ShipmentDetail() {
               <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200"><Pencil size={16} />Edit</Link>
               <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200"><Printer size={16} />Print</button>
               <div className="relative">
-                <button onClick={() => setShowEmailDropdown(!showEmailDropdown)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-lg hover:from-sky-500 hover:to-blue-600 text-sm font-medium shadow-lg shadow-sky-200">
-                  <Send size={16} />Send Email <ChevronDown size={14} />
-                </button>
+                <button onClick={() => setShowEmailDropdown(!showEmailDropdown)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-lg hover:from-sky-500 hover:to-blue-600 text-sm font-medium shadow-lg shadow-sky-200"><Send size={16} />Send Email <ChevronDown size={14} /></button>
                 {showEmailDropdown && (
                   <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-xl border border-gray-200 z-20 py-1">
-                    <button onClick={handleSendTestEmail} disabled={sendingEmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2 disabled:opacity-50">
-                      {sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="text-indigo-500" />}{sendingEmail ? 'Sending...' : 'Send via System'}
-                    </button>
-                    <button onClick={handleOpenGmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.649 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068A1.485 1.485 0 011.5 3H2l10 7.25L22 3h.5c.425 0 .8.162 1.069.432.27.268.431.643.431 1.068z"/></svg>Open in Gmail
-                    </button>
+                    <button onClick={handleSendTestEmail} disabled={sendingEmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2 disabled:opacity-50">{sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="text-indigo-500" />}{sendingEmail ? 'Sending...' : 'Send via System'}</button>
+                    <button onClick={handleOpenGmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.649 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068A1.485 1.485 0 011.5 3H2l10 7.25L22 3h.5c.425 0 .8.162 1.069.432.27.268.431.643.431 1.068z"/></svg>Open in Gmail</button>
                   </div>
                 )}
               </div>
@@ -205,10 +188,7 @@ export default function ShipmentDetail() {
             <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
             <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Import/Export:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
             <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Stage:</span>
-              <div className="flex items-center gap-1">
-                <InlineField value={STAGE_OPTIONS.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" />
-                <InlineField value={!STAGE_OPTIONS.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} placeholder="Custom..." />
-              </div>
+              <div className="flex items-center gap-1"><InlineField value={STAGE_OPTIONS.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!STAGE_OPTIONS.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} placeholder="Custom..." /></div>
             </div>
             <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
           </div>
@@ -216,66 +196,29 @@ export default function ShipmentDetail() {
       </div>
       
       <div className="bg-white rounded-xl border border-indigo-100 p-5 overflow-x-auto shadow-sm">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">{isCHAOnly ? 'CHA Workflow' : 'Shipment Workflow'}</span>
-          <span className="text-[10px] text-indigo-400 flex items-center gap-1"><Info size={11} /> {isCHAOnly ? 'Customs clearance only' : 'Full freight + customs'}</span>
-        </div>
+        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">{isCHAOnly ? 'CHA Workflow' : 'Shipment Workflow'}</span><span className="text-[10px] text-indigo-400 flex items-center gap-1"><Info size={11} /> {isCHAOnly ? 'Customs clearance only' : 'Full freight + customs'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
-          {steps.map((step, i) => {
-            const Icon = step.i; const done = i <= cur; const now = i === cur
-            return (
-              <div key={step.s} className="flex items-center">
-                <div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}>
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300 bg-white'}`} title={step.d}>
-                    {done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400" />}
-                  </div>
-                  <span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600' : 'text-gray-500'}`}>{step.l}</span>
-                </div>
-                {i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200'}`} />}
-              </div>
-            )
+          {steps.map((step, i) => { const Icon = step.i; const done = i <= cur; const now = i === cur
+            return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300 bg-white'}`} title={step.d}>{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600' : 'text-gray-500'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200'}`} />}</div>)
           })}
         </div>
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-indigo-50 justify-center">
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-300" /><span className="text-[10px] text-gray-500">Completed</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-300" /><span className="text-[10px] text-gray-500">Current</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-300" /><span className="text-[10px] text-gray-500">Pending</span></div>
-        </div>
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-indigo-50 justify-center"><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-300" /><span className="text-[10px] text-gray-500">Completed</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-300" /><span className="text-[10px] text-gray-500">Current</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-300" /><span className="text-[10px] text-gray-500">Pending</span></div></div>
       </div>
       
-      <div className="hidden sm:flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 border border-indigo-100">
-        {tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500 hover:text-indigo-500'}`}><Icon size={16}/><span>{t.l}</span></button>})}
-      </div>
-      <div className="sm:hidden flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 overflow-x-auto border border-indigo-100">
-        {tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500'}`}><Icon size={14}/>{t.l}</button>})}
-      </div>
+      <div className="hidden sm:flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 border border-indigo-100">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500 hover:text-indigo-500'}`}><Icon size={16}/><span>{t.l}</span></button>})}</div>
+      <div className="sm:hidden flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 overflow-x-auto border border-indigo-100">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500'}`}><Icon size={14}/>{t.l}</button>})}</div>
 
       <div className="bg-white rounded-xl border border-indigo-100 p-4 sm:p-6 shadow-sm">
         {activeTab==='freight'&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
-          <Section title="Notification Settings" icon={Mail}>
-            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
-          </Section>
-          <Section title="Route Details" icon={MapPinned}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." />
-              <ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." />
-              <ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." />
-              <ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." />
-            </div>
-          </Section>
-          <Section title="Weight Details" icon={Scale}>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => updateMutation.mutate({ section: 'rates', data: { grossWeight: v } })} type="number" />
-              <Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" />
-              <Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" />
-            </div>
-          </Section>
+          <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
+          <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>
+          <Section title="Weight Details" icon={Scale}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => updateMutation.mutate({ section: 'rates', data: { grossWeight: v } })} type="number" /><Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /><Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" /></div></Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
           <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section></div>}
         
-        {/* ===== CUSTOMS CLEARANCE TAB - UPDATED ===== */}
+        {/* CUSTOMS TAB - BOE replaced with Shipping Bill, POD removed */}
         {activeTab==='cha'&&<div className="space-y-4">
           <Section title="Checklist" icon={ClipboardCheck}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -284,41 +227,20 @@ export default function ShipmentDetail() {
               <Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" />
             </div>
           </Section>
-          <Section title="BOE" icon={FileText}>
+          <Section title="Shipping Bill" icon={FileText}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} />
-              <Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" />
+              <Field label="SB No" value={cha.sbNo} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbNo: v } })} />
+              <Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbDate: v } })} type="date" />
             </div>
           </Section>
           <Section title="DO Collection" icon={FileCheck}>
             <Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" />
           </Section>
-          
-          {/* LEO (was OOC) */}
           <Section title="LEO" icon={CheckCircle2}>
             <Field label="LEO Date" value={Fmt(cha.leoDate)} onSave={v => updateMutation.mutate({ section: 'leo', data: { leoDate: v } })} type="date" />
           </Section>
-          
-          {/* Hand Over (was Gate Pass) */}
           <Section title="Hand Over" icon={Truck}>
             <Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => updateMutation.mutate({ section: 'handover', data: { handOverDate: v } })} type="date" />
-          </Section>
-          
-          {/* Shipping Bill - only for CHA Export */}
-          {isCHAExport && (
-            <Section title="Shipping Bill" icon={FileText}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="SB No" value={cha.sbNo} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbNo: v } })} />
-                <Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbDate: v } })} type="date" />
-              </div>
-            </Section>
-          )}
-          
-          <Section title="POD (Delivery)" icon={MapPin}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'pod', data: { deliveryDate: v } })} type="date" />
-              <Field label="Tracking No" value={cha.trackingNumber} onSave={v => updateMutation.mutate({ section: 'pod', data: { trackingNumber: v } })} />
-            </div>
           </Section>
         </div>}
         
@@ -337,13 +259,8 @@ function Field({ label, value, onSave, type = 'text', placeholder = 'Not set' })
   useEffect(() => { setVal(value || '') }, [value])
   const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
   return <div><label className="block text-xs text-indigo-400 mb-1">{label}</label>{editing ? (
-    <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save}
-      onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
-      className="w-full px-3 py-2 border border-indigo-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white" step={type === 'number' ? '0.01' : undefined} />
+    <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="w-full px-3 py-2 border border-indigo-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white" step={type === 'number' ? '0.01' : undefined} />
   ) : (
-    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-indigo-100 rounded-lg text-sm cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors flex items-center justify-between group">
-      <span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || placeholder}</span>
-      <Pencil size={10} className="text-gray-300 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" />
-    </div>
+    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-indigo-100 rounded-lg text-sm cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors flex items-center justify-between group"><span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
   )}</div>
 }
