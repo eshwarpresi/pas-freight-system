@@ -122,10 +122,8 @@ export default function CreateShipment() {
         const updatePromises = []
         updatePromises.push(api.put(`/freight/shipments/${editId}/refno`, { refNo: formData.refNo }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/rates`, { 
-          enquiryDate: formData.enquiryDate || null,
-          noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
-          weight: formData.weight ? parseFloat(formData.weight) : undefined,
-          grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : undefined,
+          enquiryDate: formData.enquiryDate || null, noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
+          weight: formData.weight ? parseFloat(formData.weight) : undefined, grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : undefined,
           notificationEmail: formData.notificationEmail || null
         }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: shipmentTypeVal }))
@@ -141,36 +139,33 @@ export default function CreateShipment() {
         setTimeout(() => { window.location.href = `/#/shipment/${editId}?t=${Date.now()}` }, 300)
       } else {
         const submitData = { 
-          ...formData, 
-          refNo: formData.refNo || generateRefNo(),
+          ...formData, refNo: formData.refNo || generateRefNo(),
           enquiryDate: formData.enquiryDate || new Date().toISOString().split('T')[0],
           noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
           weight: formData.weight ? parseFloat(formData.weight) : null,
           grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : null,
-          shipmentType: shipmentTypeVal,
-          importExport: importExportVal
+          shipmentType: shipmentTypeVal, importExport: importExportVal
         }
         const response = await api.post('/freight/shipments', submitData)
         localStorage.removeItem(DRAFT_KEY)
         addToast(isCHA ? 'CHA Bill created successfully!' : 'Shipment created successfully!', 'success')
         setTimeout(() => navigate(`/shipment/${response.data.data.id}${isCHA ? '?tab=customs' : ''}`), 500)
       }
-    } catch (err) {
-      addToast(err.response?.data?.message || 'Failed to save', 'error')
-    } finally { setLoading(false) }
+    } catch (err) { addToast(err.response?.data?.message || 'Failed to save', 'error') }
+    finally { setLoading(false) }
   }
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
     setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '' })
     setErrors({}); setTouched({})
-    addToast('Draft cleared', 'info')
   }
 
   const hasDraft = !isEditMode && localStorage.getItem(DRAFT_KEY)
   const getFieldClass = (name) => errors[name] && touched[name] ? 'border-red-400 bg-red-50' : touched[name] && formData[name] && !errors[name] ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300'
   const focusRing = isCHA ? (isCHAExport ? 'focus:ring-amber-500 focus:border-amber-500' : 'focus:ring-emerald-500 focus:border-emerald-500') : 'focus:ring-indigo-500 focus:border-indigo-500'
-  const accentColor = isCHAExport ? 'amber' : (isCHA ? 'emerald' : 'indigo')
+  const accentText = isCHAExport ? 'text-amber-400' : isCHA ? 'text-emerald-400' : 'text-indigo-400'
+  const inputClass = `w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`
 
   if (loadingShipment) return (
     <div className="flex items-center justify-center h-96">
@@ -181,21 +176,10 @@ export default function CreateShipment() {
     </div>
   )
 
-  const InputField = ({ name, label, icon: Icon, required, type = 'text', placeholder = '' }) => (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1.5">{label} {required && <span className="text-red-500">*</span>}</label>
-      <div className="relative">
-        {Icon && <Icon size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 text-${accentColor}-400`} />}
-        <input type={type} name={name} value={formData[name]} onChange={handleChange} placeholder={placeholder}
-          className={`w-full ${Icon ? 'pl-9' : 'pl-3'} pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass(name)}`} />
-      </div>
-    </div>
-  )
-
   return (
     <div className="max-w-3xl mx-auto">
       <div className="mb-8">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-700 mb-4 transition-colors"><ArrowLeft size={15} /> Back to shipments</Link>
+        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-700 mb-4"><ArrowLeft size={15} /> Back to shipments</Link>
         <div className="flex items-center gap-3">
           <div className={`w-12 h-12 bg-gradient-to-br ${isCHAExport ? 'from-amber-400 to-orange-500' : isCHA ? 'from-emerald-400 to-green-500' : 'from-indigo-500 to-blue-600'} rounded-xl flex items-center justify-center shadow-lg`}>
             {isEditMode ? <Pencil size={22} className="text-white" /> : isCHA ? <FileCheck size={22} className="text-white" /> : <Ship size={22} className="text-white" />}
@@ -204,15 +188,8 @@ export default function CreateShipment() {
             <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
               {isEditMode ? `Edit: ${formData.refNo}` : isCHAExport ? 'New CHA Bill Export' : isCHA ? 'New CHA Bill Import' : 'New Freight Shipment'}
             </h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {isEditMode ? 'Update shipment details' : isCHAExport ? 'Customs clearance - Export' : isCHA ? 'Customs clearance - Import' : 'Full freight forwarding shipment'}
-            </p>
           </div>
-          {isEditMode && (
-            <Link to={`/shipment/${editId}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:from-indigo-600 hover:to-blue-700 text-sm font-medium shadow-lg shadow-indigo-200">
-              <Eye size={16} /> View Shipment
-            </Link>
-          )}
+          {isEditMode && <Link to={`/shipment/${editId}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:from-indigo-600 hover:to-blue-700 text-sm font-medium shadow-lg"><Eye size={16} /> View Shipment</Link>}
         </div>
       </div>
 
@@ -256,7 +233,7 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Ship size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Shipment Details</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className={`w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className={`${inputClass} ${getFieldClass('noOfPackages')}`} /></div></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
                     <div className="flex gap-2">
                       <select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select mode...</option>{TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}</select>
@@ -274,30 +251,30 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Parties Involved</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <InputField name="consigneeName" label="Consignee Name" icon={User} required />
-                  <InputField name="shipperName" label="Shipper Name" icon={User} required />
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Globe size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Agent Information</h3></div>
-                <InputField name="agent" label="Agent / Forwarder" icon={Anchor} />
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className={`${inputClass}`} /></div></div>
               </div>
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Barcode size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">AWB Details</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <InputField name="hawb" label="HAWB No" icon={Barcode} />
-                  <InputField name="mawb" label="MAWB No" icon={Barcode} />
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB No</label><div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="hawb" value={formData.hawb} onChange={handleChange} className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">MAWB No</label><div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="mawb" value={formData.mawb} onChange={handleChange} className={`${inputClass}`} /></div></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">AWB Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
-                  <InputField name="weight" label="Package Weight (kg)" icon={Weight} type="number" />
-                  <InputField name="grossWeight" label="Gross Weight (kg)" icon={Scale} type="number" />
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">AWB Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
-                <InputField name="notificationEmail" label="Notification Email" icon={Mail} type="email" placeholder="client@example.com" />
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
               </div>
             </>
           )}
@@ -310,28 +287,27 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {isCHAExport ? (
                     <>
-                      <InputField name="shipperName" label="Shipper Name" icon={User} required />
-                      <InputField name="consigneeName" label="Consignee Name" icon={User} required />
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
                     </>
                   ) : (
                     <>
-                      <InputField name="consigneeName" label="Consignee Name" icon={User} required />
-                      <InputField name="shipperName" label="Shipper Name" icon={User} required />
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
                     </>
                   )}
                 </div>
               </div>
               <div className={`p-6 border-b ${isCHAExport ? 'border-amber-100' : 'border-emerald-100'}`}>
                 <div className="flex items-center gap-2 mb-1"><Globe size={16} className={isCHAExport ? 'text-amber-500' : 'text-emerald-500'} /><h3 className={`text-sm font-semibold uppercase tracking-wider ${isCHAExport ? 'text-amber-700' : 'text-emerald-700'}`}>Agent Information</h3></div>
-                <InputField name="agent" label="Agent / Forwarder" icon={Anchor} />
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className={`${inputClass}`} /></div></div>
               </div>
               <div className={`p-6 border-b ${isCHAExport ? 'border-amber-100' : 'border-emerald-100'}`}>
                 <div className="flex items-center gap-2 mb-1"><FileCheck size={16} className={isCHAExport ? 'text-amber-500' : 'text-emerald-500'} /><h3 className={`text-sm font-semibold uppercase tracking-wider ${isCHAExport ? 'text-amber-700' : 'text-emerald-700'}`}>CHA Bill Details</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
                     <select name="importExport" value={isCHAExport ? 'Export' : 'Import'} disabled className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 text-gray-700`}>
-                      <option value="Import">Import</option>
-                      <option value="Export">Export</option>
+                      <option value="Import">Import</option><option value="Export">Export</option>
                     </select>
                   </div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
@@ -342,19 +318,19 @@ export default function CreateShipment() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <InputField name="hawb" label="HAWB No" icon={Barcode} />
-                  <InputField name="mawb" label="MAWB No" icon={Barcode} />
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB No</label><div className="relative"><Barcode size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="hawb" value={formData.hawb} onChange={handleChange} className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">MAWB No</label><div className="relative"><Barcode size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="mawb" value={formData.mawb} onChange={handleChange} className={`${inputClass}`} /></div></div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">AWB Date</label><div className="relative"><Calendar size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${isCHAExport ? 'text-amber-400' : 'text-emerald-400'}`} /><input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div></div>
-                  <InputField name="weight" label="Package Weight (kg)" icon={Weight} type="number" />
-                  <InputField name="grossWeight" label="Gross Weight (kg)" icon={Scale} type="number" />
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">AWB Date</label><div className="relative"><Calendar size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Weight (kg)</label><div className="relative"><Weight size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
-                <InputField name="notificationEmail" label="Notification Email" icon={Mail} type="email" placeholder="client@example.com" />
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
               </div>
             </>
           )}
