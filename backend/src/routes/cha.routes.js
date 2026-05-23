@@ -20,4 +20,13 @@ router.put('/shipments/:id/gate-pass', chaController.updateGatePass);
 // UPDATE - POD (Proof of Delivery)
 router.put('/shipments/:id/pod', chaController.updatePOD);
 
+// UPDATE - Shipping Bill (SB)
+router.put('/shipments/:id/shipping-bill', chaController.updateShippingBill);
+
+// UPDATE - LEO
+router.put('/shipments/:id/leo', chaController.updateLEO);
+
+// UPDATE - Hand Over
+router.put('/shipments/:id/hand-over', chaController.updateHandOver);
+
 module.exports = router;

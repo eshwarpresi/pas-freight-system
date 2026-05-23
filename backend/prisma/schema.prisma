@@ -120,6 +120,12 @@ model CHA {
   deliveryDate          DateTime?
   trackingNumber        String?
   
+  // NEW - CHA Export fields
+  sbNo                  String?   // Shipping Bill No
+  sbDate                DateTime? // Shipping Bill Date
+  leoDate               DateTime? // LEO Date
+  handOverDate          DateTime? // Hand Over Date
+  
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 }

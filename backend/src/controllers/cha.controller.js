@@ -105,4 +105,47 @@ const updatePOD = async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-module.exports = { updateChecklist, updateBOE, updateDOCollection, updateOOC, updateGatePass, updatePOD };
+// UPDATE SHIPPING BILL (SB)
+const updateShippingBill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await ensureCHA(id);
+    const data = {};
+    const parts = [];
+    if (req.body.sbNo !== undefined) { data.sbNo = req.body.sbNo; parts.push(`SB No: ${req.body.sbNo}`); }
+    if (req.body.sbDate) { data.sbDate = new Date(req.body.sbDate); parts.push(`SB Date: ${req.body.sbDate}`); }
+    if (Object.keys(data).length > 0) {
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | ') } } } });
+    }
+    const s = await getFullShipment(id);
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// UPDATE LEO
+const updateLEO = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await ensureCHA(id);
+    if (req.body.leoDate) {
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { leoDate: new Date(req.body.leoDate) } }, statusHistory: { create: { status: 'LEO_DONE', remarks: `LEO Date: ${req.body.leoDate}` } } } });
+    }
+    const s = await getFullShipment(id);
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// UPDATE HAND OVER
+const updateHandOver = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await ensureCHA(id);
+    if (req.body.handOverDate) {
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { handOverDate: new Date(req.body.handOverDate) } }, statusHistory: { create: { status: 'HAND_OVER', remarks: `Hand Over Date: ${req.body.handOverDate}` } } } });
+    }
+    const s = await getFullShipment(id);
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+module.exports = { updateChecklist, updateBOE, updateDOCollection, updateOOC, updateGatePass, updatePOD, updateShippingBill, updateLEO, updateHandOver };
