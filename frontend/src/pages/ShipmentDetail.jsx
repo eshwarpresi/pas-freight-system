@@ -27,14 +27,20 @@ const FULL_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',d:'Pricing added',i:DollarSign},{s:'NOMINATED',l:'Nominated',d:'Agent assigned',i:User},
   {s:'BOOKED',l:'Booked',d:'Confirmed with carrier',i:Calendar},{s:'SCHEDULED',l:'Scheduled',d:'ETD/ETA set',i:Clock},{s:'AWB_GENERATED',l:'AWB',d:'Air Waybill created',i:Barcode},
   {s:'CHECKLIST_APPROVED',l:'Checklist',d:'Customs checklist done',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',d:'Bill of Entry filed',i:FileText},{s:'DO_COLLECTED',l:'DO',d:'Delivery Order collected',i:FileCheck},
-  {s:'OOC_DONE',l:'LEO',d:'LEO Done',i:CheckCircle2},{s:'GATE_PASS',l:'Hand Over',d:'Hand Over',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Cargo delivered',i:MapPin},
+  {s:'OOC_DONE',l:'OOC',d:'Out of Charge',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',d:'Customs gate cleared',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Cargo delivered',i:MapPin},
   {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice dispatched',i:Send}
 ]
-const CHA_STEPS = [
+const CHA_IMPORT_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},
-  {s:'CHECKLIST_APPROVED',l:'Checklist',d:'Customs checklist done',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',d:'Bill of Entry filed',i:FileText},{s:'DO_COLLECTED',l:'DO',d:'Delivery Order collected',i:FileCheck},
-  {s:'OOC_DONE',l:'LEO',d:'LEO Done',i:CheckCircle2},{s:'GATE_PASS',l:'Hand Over',d:'Hand Over',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Cargo delivered',i:MapPin},
-  {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice dispatched',i:Send}
+  {s:'CHECKLIST_APPROVED',l:'Checklist',d:'Checklist done',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',d:'BOE filed',i:FileText},{s:'DO_COLLECTED',l:'DO',d:'DO collected',i:FileCheck},
+  {s:'OOC_DONE',l:'OOC',d:'Out of Charge',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',d:'Gate cleared',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Delivered',i:MapPin},
+  {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
+]
+const CHA_EXPORT_STEPS = [
+  {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},
+  {s:'CHECKLIST_APPROVED',l:'Checklist',d:'Checklist done',i:ClipboardCheck},{s:'SB_FILED',l:'Shipping Bill',d:'SB filed',i:FileText},
+  {s:'LEO_DONE',l:'LEO',d:'LEO Done',i:CheckCircle2},{s:'HAND_OVER',l:'Hand Over',d:'Hand Over',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Delivered',i:MapPin},
+  {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
 ]
 
 function InlineField({ value, onSave, type = 'text', placeholder = '—', className = '', options = null }) {
@@ -51,15 +57,7 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
 
 function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }) {
   const isInOptions = options.includes(value || '')
-  return (
-    <div>
-      <label className="block text-xs text-indigo-400 mb-1">{label}</label>
-      <div className="flex gap-2">
-        <div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div>
-        <div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div>
-      </div>
-    </div>
-  )
+  return (<div><label className="block text-xs text-indigo-400 mb-1">{label}</label><div className="flex gap-2"><div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div><div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div></div></div>)
 }
 
 export default function ShipmentDetail() {
@@ -77,7 +75,7 @@ export default function ShipmentDetail() {
 
   const isCHAOnly = shipment?.shipmentType === 'CHA Only'
   const isCHAExport = isCHAOnly && shipment?.importExport === 'Export'
-  const steps = isCHAOnly ? CHA_STEPS : FULL_STEPS
+  const steps = isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
   const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
 
   useEffect(() => {
@@ -92,7 +90,7 @@ export default function ShipmentDetail() {
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
-        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'}
+        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'}
       }
       return api[eps[section].m](eps[section].u, data)
     },
@@ -137,14 +135,19 @@ export default function ShipmentDetail() {
       <div class="section"><h2>Freight Forwarding</h2><div class="grid">
       <div class="item"><label>Consignee</label><span>${ff.consigneeName||'—'}</span></div><div class="item"><label>Shipper</label><span>${ff.shipperName||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Terms</label><span>${ff.terms||'—'}</span></div><div class="item"><label>Port Location</label><span>${ff.portLocation||'—'}</span></div><div class="item"><label>Agent</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Packages</label><span>${ff.noOfPackages||'—'}</span></div><div class="item"><label>Gross Weight</label><span>${ff.grossWeight?ff.grossWeight+' kg':'—'}</span></div><div class="item"><label>Chargeable Weight</label><span>${ff.weight?ff.weight+' kg':'—'}</span></div><div class="item"><label>CBM</label><span>${ff.cbm||'—'}</span></div><div class="item"><label>Booking Date</label><span>${fmd(ff.bookingDate)}</span></div><div class="item"><label>ETD</label><span>${fmd(ff.etd)}</span></div><div class="item"><label>ETA</label><span>${fmd(ff.eta)}</span></div><div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>AWB Date</label><span>${fmd(ff.awbDate)}</span></div></div></div>
       <div class="section"><h2>Customs Clearance</h2><div class="grid">
-      <div class="item"><label>Job No</label><span>${cha.jobNo||'—'}</span></div><div class="item"><label>Checklist Date</label><span>${fmd(cha.checklistDate)}</span></div><div class="item"><label>SB No</label><span>${cha.sbNo||'—'}</span></div><div class="item"><label>SB Date</label><span>${fmd(cha.sbDate)}</span></div><div class="item"><label>DO Collection</label><span>${fmd(cha.doCollectionDate)}</span></div><div class="item"><label>LEO Date</label><span>${fmd(cha.leoDate)}</span></div><div class="item"><label>Hand Over</label><span>${fmd(cha.handOverDate)}</span></div></div></div>
+      ${isCHAExport ? `
+      <div class="item"><label>Job No</label><span>${cha.jobNo||'—'}</span></div><div class="item"><label>Checklist Date</label><span>${fmd(cha.checklistDate)}</span></div><div class="item"><label>SB No</label><span>${cha.sbNo||'—'}</span></div><div class="item"><label>SB Date</label><span>${fmd(cha.sbDate)}</span></div><div class="item"><label>LEO Date</label><span>${fmd(cha.leoDate)}</span></div><div class="item"><label>Hand Over</label><span>${fmd(cha.handOverDate)}</span></div>
+      ` : `
+      <div class="item"><label>Job No</label><span>${cha.jobNo||'—'}</span></div><div class="item"><label>Checklist Date</label><span>${fmd(cha.checklistDate)}</span></div><div class="item"><label>BOE No</label><span>${cha.boeNo||'—'}</span></div><div class="item"><label>BOE Date</label><span>${fmd(cha.boeDate)}</span></div><div class="item"><label>DO Collection</label><span>${fmd(cha.doCollectionDate)}</span></div><div class="item"><label>OOC Date</label><span>${fmd(cha.oocDate)}</span></div><div class="item"><label>Gate Pass</label><span>${fmd(cha.gatePassDate)}</span></div><div class="item"><label>Delivery Date</label><span>${fmd(cha.deliveryDate)}</span></div><div class="item"><label>Tracking No</label><span>${cha.trackingNumber||'—'}</span></div>
+      `}
+      </div></div>
       <div class="section"><h2>Accounts</h2><div class="grid"><div class="item"><label>Invoice No</label><span>${acc.invoiceNumber||'—'}</span></div><div class="item"><label>Invoice Date</label><span>${fmd(acc.invoiceDate)}</span></div><div class="item"><label>Sending Date</label><span>${fmd(acc.sendingDate)}</span></div></div></div>
       ${shipment.remarks?`<div class="remarks-box"><strong>Remarks:</strong> ${shipment.remarks}</div>`:''}
       <div class="footer">© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd</div><script>window.onload=function(){window.print()}</script></body></html>`)
     pw.document.close()
   }
 
-  const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 border-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 border-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 border-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 border-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 border-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 border-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 border-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 border-green-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white border-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 border-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 border-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 border-gray-300'}; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 border-gray-300' }
+  const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 border-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 border-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 border-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 border-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 border-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 border-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 border-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 border-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white border-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 border-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 border-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 border-gray-300'}; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 border-gray-300' }
 
   if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-12 h-12 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>
   if (!shipment) return <div className="text-center py-16"><div className="w-16 h-16 bg-gradient-to-br from-indigo-400 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Package size={32} className="text-white"/></div><h3 className="text-lg font-semibold text-gray-800">Shipment not found</h3><Link to="/" className="inline-flex items-center gap-1 mt-4 text-indigo-600"><ArrowLeft size={14} />Back</Link></div>
@@ -166,7 +169,7 @@ export default function ShipmentDetail() {
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">{shipment.refNo}</h1>
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span>
-                {isCHAOnly && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-emerald-500 to-green-500 text-white border border-emerald-400">CHA Only</span>}
+                {isCHAOnly && <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white border ${isCHAExport ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-400' : 'bg-gradient-to-r from-emerald-500 to-green-500 border-emerald-400'}`}>{isCHAExport ? 'CHA Export' : 'CHA Import'}</span>}
               </div>
               <p className="text-sm text-gray-500 mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
             </div>
@@ -196,7 +199,7 @@ export default function ShipmentDetail() {
       </div>
       
       <div className="bg-white rounded-xl border border-indigo-100 p-5 overflow-x-auto shadow-sm">
-        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">{isCHAOnly ? 'CHA Workflow' : 'Shipment Workflow'}</span><span className="text-[10px] text-indigo-400 flex items-center gap-1"><Info size={11} /> {isCHAOnly ? 'Customs clearance only' : 'Full freight + customs'}</span></div>
+        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">{isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span><span className="text-[10px] text-indigo-400 flex items-center gap-1"><Info size={11} /> {isCHAOnly ? (isCHAExport ? 'Export clearance' : 'Import clearance') : 'Full freight + customs'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
           {steps.map((step, i) => { const Icon = step.i; const done = i <= cur; const now = i === cur
             return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300 bg-white'}`} title={step.d}>{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600' : 'text-gray-500'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200'}`} />}</div>)
@@ -218,7 +221,7 @@ export default function ShipmentDetail() {
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
           <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section></div>}
         
-        {/* CUSTOMS TAB - BOE replaced with Shipping Bill, POD removed */}
+        {/* CUSTOMS TAB */}
         {activeTab==='cha'&&<div className="space-y-4">
           <Section title="Checklist" icon={ClipboardCheck}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -227,21 +230,51 @@ export default function ShipmentDetail() {
               <Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" />
             </div>
           </Section>
-          <Section title="Shipping Bill" icon={FileText}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="SB No" value={cha.sbNo} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbNo: v } })} />
-              <Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbDate: v } })} type="date" />
-            </div>
-          </Section>
-          <Section title="DO Collection" icon={FileCheck}>
-            <Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" />
-          </Section>
-          <Section title="LEO" icon={CheckCircle2}>
-            <Field label="LEO Date" value={Fmt(cha.leoDate)} onSave={v => updateMutation.mutate({ section: 'leo', data: { leoDate: v } })} type="date" />
-          </Section>
-          <Section title="Hand Over" icon={Truck}>
-            <Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => updateMutation.mutate({ section: 'handover', data: { handOverDate: v } })} type="date" />
-          </Section>
+
+          {/* CHA IMPORT */}
+          {!isCHAExport && (
+            <>
+              <Section title="BOE" icon={FileText}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} />
+                  <Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" />
+                </div>
+              </Section>
+              <Section title="DO Collection" icon={FileCheck}>
+                <Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" />
+              </Section>
+              <Section title="OOC" icon={CheckCircle2}>
+                <Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => updateMutation.mutate({ section: 'ooc', data: { oocDate: v } })} type="date" />
+              </Section>
+              <Section title="Gate Pass" icon={Truck}>
+                <Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => updateMutation.mutate({ section: 'gatepass', data: { gatePassDate: v } })} type="date" />
+              </Section>
+              <Section title="POD (Delivery)" icon={MapPin}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'pod', data: { deliveryDate: v } })} type="date" />
+                  <Field label="Tracking No" value={cha.trackingNumber} onSave={v => updateMutation.mutate({ section: 'pod', data: { trackingNumber: v } })} />
+                </div>
+              </Section>
+            </>
+          )}
+
+          {/* CHA EXPORT - No DO Collection */}
+          {isCHAExport && (
+            <>
+              <Section title="Shipping Bill" icon={FileText}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="SB No" value={cha.sbNo} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbNo: v } })} />
+                  <Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbDate: v } })} type="date" />
+                </div>
+              </Section>
+              <Section title="LEO" icon={CheckCircle2}>
+                <Field label="LEO Date" value={Fmt(cha.leoDate)} onSave={v => updateMutation.mutate({ section: 'leo', data: { leoDate: v } })} type="date" />
+              </Section>
+              <Section title="Hand Over" icon={Truck}>
+                <Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => updateMutation.mutate({ section: 'handover', data: { handOverDate: v } })} type="date" />
+              </Section>
+            </>
+          )}
         </div>}
         
         {activeTab==='accounts'&&<div className="space-y-4"><Section title="Invoice" icon={Banknote}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => updateMutation.mutate({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}

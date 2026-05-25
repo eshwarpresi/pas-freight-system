@@ -115,7 +115,7 @@ const updateShippingBill = async (req, res) => {
     if (req.body.sbNo !== undefined) { data.sbNo = req.body.sbNo; parts.push(`SB No: ${req.body.sbNo}`); }
     if (req.body.sbDate) { data.sbDate = new Date(req.body.sbDate); parts.push(`SB Date: ${req.body.sbDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { cha: { update: { data } }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | ') } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'SB_FILED', cha: { update: { data } }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | ') } } } });
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -128,7 +128,7 @@ const updateLEO = async (req, res) => {
     const { id } = req.params;
     await ensureCHA(id);
     if (req.body.leoDate) {
-      await prisma.shipment.update({ where: { id }, data: { cha: { update: { leoDate: new Date(req.body.leoDate) } }, statusHistory: { create: { status: 'LEO_DONE', remarks: `LEO Date: ${req.body.leoDate}` } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'LEO_DONE', cha: { update: { leoDate: new Date(req.body.leoDate) } }, statusHistory: { create: { status: 'LEO_DONE', remarks: `LEO Date: ${req.body.leoDate}` } } } });
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -141,7 +141,7 @@ const updateHandOver = async (req, res) => {
     const { id } = req.params;
     await ensureCHA(id);
     if (req.body.handOverDate) {
-      await prisma.shipment.update({ where: { id }, data: { cha: { update: { handOverDate: new Date(req.body.handOverDate) } }, statusHistory: { create: { status: 'HAND_OVER', remarks: `Hand Over Date: ${req.body.handOverDate}` } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'HAND_OVER', cha: { update: { handOverDate: new Date(req.body.handOverDate) } }, statusHistory: { create: { status: 'HAND_OVER', remarks: `Hand Over Date: ${req.body.handOverDate}` } } } });
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
