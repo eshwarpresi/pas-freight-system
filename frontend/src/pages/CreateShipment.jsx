@@ -25,6 +25,10 @@ export default function CreateShipment() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [editId, setEditId] = useState(null)
   const [loadingShipment, setLoadingShipment] = useState(false)
+  const [returnPage, setReturnPage] = useState(1)
+  const [returnSearch, setReturnSearch] = useState('')
+  const [returnStatus, setReturnStatus] = useState('')
+  const [returnType, setReturnType] = useState('')
 
   const isCHA = shipmentMode === 'cha-import' || shipmentMode === 'cha-export'
   const isCHAExport = shipmentMode === 'cha-export'
@@ -56,6 +60,10 @@ export default function CreateShipment() {
     if (editParam) {
       setIsEditMode(true)
       setEditId(editParam)
+      setReturnPage(parseInt(searchParams.get('page')) || 1)
+      setReturnSearch(searchParams.get('search') || '')
+      setReturnStatus(searchParams.get('status') || '')
+      setReturnType(searchParams.get('type') || '')
       loadShipmentForEdit(editParam)
     }
   }, [searchParams])
@@ -136,7 +144,18 @@ export default function CreateShipment() {
         addToast('Shipment updated successfully!', 'success')
         queryClient.removeQueries({ queryKey: ['shipment', editId] })
         queryClient.removeQueries({ queryKey: ['shipments'] })
-        setTimeout(() => { window.location.href = `/#/shipment/${editId}?t=${Date.now()}` }, 300)
+        
+        // Build return URL with page and filter params
+        const returnParams = new URLSearchParams()
+        if (returnPage > 1) returnParams.set('page', returnPage)
+        if (returnSearch) returnParams.set('search', returnSearch)
+        if (returnStatus) returnParams.set('status', returnStatus)
+        if (returnType) returnParams.set('type', returnType)
+        const queryString = returnParams.toString()
+        
+        setTimeout(() => { 
+          window.location.href = `/#/shipment/${editId}?t=${Date.now()}${queryString ? '&' + queryString : ''}`
+        }, 300)
       } else {
         const submitData = { 
           ...formData, refNo: formData.refNo || generateRefNo(),
@@ -279,7 +298,7 @@ export default function CreateShipment() {
             </>
           )}
 
-          {/* CHA IMPORT / EXPORT */}
+          {/* CHA IMPORT / EXPORT - same form, unchanged */}
           {isCHA && (
             <>
               <div className={`p-6 border-b ${isCHAExport ? 'border-amber-100 bg-gradient-to-br from-white to-amber-50/30' : 'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30'}`}>

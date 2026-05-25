@@ -57,11 +57,11 @@ const exportShipments = async (req, res) => {
     const { status, search, isArchived } = req.query;
     const where = { isArchived: isArchived === 'true' };
     if (status) where.currentStatus = status;
-    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }];
+    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }];
     const totalCount = await prisma.shipment.count({ where });
     const BATCH_SIZE = 5000; let all = [];
     for (let skip = 0; skip < totalCount; skip += BATCH_SIZE) {
-      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, shipmentType: true, importExport: true, createdByName: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, grossWeight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
+      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, shipmentType: true, importExport: true, createdByName: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, grossWeight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true, sbNo: true, sbDate: true, leoDate: true, handOverDate: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
       all = all.concat(batch);
     }
     await exportShipmentsToExcel(all, res);
@@ -76,9 +76,9 @@ const getAllShipments = async (req, res) => {
     const where = { isArchived: isArchived === 'true' };
     if (status) where.currentStatus = status;
     if (shipmentType) { if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only'; else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: 'CHA Only' }; }
-    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }];
+    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }];
     const [shipments, total] = await Promise.all([
-      prisma.shipment.findMany({ where, select: { id: true, refNo: true, currentStatus: true, shipmentStage: true, shipmentType: true, importExport: true, createdByName: true, createdAt: true, freightForwarding: { select: { consigneeName: true, hawb: true } }, cha: { select: { boeNo: true } } }, orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l }),
+      prisma.shipment.findMany({ where, select: { id: true, refNo: true, currentStatus: true, shipmentStage: true, shipmentType: true, importExport: true, createdByName: true, createdAt: true, freightForwarding: { select: { consigneeName: true, hawb: true } }, cha: { select: { boeNo: true, sbNo: true } } }, orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l }),
       prisma.shipment.count({ where })
     ]);
     res.json({ status: 'success', data: shipments, pagination: { total, page: p, limit: l, totalPages: Math.ceil(total/l) } });
