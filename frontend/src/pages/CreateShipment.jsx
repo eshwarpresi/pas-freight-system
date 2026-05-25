@@ -6,12 +6,14 @@ import { useToast } from '../components/Toast'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
-  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail
+  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail, Truck
 } from 'lucide-react'
 
 const DRAFT_KEY = 'pas_shipment_draft'
 const IMPORT_EXPORT_TYPES = ['Import', 'Export']
 const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
+const VEHICLE_TYPES = ['10ft', '20ft', '32ft', '40ft']
+const PACKAGE_TYPES = ['Box / Carton', 'Envelope / Document', 'Parcel', 'Pallet', 'Crate', 'Bag / Sack', 'Drum / Barrel', 'Tube', 'Container', 'Wooden Box', 'Plastic Bin', 'Roll', 'Bundle', 'Cargo Package', 'Freight Package']
 
 export default function CreateShipment() {
   const navigate = useNavigate()
@@ -32,6 +34,7 @@ export default function CreateShipment() {
 
   const isCHA = shipmentMode === 'cha-import' || shipmentMode === 'cha-export'
   const isCHAExport = shipmentMode === 'cha-export'
+  const isTransport = shipmentMode === 'transport'
 
   const generateRefNo = () => {
     const date = new Date()
@@ -39,6 +42,7 @@ export default function CreateShipment() {
     const m = String(date.getMonth() + 1).padStart(2, '0')
     const d = String(date.getDate()).padStart(2, '0')
     const rand = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')
+    if (isTransport) return `TRP-${y}${m}${d}-${rand}`
     const prefix = isCHA ? 'CHAB' : 'PAS'
     return `${prefix}-${y}${m}${d}-${rand}`
   }
@@ -51,7 +55,10 @@ export default function CreateShipment() {
       noOfPackages: '', consigneeName: '', shipperName: '', agent: '', 
       importExport: '', mode: '',
       hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '',
-      notificationEmail: ''
+      notificationEmail: '',
+      // Transport fields
+      customerName: '', vehicleType: '', noOfContainers: '', packageType: '',
+      fromLocation: '', toLocation: '', deliveryDate: ''
     }
   })
 
@@ -75,8 +82,11 @@ export default function CreateShipment() {
       const s = res.data.data
       const ff = s.freightForwarding || {}
       
-      const mode = s.shipmentType === 'CHA Only' ? (s.importExport === 'Export' ? 'cha-export' : 'cha-import') : 'freight'
+      let mode = 'freight'
+      if (s.shipmentType === 'CHA Only') mode = s.importExport === 'Export' ? 'cha-export' : 'cha-import'
+      else if (s.shipmentType === 'Transport') mode = 'transport'
       setShipmentMode(mode)
+      
       setFormData({
         refNo: s.refNo || '',
         enquiryDate: ff.enquiryDate ? new Date(ff.enquiryDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -91,7 +101,14 @@ export default function CreateShipment() {
         awbDate: ff.awbDate ? new Date(ff.awbDate).toISOString().split('T')[0] : '',
         weight: ff.weight || '',
         grossWeight: ff.grossWeight || '',
-        notificationEmail: ff.notificationEmail || ''
+        notificationEmail: ff.notificationEmail || '',
+        customerName: ff.customerName || '',
+        vehicleType: ff.vehicleType || '',
+        noOfContainers: ff.noOfContainers || '',
+        packageType: ff.packageType || '',
+        fromLocation: ff.fromLocation || '',
+        toLocation: ff.toLocation || '',
+        deliveryDate: ff.deliveryDate ? new Date(ff.deliveryDate).toISOString().split('T')[0] : ''
       })
     } catch (err) {
       addToast('Failed to load shipment for editing', 'error')
@@ -110,9 +127,15 @@ export default function CreateShipment() {
 
   const validate = () => {
     const newErrors = {}
-    if (!formData.consigneeName.trim()) newErrors.consigneeName = 'Consignee name is required'
-    if (!formData.shipperName.trim()) newErrors.shipperName = 'Shipper name is required'
-    if (!isCHA && !isEditMode && !formData.refNo.trim()) newErrors.refNo = 'Reference number is required'
+    if (isTransport) {
+      if (!formData.customerName.trim()) newErrors.customerName = 'Customer name is required'
+      if (!formData.fromLocation.trim()) newErrors.fromLocation = 'From location is required'
+      if (!formData.toLocation.trim()) newErrors.toLocation = 'To location is required'
+    } else {
+      if (!formData.consigneeName.trim()) newErrors.consigneeName = 'Consignee name is required'
+      if (!formData.shipperName.trim()) newErrors.shipperName = 'Shipper name is required'
+      if (!isCHA && !isEditMode && !formData.refNo.trim()) newErrors.refNo = 'Reference number is required'
+    }
     setErrors(newErrors)
     if (Object.keys(newErrors).length > 0) { addToast('Please fix the validation errors', 'warning'); return false }
     return true
@@ -123,8 +146,8 @@ export default function CreateShipment() {
     if (!validate()) return
     setLoading(true)
     try {
-      const importExportVal = isCHAExport ? 'Export' : (isCHA ? 'Import' : formData.importExport)
-      const shipmentTypeVal = isCHA ? 'CHA Only' : (formData.mode || '')
+      const shipmentTypeVal = isTransport ? 'Transport' : (isCHA ? 'CHA Only' : (formData.mode || ''))
+      const importExportVal = isCHAExport ? 'Export' : (isCHA ? 'Import' : (formData.importExport || ''))
 
       if (isEditMode) {
         const updatePromises = []
@@ -132,30 +155,34 @@ export default function CreateShipment() {
         updatePromises.push(api.put(`/freight/shipments/${editId}/rates`, { 
           enquiryDate: formData.enquiryDate || null, noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
           weight: formData.weight ? parseFloat(formData.weight) : undefined, grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : undefined,
-          notificationEmail: formData.notificationEmail || null
+          notificationEmail: formData.notificationEmail || null,
+          customerName: formData.customerName || null,
+          vehicleType: formData.vehicleType || null,
+          noOfContainers: formData.noOfContainers ? parseInt(formData.noOfContainers) : null,
+          packageType: formData.packageType || null,
+          fromLocation: formData.fromLocation || null,
+          toLocation: formData.toLocation || null,
+          deliveryDate: formData.deliveryDate || null
         }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: shipmentTypeVal }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: importExportVal }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { consigneeName: formData.consigneeName }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/shipper`, { shipperName: formData.shipperName }))
-        updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { agent: formData.agent }))
+        if (!isTransport) {
+          updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
+          updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { consigneeName: formData.consigneeName }))
+          updatePromises.push(api.put(`/freight/shipments/${editId}/shipper`, { shipperName: formData.shipperName }))
+          updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { agent: formData.agent }))
+        }
         await Promise.all(updatePromises)
         addToast('Shipment updated successfully!', 'success')
         queryClient.removeQueries({ queryKey: ['shipment', editId] })
         queryClient.removeQueries({ queryKey: ['shipments'] })
-        
-        // Build return URL with page and filter params
         const returnParams = new URLSearchParams()
         if (returnPage > 1) returnParams.set('page', returnPage)
         if (returnSearch) returnParams.set('search', returnSearch)
         if (returnStatus) returnParams.set('status', returnStatus)
         if (returnType) returnParams.set('type', returnType)
         const queryString = returnParams.toString()
-        
-        setTimeout(() => { 
-          window.location.href = `/#/shipment/${editId}?t=${Date.now()}${queryString ? '&' + queryString : ''}`
-        }, 300)
+        setTimeout(() => { window.location.href = `/#/shipment/${editId}?t=${Date.now()}${queryString ? '&' + queryString : ''}` }, 300)
       } else {
         const submitData = { 
           ...formData, refNo: formData.refNo || generateRefNo(),
@@ -163,12 +190,21 @@ export default function CreateShipment() {
           noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
           weight: formData.weight ? parseFloat(formData.weight) : null,
           grossWeight: formData.grossWeight ? parseFloat(formData.grossWeight) : null,
-          shipmentType: shipmentTypeVal, importExport: importExportVal
+          shipmentType: shipmentTypeVal, importExport: importExportVal,
+          customerName: formData.customerName || null,
+          vehicleType: formData.vehicleType || null,
+          noOfContainers: formData.noOfContainers ? parseInt(formData.noOfContainers) : null,
+          packageType: formData.packageType || null,
+          deliveryDate: formData.deliveryDate || null
         }
         const response = await api.post('/freight/shipments', submitData)
         localStorage.removeItem(DRAFT_KEY)
-        addToast(isCHA ? 'CHA Bill created successfully!' : 'Shipment created successfully!', 'success')
-        setTimeout(() => navigate(`/shipment/${response.data.data.id}${isCHA ? '?tab=customs' : ''}`), 500)
+        addToast(isTransport ? 'Transport shipment created!' : isCHA ? 'CHA Bill created successfully!' : 'Shipment created successfully!', 'success')
+        if (isTransport) {
+          setTimeout(() => navigate(`/shipment/${response.data.data.id}?tab=accounts`), 500)
+        } else {
+          setTimeout(() => navigate(`/shipment/${response.data.data.id}${isCHA ? '?tab=customs' : ''}`), 500)
+        }
       }
     } catch (err) { addToast(err.response?.data?.message || 'Failed to save', 'error') }
     finally { setLoading(false) }
@@ -176,15 +212,16 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '' })
     setErrors({}); setTouched({})
   }
 
   const hasDraft = !isEditMode && localStorage.getItem(DRAFT_KEY)
   const getFieldClass = (name) => errors[name] && touched[name] ? 'border-red-400 bg-red-50' : touched[name] && formData[name] && !errors[name] ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300'
-  const focusRing = isCHA ? (isCHAExport ? 'focus:ring-amber-500 focus:border-amber-500' : 'focus:ring-emerald-500 focus:border-emerald-500') : 'focus:ring-indigo-500 focus:border-indigo-500'
-  const accentText = isCHAExport ? 'text-amber-400' : isCHA ? 'text-emerald-400' : 'text-indigo-400'
+  const focusRing = isTransport ? 'focus:ring-sky-500 focus:border-sky-500' : isCHA ? (isCHAExport ? 'focus:ring-amber-500 focus:border-amber-500' : 'focus:ring-emerald-500 focus:border-emerald-500') : 'focus:ring-indigo-500 focus:border-indigo-500'
+  const accentText = isTransport ? 'text-sky-400' : isCHAExport ? 'text-amber-400' : isCHA ? 'text-emerald-400' : 'text-indigo-400'
   const inputClass = `w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`
+  const accentBg = isTransport ? 'from-sky-400 to-blue-500' : isCHAExport ? 'from-amber-400 to-orange-500' : isCHA ? 'from-emerald-400 to-green-500' : 'from-indigo-500 to-blue-600'
 
   if (loadingShipment) return (
     <div className="flex items-center justify-center h-96">
@@ -200,12 +237,12 @@ export default function CreateShipment() {
       <div className="mb-8">
         <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-700 mb-4"><ArrowLeft size={15} /> Back to shipments</Link>
         <div className="flex items-center gap-3">
-          <div className={`w-12 h-12 bg-gradient-to-br ${isCHAExport ? 'from-amber-400 to-orange-500' : isCHA ? 'from-emerald-400 to-green-500' : 'from-indigo-500 to-blue-600'} rounded-xl flex items-center justify-center shadow-lg`}>
-            {isEditMode ? <Pencil size={22} className="text-white" /> : isCHA ? <FileCheck size={22} className="text-white" /> : <Ship size={22} className="text-white" />}
+          <div className={`w-12 h-12 bg-gradient-to-br ${accentBg} rounded-xl flex items-center justify-center shadow-lg`}>
+            {isEditMode ? <Pencil size={22} className="text-white" /> : isTransport ? <Truck size={22} className="text-white" /> : isCHA ? <FileCheck size={22} className="text-white" /> : <Ship size={22} className="text-white" />}
           </div>
           <div className="flex-1">
             <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
-              {isEditMode ? `Edit: ${formData.refNo}` : isCHAExport ? 'New CHA Bill Export' : isCHA ? 'New CHA Bill Import' : 'New Freight Shipment'}
+              {isEditMode ? `Edit: ${formData.refNo}` : isTransport ? 'New Transport Shipment' : isCHAExport ? 'New CHA Bill Export' : isCHA ? 'New CHA Bill Import' : 'New Freight Shipment'}
             </h2>
           </div>
           {isEditMode && <Link to={`/shipment/${editId}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:from-indigo-600 hover:to-blue-700 text-sm font-medium shadow-lg"><Eye size={16} /> View Shipment</Link>}
@@ -214,10 +251,11 @@ export default function CreateShipment() {
 
       {!isEditMode && (
         <div className="mb-6">
-          <div className="flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 border border-indigo-100">
-            <button type="button" onClick={() => setShipmentMode('freight')} className={`flex-1 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'freight' ? 'bg-white text-indigo-700 shadow-md' : 'text-gray-500 hover:text-indigo-600'}`}>🚢 Freight Shipment</button>
-            <button type="button" onClick={() => setShipmentMode('cha-import')} className={`flex-1 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-import' ? 'bg-white text-emerald-700 shadow-md' : 'text-gray-500 hover:text-emerald-600'}`}>🛃 CHA Bill Import</button>
-            <button type="button" onClick={() => setShipmentMode('cha-export')} className={`flex-1 px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-export' ? 'bg-white text-amber-700 shadow-md' : 'text-gray-500 hover:text-amber-600'}`}>📤 CHA Bill Export</button>
+          <div className="flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 border border-indigo-100 flex-wrap">
+            <button type="button" onClick={() => setShipmentMode('freight')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'freight' ? 'bg-white text-indigo-700 shadow-md' : 'text-gray-500 hover:text-indigo-600'}`}>🚢 Freight</button>
+            <button type="button" onClick={() => setShipmentMode('cha-import')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-import' ? 'bg-white text-emerald-700 shadow-md' : 'text-gray-500 hover:text-emerald-600'}`}>🛃 CHA Import</button>
+            <button type="button" onClick={() => setShipmentMode('cha-export')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-export' ? 'bg-white text-amber-700 shadow-md' : 'text-gray-500 hover:text-amber-600'}`}>📤 CHA Export</button>
+            <button type="button" onClick={() => setShipmentMode('transport')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'transport' ? 'bg-white text-sky-700 shadow-md' : 'text-gray-500 hover:text-sky-600'}`}>🚛 Transport</button>
           </div>
         </div>
       )}
@@ -298,7 +336,7 @@ export default function CreateShipment() {
             </>
           )}
 
-          {/* CHA IMPORT / EXPORT - same form, unchanged */}
+          {/* CHA IMPORT / EXPORT */}
           {isCHA && (
             <>
               <div className={`p-6 border-b ${isCHAExport ? 'border-amber-100 bg-gradient-to-br from-white to-amber-50/30' : 'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30'}`}>
@@ -354,12 +392,71 @@ export default function CreateShipment() {
             </>
           )}
 
+          {/* TRANSPORT SHIPMENT */}
+          {isTransport && (
+            <>
+              <div className="p-6 border-b border-sky-100 bg-gradient-to-br from-white to-sky-50/30">
+                <div className="flex items-center gap-2 mb-1"><Hash size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Reference Details</h3></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number</label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
+                      {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-sky-100 to-blue-100 rounded-lg text-xs font-medium text-sky-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
+                    </div>
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
+                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 border-b border-sky-100">
+                <div className="flex items-center gap-2 mb-1"><User size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Customer Details</h3></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="customerName" value={formData.customerName} onChange={handleChange} className={`${inputClass} ${getFieldClass('customerName')}`} /></div></div>
+              </div>
+
+              <div className="p-6 border-b border-sky-100">
+                <div className="flex items-center gap-2 mb-1"><Truck size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Transport Details</h3></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Vehicle Type</label>
+                    <div className="flex gap-2">
+                      <select name="vehicleType" value={VEHICLE_TYPES.includes(formData.vehicleType) ? formData.vehicleType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select vehicle...</option>{VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="vehicleType" value={!VEHICLE_TYPES.includes(formData.vehicleType) ? formData.vehicleType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Containers</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="number" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
+                </div>
+                <div className="mb-4"><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Type</label>
+                  <div className="flex gap-2">
+                    <select name="packageType" value={PACKAGE_TYPES.includes(formData.packageType) ? formData.packageType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select package...</option>{PACKAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <input type="text" name="packageType" value={!PACKAGE_TYPES.includes(formData.packageType) ? formData.packageType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6 border-b border-sky-100">
+                <div className="flex items-center gap-2 mb-1"><MapPin size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Route & Delivery</h3></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">From <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="fromLocation" value={formData.fromLocation} onChange={handleChange} className={`${inputClass} ${getFieldClass('fromLocation')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">To <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="toLocation" value={formData.toLocation} onChange={handleChange} className={`${inputClass} ${getFieldClass('toLocation')}`} /></div></div>
+                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Delivery Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="deliveryDate" value={formData.deliveryDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
+              </div>
+
+              <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
+                <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
+                <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
+              </div>
+            </>
+          )}
+
           <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 to-blue-50 border-t border-indigo-100 flex items-center justify-between">
             <p className="text-xs text-gray-500"><span className="text-red-500">*</span> Required fields</p>
             <div className="flex gap-3">
               <Link to="/" className="px-5 py-2.5 border border-indigo-200 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 transition-colors">Cancel</Link>
-              <button type="submit" disabled={loading} className={`px-6 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-all flex items-center gap-2 shadow-lg ${isCHAExport && !isEditMode ? 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-amber-200' : isCHA && !isEditMode ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-emerald-200' : 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-200'}`}>
-                {loading ? <><Loader2 size={16} className="animate-spin" />Saving...</> : <>{isEditMode ? <Pencil size={16} /> : isCHA ? <FileCheck size={16} /> : <Ship size={16} />}{isEditMode ? 'Update Shipment' : isCHAExport ? 'Create CHA Export Bill' : isCHA ? 'Create CHA Import Bill' : 'Create Shipment'}</>}
+              <button type="submit" disabled={loading} className={`px-6 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-all flex items-center gap-2 shadow-lg ${isTransport ? 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-sky-200' : isCHAExport && !isEditMode ? 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-amber-200' : isCHA && !isEditMode ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-emerald-200' : 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-200'}`}>
+                {loading ? <><Loader2 size={16} className="animate-spin" />Saving...</> : <>{isEditMode ? <Pencil size={16} /> : isTransport ? <Truck size={16} /> : isCHA ? <FileCheck size={16} /> : <Ship size={16} />}{isEditMode ? 'Update Shipment' : isTransport ? 'Create Transport' : isCHAExport ? 'Create CHA Export Bill' : isCHA ? 'Create CHA Import Bill' : 'Create Shipment'}</>}
               </button>
             </div>
           </div>

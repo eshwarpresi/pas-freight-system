@@ -40,7 +40,6 @@ function TableSkeleton() {
   )
 }
 
-// Load saved filters from sessionStorage
 function loadStickyFilters() {
   try {
     const saved = sessionStorage.getItem(STICKY_KEY)
@@ -64,7 +63,6 @@ export default function Dashboard() {
   const [initialized, setInitialized] = useState(false)
   const queryClient = useQueryClient()
 
-  // Save filters whenever they change (after initial load)
   useEffect(() => {
     if (initialized) {
       try {
@@ -75,7 +73,6 @@ export default function Dashboard() {
     }
   }, [search, statusFilter, shipmentTypeFilter, page, perPage, initialized])
 
-  // Mark initialized after first render
   useEffect(() => {
     setInitialized(true)
   }, [])
@@ -177,7 +174,12 @@ export default function Dashboard() {
       'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 ring-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 ring-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 ring-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 ring-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 ring-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 ring-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 ring-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 ring-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white ring-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 ring-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 ring-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 ring-gray-300'
     }; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 ring-gray-300'
   }
-  const getModeBadge = (t) => t==='CHA Only'?'bg-gradient-to-r from-emerald-500 to-green-500 text-white ring-green-400':!t?'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-600 ring-gray-300':'bg-gradient-to-r from-blue-500 to-indigo-500 text-white ring-blue-400'
+  const getModeBadge = (t) => {
+    if (t === 'CHA Only') return 'bg-gradient-to-r from-emerald-500 to-green-500 text-white ring-green-400'
+    if (t === 'Transport') return 'bg-gradient-to-r from-sky-500 to-blue-500 text-white ring-sky-400'
+    if (!t) return 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-600 ring-gray-300'
+    return 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white ring-blue-400'
+  }
   const getImportExportBadge = (v) => v==='Import'?'bg-gradient-to-r from-violet-500 to-purple-500 text-white ring-purple-400':v==='Export'?'bg-gradient-to-r from-orange-500 to-amber-500 text-white ring-amber-400':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-600 ring-gray-300'
 
   const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
@@ -208,7 +210,8 @@ export default function Dashboard() {
           <div className="flex bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur rounded-lg p-0.5 border border-indigo-200/50">
             <button onClick={()=>updateShipmentTypeFilter('')} className={`px-3 py-2 rounded-md text-xs font-semibold ${!shipmentTypeFilter?'bg-white text-indigo-700 shadow-sm':'text-gray-500'}`}>All</button>
             <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white text-indigo-700 shadow-sm':'text-gray-500'}`}>Freight</button>
-            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-emerald-700 shadow-sm':'text-gray-500'}`}><FileCheck size={12}/>CHA Only</button>
+            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-emerald-700 shadow-sm':'text-gray-500'}`}><FileCheck size={12}/>CHA</button>
+            <button onClick={()=>updateShipmentTypeFilter('TRANSPORT')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 ${shipmentTypeFilter==='TRANSPORT'?'bg-white text-sky-700 shadow-sm':'text-gray-500'}`}><Truck size={12}/>Transport</button>
           </div>
           <div className="flex bg-gradient-to-r from-gray-50 to-slate-50 backdrop-blur rounded-lg p-0.5 border border-gray-200/50">
             <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold ${!showArchived?'bg-white text-gray-800 shadow-sm':'text-gray-500'}`}>Active</button>

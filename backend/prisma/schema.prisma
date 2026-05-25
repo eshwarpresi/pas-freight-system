@@ -41,7 +41,7 @@ model Shipment {
   // NEW FIELDS
   shipmentStage String?  // Draft, Created, Confirmed, Booked, Scheduled, In Progress, Completed, Cancelled, On Hold
   remarks       String?  // Manual notes/comments
-  shipmentType  String?  // Mode: AIR, SEA FCL, SEA LCL, Courier etc.
+  shipmentType  String?  // Mode: Air, Sea FCL, Sea LCL, Courier, Transport etc.
   importExport  String?  // Import or Export
   
   // WHO CREATED THIS
@@ -92,6 +92,13 @@ model FreightForwarding {
   portLocation    String?
   notificationEmail String? // Email for status notifications
   
+  // TRANSPORT MODULE FIELDS
+  customerName    String?   // Customer name for transport
+  vehicleType     String?   // 10ft, 20ft, 32ft, 40ft, or custom
+  noOfContainers  Int?      // Number of containers
+  packageType     String?   // Box/Carton, Envelope, Parcel, Pallet, etc
+  deliveryDate    DateTime? // Delivery date
+  
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -120,7 +127,7 @@ model CHA {
   deliveryDate          DateTime?
   trackingNumber        String?
   
-  // NEW - CHA Export fields
+  // CHA Export fields
   sbNo                  String?   // Shipping Bill No
   sbDate                DateTime? // Shipping Bill Date
   leoDate               DateTime? // LEO Date
