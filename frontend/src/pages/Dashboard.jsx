@@ -10,10 +10,11 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
+const STICKY_KEY = 'pas_dashboard_filters'
 
 function TableSkeleton() {
   return (
@@ -39,18 +40,45 @@ function TableSkeleton() {
   )
 }
 
+// Load saved filters from sessionStorage
+function loadStickyFilters() {
+  try {
+    const saved = sessionStorage.getItem(STICKY_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return { search: '', statusFilter: '', shipmentTypeFilter: '', page: 1, perPage: 25 }
+}
+
 export default function Dashboard() {
   const { addToast } = useToast()
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [shipmentTypeFilter, setShipmentTypeFilter] = useState('')
+  const sticky = loadStickyFilters()
+  const [search, setSearch] = useState(sticky.search || '')
+  const [statusFilter, setStatusFilter] = useState(sticky.statusFilter || '')
+  const [shipmentTypeFilter, setShipmentTypeFilter] = useState(sticky.shipmentTypeFilter || '')
   const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState([])
-  const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState(25)
+  const [page, setPage] = useState(sticky.page || 1)
+  const [perPage, setPerPage] = useState(sticky.perPage || 25)
   const [showFilters, setShowFilters] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [initialized, setInitialized] = useState(false)
   const queryClient = useQueryClient()
+
+  // Save filters whenever they change (after initial load)
+  useEffect(() => {
+    if (initialized) {
+      try {
+        sessionStorage.setItem(STICKY_KEY, JSON.stringify({
+          search, statusFilter, shipmentTypeFilter, page, perPage
+        }))
+      } catch {}
+    }
+  }, [search, statusFilter, shipmentTypeFilter, page, perPage, initialized])
+
+  // Mark initialized after first render
+  useEffect(() => {
+    setInitialized(true)
+  }, [])
 
   const buildEditUrl = (shipmentId) => {
     const params = new URLSearchParams()
@@ -74,6 +102,14 @@ export default function Dashboard() {
   const updateStatus = (val) => { setStatusFilter(val); setPage(1) }
   const updateShipmentTypeFilter = (val) => { setShipmentTypeFilter(val); setPage(1) }
   const toggleArchived = (val) => { setShowArchived(val); setPage(1); setSelected([]) }
+
+  const clearAllFilters = () => {
+    setSearch('')
+    setStatusFilter('')
+    setShipmentTypeFilter('')
+    setPage(1)
+    addToast('Filters cleared', 'info')
+  }
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, page, perPage],
@@ -189,14 +225,29 @@ export default function Dashboard() {
       <div className="bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur rounded-xl border border-indigo-200/50 p-4"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="text-xs font-semibold text-indigo-500 uppercase">Delivery Progress</span><Info size={12} className="text-indigo-400"/></div><span className="text-xs font-bold text-indigo-700">{analytics.deliveryRate}%</span></div><div className="w-full bg-gray-200/50 rounded-full h-2 overflow-hidden"><div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700" style={{width:`${analytics.deliveryRate}%`}}/></div></div>
 
       {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5"><div className="relative flex-1 w-full"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400"/><input type="text" placeholder="Search by Ref No, Consignee, HAWB, BOE, SB..." value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 bg-white/80 backdrop-blur border border-indigo-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"/>{search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"><X size={14}/></button>}</div><div className="flex items-center gap-2"><button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border ${showFilters?'bg-gradient-to-r from-indigo-100 to-blue-100 border-indigo-300 text-indigo-600':'bg-white/80 border-indigo-200/50 text-gray-500'}`}><SlidersHorizontal size={15}/></button><button onClick={handleExport} disabled={exporting} className="px-3.5 py-2.5 bg-gradient-to-r from-white to-indigo-50 border border-indigo-200/50 rounded-lg text-xs font-semibold text-indigo-600 flex items-center gap-2 disabled:opacity-50">{exporting?<RefreshCw size={14} className="animate-spin"/>:<Download size={14}/>}{exporting?'Exporting...':'Export'}</button></div></div>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
+        <div className="relative flex-1 w-full">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400"/>
+          <input type="text" placeholder="Search by Ref No, Consignee, HAWB, BOE, SB..." value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 bg-white/80 backdrop-blur border border-indigo-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"/>
+          {search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"><X size={14}/></button>}
+        </div>
+        <div className="flex items-center gap-2">
+          {hasFilters && (
+            <button onClick={clearAllFilters} className="px-3 py-2.5 bg-white/80 border border-indigo-200/50 rounded-lg text-xs font-semibold text-indigo-600 flex items-center gap-1.5 hover:bg-indigo-50" title="Clear all filters">
+              <RotateCcw size={14} /> Clear
+            </button>
+          )}
+          <button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border ${showFilters?'bg-gradient-to-r from-indigo-100 to-blue-100 border-indigo-300 text-indigo-600':'bg-white/80 border-indigo-200/50 text-gray-500'}`}><SlidersHorizontal size={15}/></button>
+          <button onClick={handleExport} disabled={exporting} className="px-3.5 py-2.5 bg-gradient-to-r from-white to-indigo-50 border border-indigo-200/50 rounded-lg text-xs font-semibold text-indigo-600 flex items-center gap-2 disabled:opacity-50">{exporting?<RefreshCw size={14} className="animate-spin"/>:<Download size={14}/>}{exporting?'Exporting...':'Export'}</button>
+        </div>
+      </div>
 
       {showFilters&&(<div className="flex flex-wrap gap-2 p-3.5 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl border border-indigo-200/50"><span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center mr-1"><Filter size={11} className="mr-1"/>Status</span>{quickFilters.map(f=>{const I=f.i;const a=statusFilter===f.v;return <button key={f.v} onClick={()=>updateStatus(a?'':f.v)} className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 ${a?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'bg-white/80 text-gray-600'}`}><I size={12}/>{f.l}{a&&<X size={11}/>}</button>})}</div>)}
 
       {selected.length>0&&(<div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-300/50 rounded-xl px-4 py-3 flex items-center justify-between"><span className="text-sm text-indigo-700 font-medium">{selected.length} selected</span><div className="flex gap-2">{!showArchived&&<button onClick={()=>bulkArchiveMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg"><Archive size={13}/> Archive</button>}<button onClick={()=>setSelected([])} className="px-3.5 py-1.5 border border-indigo-300 text-indigo-700 rounded-lg text-xs font-semibold">Clear</button></div></div>)}
 
       {isError&&(<div className="bg-white/80 rounded-xl border border-red-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-red-400 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><AlertCircle size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">Connection Error</h3><p className="text-sm text-gray-500 mb-4">Unable to load shipments.</p><button onClick={()=>refetch()} className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><RefreshCw size={14}/> Retry</button></div>)}
-      {!isError&&isEmpty&&hasFilters&&(<div className="bg-white/80 rounded-xl border border-amber-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">No Results</h3><p className="text-sm text-gray-500 mb-4">Try adjusting your search or filters.</p><button onClick={()=>{updateSearch('');updateStatus('');updateShipmentTypeFilter('')}} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600"><X size={14}/> Clear Filters</button></div>)}
+      {!isError&&isEmpty&&hasFilters&&(<div className="bg-white/80 rounded-xl border border-amber-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">No Results</h3><p className="text-sm text-gray-500 mb-4">Try adjusting your search or filters.</p><button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600"><RotateCcw size={14}/> Clear All Filters</button></div>)}
       {!isError&&isEmpty&&!hasFilters&&!showArchived&&(<div className="bg-white/80 rounded-xl border border-indigo-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">Welcome to PAS Freight</h3><p className="text-sm text-gray-500 mb-4">Create your first shipment to get started.</p><Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><Plus size={14}/> Create Shipment</Link></div>)}
       {!isError&&isEmpty&&!hasFilters&&showArchived&&(<div className="bg-white/80 rounded-xl border border-gray-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-gray-400 to-slate-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><ArchiveIcon size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">Archive Empty</h3><button onClick={()=>toggleArchived(false)} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600"><Package size={14}/> View Active Shipments</button></div>)}
       {showSkeleton&&<TableSkeleton/>}
