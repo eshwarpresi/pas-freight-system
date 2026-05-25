@@ -12,6 +12,7 @@ async function exportShipmentsToExcel(shipments, res) {
   const chaBillCount = shipments.filter(s => s.shipmentType === 'CHA Only').length;
   const freightShipmentCount = shipments.length - chaBillCount;
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  const num = (v) => (v !== null && v !== undefined && v !== '') ? Number(v) : null;
 
   // =============================================
   // SHEET 1: ALL SHIPMENTS
@@ -22,6 +23,7 @@ async function exportShipmentsToExcel(shipments, res) {
   });
 
   const columns = [
+    { header: 'SL No', key: 'slNo', width: 7 },
     { header: 'Ref No', key: 'refNo', width: 18 },
     { header: 'Status', key: 'status', width: 18 },
     { header: 'Stage', key: 'shipmentStage', width: 16 },
@@ -46,10 +48,15 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'MAWB/MBL', key: 'mawb', width: 17 },
     { header: 'HAWB/HBL', key: 'hawb', width: 17 },
     { header: 'Job No', key: 'jobNo', width: 14 },
+    { header: 'SB No', key: 'sbNo', width: 14 },
+    { header: 'SB Date', key: 'sbDate', width: 14 },
     { header: 'BOE No', key: 'boeNo', width: 14 },
+    { header: 'BOE Date', key: 'boeDate', width: 14 },
     { header: 'DO Collection', key: 'doDate', width: 17 },
     { header: 'OOC Date', key: 'oocDate', width: 14 },
+    { header: 'LEO Date', key: 'leoDate', width: 14 },
     { header: 'Gate Pass', key: 'gatePass', width: 14 },
+    { header: 'Hand Over Date', key: 'handOverDate', width: 16 },
     { header: 'Delivery Date', key: 'delivery', width: 16 },
     { header: 'Tracking No', key: 'tracking', width: 20 },
     { header: 'Invoice No', key: 'invoiceNo', width: 16 },
@@ -60,8 +67,8 @@ async function exportShipmentsToExcel(shipments, res) {
   ];
   ws.columns = columns;
 
-  const lastCol = 'AI';
-  const colCount = 35;
+  const lastCol = 'AO';
+  const colCount = 40;
 
   // Row 1: Title
   ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD - SHIPMENT REPORT']);
@@ -94,8 +101,8 @@ async function exportShipmentsToExcel(shipments, res) {
     };
   });
 
-  // Dropdown for Stage column (C = 3)
-  ws.dataValidations.add(`C4:C${3 + shipments.length + 500}`, {
+  // Dropdown for Stage column (D = 4)
+  ws.dataValidations.add(`D4:D${3 + shipments.length + 500}`, {
     type: 'list', allowBlank: true, formulae: [`"${STAGE_OPTIONS.join(',')}"`],
     showErrorMessage: true, errorTitle: 'Invalid Stage', error: 'Please select a valid Shipment Stage.'
   });
@@ -105,6 +112,7 @@ async function exportShipmentsToExcel(shipments, res) {
     const ff = s.freightForwarding || {}; const cha = s.cha || {}; const acc = s.accounts || {};
     const isCHA = s.shipmentType === 'CHA Only';
     const row = ws.addRow({
+      slNo: index + 1,
       refNo: s.refNo || '',
       status: s.currentStatus?.replace(/_/g, ' ') || '',
       shipmentStage: s.shipmentStage || '',
@@ -118,21 +126,26 @@ async function exportShipmentsToExcel(shipments, res) {
       terms: ff.terms || '',
       portLocation: ff.portLocation || '',
       agent: ff.agent || '',
-      packages: ff.noOfPackages || '',
-      grossWeight: ff.grossWeight || '',
-      weight: ff.weight || '',
-      cbm: ff.cbm || '',
-      rate: ff.sellingRate ? `₹${parseFloat(ff.sellingRate).toLocaleString()}` : '',
+      packages: num(ff.noOfPackages),
+      grossWeight: num(ff.grossWeight),
+      weight: num(ff.weight),
+      cbm: num(ff.cbm),
+      rate: ff.sellingRate ? num(ff.sellingRate) : '',
       booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString('en-US') : '',
       etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '',
       eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
       mawb: ff.mawb || '',
       hawb: ff.hawb || '',
       jobNo: cha.jobNo || '',
+      sbNo: cha.sbNo || '',
+      sbDate: cha.sbDate ? new Date(cha.sbDate).toLocaleDateString('en-US') : '',
       boeNo: cha.boeNo || '',
+      boeDate: cha.boeDate ? new Date(cha.boeDate).toLocaleDateString('en-US') : '',
       doDate: cha.doCollectionDate ? new Date(cha.doCollectionDate).toLocaleDateString('en-US') : '',
       oocDate: cha.oocDate ? new Date(cha.oocDate).toLocaleDateString('en-US') : '',
+      leoDate: cha.leoDate ? new Date(cha.leoDate).toLocaleDateString('en-US') : '',
       gatePass: cha.gatePassDate ? new Date(cha.gatePassDate).toLocaleDateString('en-US') : '',
+      handOverDate: cha.handOverDate ? new Date(cha.handOverDate).toLocaleDateString('en-US') : '',
       delivery: cha.deliveryDate ? new Date(cha.deliveryDate).toLocaleDateString('en-US') : '',
       tracking: cha.trackingNumber || '',
       invoiceNo: acc.invoiceNumber || '',
@@ -150,22 +163,32 @@ async function exportShipmentsToExcel(shipments, res) {
       row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
     }
 
-    const stageCell = row.getCell(3);
+    // Stage color
+    const stageCell = row.getCell(4);
     if (s.shipmentStage && STAGE_COLORS[s.shipmentStage]) {
       stageCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[s.shipmentStage] } };
       stageCell.font = { name: 'Arial', size: 9, bold: true };
     }
 
+    // CHA highlight
     if (isCHA) {
-      const modeCell = row.getCell(4);
+      const modeCell = row.getCell(5);
       modeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DCFCE7' } };
       modeCell.font = { name: 'Arial', size: 9, bold: true, color: { argb: '166534' } };
     }
 
-    const remCell = row.getCell(35);
+    const remCell = row.getCell(colCount);
     remCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
     row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
+
+    // Number formatting for numeric cells
+    [15, 16, 17, 18, 19].forEach(colIdx => {
+      const cell = row.getCell(colIdx);
+      if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+        cell.numFmt = '#,##0.00';
+      }
+    });
 
     row.eachCell(cell => {
       cell.border = {
@@ -293,6 +316,7 @@ async function exportShipmentsToExcel(shipments, res) {
     cs.getRow(2).height = 20;
 
     const chaCols = [
+      { header: 'SL No', w: 7 },
       { header: 'Ref No', w: 18 },
       { header: 'Status', w: 16 },
       { header: 'Created By', w: 16 },
@@ -307,11 +331,15 @@ async function exportShipmentsToExcel(shipments, res) {
       { header: 'Gross Weight (kg)', w: 15 },
       { header: 'Chargeable Weight (kg)', w: 18 },
       { header: 'Job No', w: 13 },
+      { header: 'SB No', w: 14 },
+      { header: 'SB Date', w: 14 },
       { header: 'BOE No', w: 14 },
       { header: 'BOE Date', w: 13 },
       { header: 'DO Date', w: 13 },
       { header: 'OOC Date', w: 13 },
+      { header: 'LEO Date', w: 14 },
       { header: 'Gate Pass', w: 13 },
+      { header: 'Hand Over Date', w: 16 },
       { header: 'Delivery', w: 13 },
       { header: 'Invoice No', w: 15 },
       { header: 'Invoice Date', w: 14 },
@@ -334,6 +362,7 @@ async function exportShipmentsToExcel(shipments, res) {
       const acc = s.accounts || {};
 
       const r = cs.addRow([
+        i + 1,
         s.refNo,
         s.currentStatus?.replace(/_/g, ' '),
         s.createdByName || '',
@@ -344,15 +373,19 @@ async function exportShipmentsToExcel(shipments, res) {
         ff.hawb || '',
         ff.mawb || '',
         fmt(ff.awbDate),
-        ff.noOfPackages || '',
-        ff.grossWeight || '',
-        ff.weight ? `${ff.weight} kg` : '',
+        num(ff.noOfPackages),
+        num(ff.grossWeight),
+        ff.weight ? num(ff.weight) : '',
         cha.jobNo || '',
+        cha.sbNo || '',
+        fmt(cha.sbDate),
         cha.boeNo || '',
         fmt(cha.boeDate),
         fmt(cha.doCollectionDate),
         fmt(cha.oocDate),
+        fmt(cha.leoDate),
         fmt(cha.gatePassDate),
+        fmt(cha.handOverDate),
         fmt(cha.deliveryDate),
         acc.invoiceNumber || '',
         fmt(acc.invoiceDate),
@@ -364,6 +397,7 @@ async function exportShipmentsToExcel(shipments, res) {
       r.alignment = { horizontal: 'center', vertical: 'middle' };
       if (i % 2 === 0) r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
       r.getCell(1).font = { name: 'Calibri', size: 9, bold: true, color: { argb: '166534' } };
+      r.getCell(2).font = { name: 'Calibri', size: 9, bold: true, color: { argb: '166534' } };
 
       r.eachCell(cell => {
         cell.border = { top: { style: 'thin', color: { argb: 'D1D5DB' } }, left: { style: 'thin', color: { argb: 'D1D5DB' } }, bottom: { style: 'thin', color: { argb: 'D1D5DB' } }, right: { style: 'thin', color: { argb: 'D1D5DB' } } };
