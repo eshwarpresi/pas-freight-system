@@ -9,31 +9,39 @@ async function exportShipmentsToExcel(shipments, res) {
   const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold'];
   const STAGE_COLORS = { 'Draft': 'E5E7EB', 'Created': 'DBEAFE', 'Confirmed': 'FEF3C7', 'Booked': 'DDD6FE', 'Scheduled': 'CFFAFE', 'In Progress': 'FEF9C3', 'Completed': 'DCFCE7', 'Cancelled': 'FEE2E2', 'On Hold': 'FED7AA' };
 
-  const chaBillCount = shipments.filter(s => s.shipmentType === 'CHA Only').length;
-  const freightShipmentCount = shipments.length - chaBillCount;
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
   const num = (v) => (v !== null && v !== undefined && v !== '') ? Number(v) : null;
 
-  // =============================================
-  // SHEET 1: ALL SHIPMENTS
-  // =============================================
-  const ws = workbook.addWorksheet('All Shipments', {
-    properties: { tabColor: { argb: '1E40AF' } },
-    pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
-  });
+  // Split shipments by type
+  const freightShipments = shipments.filter(s => s.shipmentType !== 'CHA Only' && s.shipmentType !== 'Transport');
+  const chaImportShipments = shipments.filter(s => s.shipmentType === 'CHA Only' && s.importExport === 'Import');
+  const chaExportShipments = shipments.filter(s => s.shipmentType === 'CHA Only' && s.importExport === 'Export');
+  const transportShipments = shipments.filter(s => s.shipmentType === 'Transport');
 
-  const columns = [
+  const totalFreight = freightShipments.length;
+  const totalCHAImport = chaImportShipments.length;
+  const totalCHAExport = chaExportShipments.length;
+  const totalTransport = transportShipments.length;
+
+  // =============================================
+  // COMMON COLUMNS FOR ALL SHEETS
+  // =============================================
+  const allColumns = [
     { header: 'SL No', key: 'slNo', width: 7 },
     { header: 'Ref No', key: 'refNo', width: 18 },
     { header: 'Status', key: 'status', width: 18 },
     { header: 'Stage', key: 'shipmentStage', width: 16 },
-    { header: 'Transport Mode', key: 'mode', width: 16 },
+    { header: 'Type', key: 'mode', width: 16 },
     { header: 'Import / Export', key: 'importExport', width: 16 },
     { header: 'Created By', key: 'createdBy', width: 18 },
-    { header: 'Consignee', key: 'consignee', width: 24 },
+    { header: 'Customer / Consignee', key: 'customer', width: 24 },
     { header: 'Shipper', key: 'shipper', width: 24 },
+    { header: 'Vehicle Type', key: 'vehicleType', width: 14 },
+    { header: 'Containers', key: 'containers', width: 10 },
+    { header: 'Package Type', key: 'packageType', width: 18 },
     { header: 'From', key: 'fromLocation', width: 18 },
     { header: 'To', key: 'toLocation', width: 18 },
+    { header: 'Delivery Date', key: 'deliveryDate', width: 15 },
     { header: 'Terms', key: 'terms', width: 14 },
     { header: 'Port Location', key: 'portLocation', width: 16 },
     { header: 'Agent', key: 'agent', width: 18 },
@@ -57,7 +65,6 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'LEO Date', key: 'leoDate', width: 14 },
     { header: 'Gate Pass', key: 'gatePass', width: 14 },
     { header: 'Hand Over Date', key: 'handOverDate', width: 16 },
-    { header: 'Delivery Date', key: 'delivery', width: 16 },
     { header: 'Tracking No', key: 'tracking', width: 20 },
     { header: 'Invoice No', key: 'invoiceNo', width: 16 },
     { header: 'Invoice Date', key: 'invoiceDate', width: 15 },
@@ -65,348 +72,157 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Created', key: 'createdAt', width: 15 },
     { header: 'Remarks', key: 'remarks', width: 30 },
   ];
-  ws.columns = columns;
+  const colCount = allColumns.length;
+  const lastCol = 'AR';
 
-  const lastCol = 'AO';
-  const colCount = 40;
+  // Helper: write a sheet
+  function writeSheet(ws, data, title, color) {
+    ws.columns = allColumns;
+    ws.insertRow(1, [title]);
+    ws.mergeCells(`A1:${lastCol}1`);
+    const tCell = ws.getCell('A1');
+    tCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFF' } };
+    tCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+    tCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(1).height = 35;
 
-  // Row 1: Title
-  ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD - SHIPMENT REPORT']);
-  ws.mergeCells(`A1:${lastCol}1`);
-  ws.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: '1E40AF' } };
-  ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getRow(1).height = 35;
+    ws.insertRow(2, [`Total: ${data.length}  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`]);
+    ws.mergeCells(`A2:${lastCol}2`);
+    ws.getCell('A2').font = { name: 'Arial', size: 10, color: { argb: '666666' } };
+    ws.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(2).height = 22;
 
-  // Row 2: Generated date + Total shipments
-  ws.insertRow(2, [`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}     |     Total Shipments: ${shipments.length}     |     Freight: ${freightShipmentCount}     |     CHA Only: ${chaBillCount}`]);
-  ws.mergeCells(`A2:${lastCol}2`);
-  ws.getCell('A2').font = { name: 'Arial', size: 10, color: { argb: '666666' } };
-  ws.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getRow(2).height = 22;
-
-  // Row 3: Header
-  const headerRow = ws.getRow(3);
-  headerRow.height = 32;
-  columns.forEach((col, i) => {
-    const cell = headerRow.getCell(i + 1);
-    cell.value = col.header;
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    cell.border = {
-      top: { style: 'medium', color: { argb: '1E3A8A' } },
-      bottom: { style: 'medium', color: { argb: '1E3A8A' } },
-      left: { style: 'thin', color: { argb: '1E3A8A' } },
-      right: { style: 'thin', color: { argb: '1E3A8A' } }
-    };
-  });
-
-  // Dropdown for Stage column (D = 4)
-  ws.dataValidations.add(`D4:D${3 + shipments.length + 500}`, {
-    type: 'list', allowBlank: true, formulae: [`"${STAGE_OPTIONS.join(',')}"`],
-    showErrorMessage: true, errorTitle: 'Invalid Stage', error: 'Please select a valid Shipment Stage.'
-  });
-
-  // Data rows
-  shipments.forEach((s, index) => {
-    const ff = s.freightForwarding || {}; const cha = s.cha || {}; const acc = s.accounts || {};
-    const isCHA = s.shipmentType === 'CHA Only';
-    const row = ws.addRow({
-      slNo: index + 1,
-      refNo: s.refNo || '',
-      status: s.currentStatus?.replace(/_/g, ' ') || '',
-      shipmentStage: s.shipmentStage || '',
-      mode: s.shipmentType || '',
-      importExport: s.importExport || '',
-      createdBy: s.createdByName || '',
-      consignee: ff.consigneeName || '',
-      shipper: ff.shipperName || '',
-      fromLocation: ff.fromLocation || '',
-      toLocation: ff.toLocation || '',
-      terms: ff.terms || '',
-      portLocation: ff.portLocation || '',
-      agent: ff.agent || '',
-      packages: num(ff.noOfPackages),
-      grossWeight: num(ff.grossWeight),
-      weight: num(ff.weight),
-      cbm: num(ff.cbm),
-      rate: ff.sellingRate ? num(ff.sellingRate) : '',
-      booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString('en-US') : '',
-      etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '',
-      eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
-      mawb: ff.mawb || '',
-      hawb: ff.hawb || '',
-      jobNo: cha.jobNo || '',
-      sbNo: cha.sbNo || '',
-      sbDate: cha.sbDate ? new Date(cha.sbDate).toLocaleDateString('en-US') : '',
-      boeNo: cha.boeNo || '',
-      boeDate: cha.boeDate ? new Date(cha.boeDate).toLocaleDateString('en-US') : '',
-      doDate: cha.doCollectionDate ? new Date(cha.doCollectionDate).toLocaleDateString('en-US') : '',
-      oocDate: cha.oocDate ? new Date(cha.oocDate).toLocaleDateString('en-US') : '',
-      leoDate: cha.leoDate ? new Date(cha.leoDate).toLocaleDateString('en-US') : '',
-      gatePass: cha.gatePassDate ? new Date(cha.gatePassDate).toLocaleDateString('en-US') : '',
-      handOverDate: cha.handOverDate ? new Date(cha.handOverDate).toLocaleDateString('en-US') : '',
-      delivery: cha.deliveryDate ? new Date(cha.deliveryDate).toLocaleDateString('en-US') : '',
-      tracking: cha.trackingNumber || '',
-      invoiceNo: acc.invoiceNumber || '',
-      invoiceDate: acc.invoiceDate ? new Date(acc.invoiceDate).toLocaleDateString('en-US') : '',
-      invoiceSent: acc.sendingDate ? new Date(acc.sendingDate).toLocaleDateString('en-US') : '',
-      createdAt: new Date(s.createdAt).toLocaleDateString('en-US'),
-      remarks: s.remarks || '',
+    const headerRow = ws.getRow(3);
+    headerRow.height = 32;
+    allColumns.forEach((col, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = col.header;
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = { top: { style: 'medium', color: { argb: '1E3A8A' } }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
     });
 
-    row.height = 22;
-    row.alignment = { horizontal: 'center', vertical: 'middle' };
-    row.font = { name: 'Arial', size: 9 };
-
-    if (index % 2 === 0) {
-      row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
-    }
-
-    // Stage color
-    const stageCell = row.getCell(4);
-    if (s.shipmentStage && STAGE_COLORS[s.shipmentStage]) {
-      stageCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[s.shipmentStage] } };
-      stageCell.font = { name: 'Arial', size: 9, bold: true };
-    }
-
-    // CHA highlight
-    if (isCHA) {
-      const modeCell = row.getCell(5);
-      modeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DCFCE7' } };
-      modeCell.font = { name: 'Arial', size: 9, bold: true, color: { argb: '166534' } };
-    }
-
-    const remCell = row.getCell(colCount);
-    remCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
-
-    row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '1E40AF' } };
-
-    // Number formatting for numeric cells
-    [15, 16, 17, 18, 19].forEach(colIdx => {
-      const cell = row.getCell(colIdx);
-      if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
-        cell.numFmt = '#,##0.00';
-      }
+    data.forEach((s, index) => {
+      const ff = s.freightForwarding || {}; const cha = s.cha || {}; const acc = s.accounts || {};
+      const row = ws.addRow({
+        slNo: index + 1, refNo: s.refNo || '', status: s.currentStatus?.replace(/_/g, ' ') || '',
+        shipmentStage: s.shipmentStage || '', mode: s.shipmentType || '', importExport: s.importExport || '',
+        createdBy: s.createdByName || '', customer: ff.customerName || ff.consigneeName || '', shipper: ff.shipperName || '',
+        vehicleType: ff.vehicleType || '', containers: num(ff.noOfContainers), packageType: ff.packageType || '',
+        fromLocation: ff.fromLocation || '', toLocation: ff.toLocation || '',
+        deliveryDate: ff.deliveryDate ? new Date(ff.deliveryDate).toLocaleDateString('en-US') : '',
+        terms: ff.terms || '', portLocation: ff.portLocation || '', agent: ff.agent || '',
+        packages: num(ff.noOfPackages), grossWeight: num(ff.grossWeight), weight: num(ff.weight), cbm: num(ff.cbm),
+        rate: ff.sellingRate ? num(ff.sellingRate) : '',
+        booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString('en-US') : '',
+        etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '',
+        eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
+        mawb: ff.mawb || '', hawb: ff.hawb || '',
+        jobNo: cha.jobNo || '', sbNo: cha.sbNo || '', sbDate: cha.sbDate ? new Date(cha.sbDate).toLocaleDateString('en-US') : '',
+        boeNo: cha.boeNo || '', boeDate: cha.boeDate ? new Date(cha.boeDate).toLocaleDateString('en-US') : '',
+        doDate: cha.doCollectionDate ? new Date(cha.doCollectionDate).toLocaleDateString('en-US') : '',
+        oocDate: cha.oocDate ? new Date(cha.oocDate).toLocaleDateString('en-US') : '',
+        leoDate: cha.leoDate ? new Date(cha.leoDate).toLocaleDateString('en-US') : '',
+        gatePass: cha.gatePassDate ? new Date(cha.gatePassDate).toLocaleDateString('en-US') : '',
+        handOverDate: cha.handOverDate ? new Date(cha.handOverDate).toLocaleDateString('en-US') : '',
+        tracking: cha.trackingNumber || '',
+        invoiceNo: acc.invoiceNumber || '', invoiceDate: acc.invoiceDate ? new Date(acc.invoiceDate).toLocaleDateString('en-US') : '',
+        invoiceSent: acc.sendingDate ? new Date(acc.sendingDate).toLocaleDateString('en-US') : '',
+        createdAt: new Date(s.createdAt).toLocaleDateString('en-US'), remarks: s.remarks || '',
+      });
+      row.height = 22; row.alignment = { horizontal: 'center', vertical: 'middle' }; row.font = { name: 'Arial', size: 9 };
+      if (index % 2 === 0) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
+      row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: color } };
+      row.eachCell(cell => { cell.border = { top: { style: 'thin', color: { argb: 'D1D5DB' } }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; });
     });
 
-    row.eachCell(cell => {
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'D1D5DB' } },
-        left: { style: 'thin', color: { argb: 'D1D5DB' } },
-        bottom: { style: 'thin', color: { argb: 'D1D5DB' } },
-        right: { style: 'thin', color: { argb: 'D1D5DB' } }
-      };
-    });
-  });
-
-  ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + shipments.length, column: colCount } };
-  ws.views = [{ state: 'frozen', ySplit: 3 }];
-
-  const fr = ws.addRow(['']);
-  ws.mergeCells(`A${fr.number}:${lastCol}${fr.number}`);
-  ws.getCell(`A${fr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential`;
-  ws.getCell(`A${fr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
-  ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
-
-  try {
-    const fs = require('fs'); let lp = path.join(__dirname, '..', 'logo.webp'), ext = 'webp';
-    if (!fs.existsSync(lp)) { lp = path.join(__dirname, '..', 'logo.png'); ext = 'png'; }
-    if (fs.existsSync(lp)) { const id = workbook.addImage({ filename: lp, extension: ext }); ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 80, height: 45 } }); }
-  } catch (e) {}
+    ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + data.length, column: colCount } };
+    ws.views = [{ state: 'frozen', ySplit: 3 }];
+  }
 
   // =============================================
-  // SHEET 2: SUMMARY DASHBOARD
+  // SHEET 1: ALL SHIPMENTS
   // =============================================
-  const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '059669' } } });
+  const wsAll = workbook.addWorksheet('All Shipments', { properties: { tabColor: { argb: '1E40AF' } } });
+  writeSheet(wsAll, shipments, 'PAS FREIGHT SERVICES PVT LTD - ALL SHIPMENTS', '1E40AF');
 
-  ss.mergeCells('A1:C2');
-  const card1 = ss.getCell('A1');
-  card1.value = { richText: [{ font: { size: 24, bold: true, color: { argb: '1E40AF' } }, text: `${shipments.length}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nTotal Shipments' }] };
-  card1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  card1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFF6FF' } };
-  card1.border = { top: { style: 'thin', color: { argb: 'BFDBFE' } }, bottom: { style: 'thin', color: { argb: 'BFDBFE' } }, left: { style: 'thin', color: { argb: 'BFDBFE' } }, right: { style: 'thin', color: { argb: 'BFDBFE' } } };
+  // =============================================
+  // SHEET 2: FREIGHT SHIPMENTS
+  // =============================================
+  if (totalFreight > 0) {
+    const wsF = workbook.addWorksheet('Freight', { properties: { tabColor: { argb: '3B82F6' } } });
+    writeSheet(wsF, freightShipments, '🚢 FREIGHT SHIPMENTS', '3B82F6');
+  }
+
+  // =============================================
+  // SHEET 3: CHA IMPORT
+  // =============================================
+  if (totalCHAImport > 0) {
+    const wsCI = workbook.addWorksheet('CHA Import', { properties: { tabColor: { argb: '10B981' } } });
+    writeSheet(wsCI, chaImportShipments, '🛃 CHA IMPORT BILLS', '10B981');
+  }
+
+  // =============================================
+  // SHEET 4: CHA EXPORT
+  // =============================================
+  if (totalCHAExport > 0) {
+    const wsCE = workbook.addWorksheet('CHA Export', { properties: { tabColor: { argb: 'F59E0B' } } });
+    writeSheet(wsCE, chaExportShipments, '📤 CHA EXPORT BILLS', 'F59E0B');
+  }
+
+  // =============================================
+  // SHEET 5: TRANSPORT
+  // =============================================
+  if (totalTransport > 0) {
+    const wsT = workbook.addWorksheet('Transport', { properties: { tabColor: { argb: '0EA5E9' } } });
+    writeSheet(wsT, transportShipments, '🚛 TRANSPORT SHIPMENTS', '0EA5E9');
+  }
+
+  // =============================================
+  // SHEET 6: SUMMARY
+  // =============================================
+  const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '8B5CF6' } } });
+  ss.mergeCells('A1:D2');
+  const c1 = ss.getCell('A1');
+  c1.value = { richText: [{ font: { size: 22, bold: true, color: { argb: '1E40AF' } }, text: `${shipments.length}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nTotal Shipments' }] };
+  c1.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  c1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EFF6FF' } };
+  c1.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
   ss.getRow(1).height = 28; ss.getRow(2).height = 22;
 
-  ss.mergeCells('D1:F2');
-  const card2 = ss.getCell('D1');
-  card2.value = { richText: [{ font: { size: 24, bold: true, color: { argb: '059669' } }, text: `${freightShipmentCount}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nFreight Shipments' }] };
-  card2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  card2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'ECFDF5' } };
-  card2.border = { top: { style: 'thin', color: { argb: 'A7F3D0' } }, bottom: { style: 'thin', color: { argb: 'A7F3D0' } }, left: { style: 'thin', color: { argb: 'A7F3D0' } }, right: { style: 'thin', color: { argb: 'A7F3D0' } } };
+  ss.mergeCells('E1:H2');
+  const c2 = ss.getCell('E1');
+  c2.value = { richText: [{ font: { size: 22, bold: true, color: { argb: '3B82F6' } }, text: `${totalFreight}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nFreight' }] };
+  c2.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  c2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'DBEAFE' } };
+  c2.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 
-  ss.mergeCells('G1:I2');
-  const card3 = ss.getCell('G1');
-  card3.value = { richText: [{ font: { size: 24, bold: true, color: { argb: '16A34A' } }, text: `${chaBillCount}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nCHA Only Bills' }] };
-  card3.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  card3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
-  card3.border = { top: { style: 'thin', color: { argb: '86EFAC' } }, bottom: { style: 'thin', color: { argb: '86EFAC' } }, left: { style: 'thin', color: { argb: '86EFAC' } }, right: { style: 'thin', color: { argb: '86EFAC' } } };
+  ss.mergeCells('A4:D5');
+  const c3 = ss.getCell('A4');
+  c3.value = { richText: [{ font: { size: 22, bold: true, color: { argb: '10B981' } }, text: `${totalCHAImport}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nCHA Import' }] };
+  c3.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  c3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'D1FAE5' } };
+  c3.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  ss.getRow(4).height = 28; ss.getRow(5).height = 22;
 
-  ss.getCell('A4').value = 'STATUS BREAKDOWN';
-  ss.mergeCells('A4:I4');
-  ss.getCell('A4').font = { name: 'Calibri', size: 12, bold: true, color: { argb: '1E40AF' } };
-  ss.getRow(4).height = 26;
+  ss.mergeCells('E4:H5');
+  const c4 = ss.getCell('E4');
+  c4.value = { richText: [{ font: { size: 22, bold: true, color: { argb: 'F59E0B' } }, text: `${totalCHAExport}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nCHA Export' }] };
+  c4.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  c4.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FEF3C7' } };
+  c4.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
 
-  const sHead = ss.getRow(5);
-  sHead.values = ['Status', 'Count', '%', '', '', '', '', '', ''];
-  sHead.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFF' } };
-  sHead.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
-  sHead.alignment = { horizontal: 'center', vertical: 'middle' };
-  sHead.height = 24;
-  sHead.eachCell(cell => { cell.border = { top: { style: 'thin', color: { argb: '1E3A8A' } }, bottom: { style: 'thin', color: { argb: '1E3A8A' } } }; });
+  ss.mergeCells('A7:D8');
+  const c5 = ss.getCell('A7');
+  c5.value = { richText: [{ font: { size: 22, bold: true, color: { argb: '0EA5E9' } }, text: `${totalTransport}` }, { font: { size: 11, color: { argb: '6B7280' } }, text: '\nTransport' }] };
+  c5.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+  c5.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E0F2FE' } };
+  c5.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  ss.getRow(7).height = 28; ss.getRow(8).height = 22;
 
-  const counts = {};
-  shipments.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
-  Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([status, count]) => {
-    const r = ss.addRow([status, count, `${Math.round((count / shipments.length) * 100)}%`, '', '', '', '', '', '']);
-    r.alignment = { horizontal: 'center', vertical: 'middle' };
-    r.font = { name: 'Calibri', size: 10 };
-    r.height = 22;
-  });
-  const tr = ss.addRow(['TOTAL', shipments.length, '100%', '', '', '', '', '', '']);
-  tr.font = { name: 'Calibri', size: 10, bold: true };
-  tr.alignment = { horizontal: 'center' };
-  tr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
-
-  const stageStart = Object.keys(counts).length + 8;
-  ss.getCell(`A${stageStart}`).value = 'STAGE BREAKDOWN';
-  ss.mergeCells(`A${stageStart}:I${stageStart}`);
-  ss.getCell(`A${stageStart}`).font = { name: 'Calibri', size: 12, bold: true, color: { argb: '7C3AED' } };
-  ss.getRow(stageStart).height = 26;
-
-  const sHead2 = ss.getRow(stageStart + 1);
-  sHead2.values = ['Stage', 'Count', '%', '', '', '', '', '', ''];
-  sHead2.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFF' } };
-  sHead2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '7C3AED' } };
-  sHead2.alignment = { horizontal: 'center', vertical: 'middle' };
-  sHead2.height = 24;
-
-  const stageCounts = {};
-  shipments.forEach(s => { const st = s.shipmentStage || 'Not Set'; stageCounts[st] = (stageCounts[st] || 0) + 1; });
-  Object.entries(stageCounts).sort((a, b) => b[1] - a[1]).forEach(([stage, count]) => {
-    const r = ss.addRow([stage, count, `${Math.round((count / shipments.length) * 100)}%`, '', '', '', '', '', '']);
-    r.alignment = { horizontal: 'center', vertical: 'middle' };
-    r.font = { name: 'Calibri', size: 10 };
-    r.height = 22;
-    if (STAGE_COLORS[stage]) r.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STAGE_COLORS[stage] } };
-  });
-
-  ss.getColumn(1).width = 22;
-  ss.getColumn(2).width = 10;
-  ss.getColumn(3).width = 10;
-
-  // =============================================
-  // SHEET 3: CHA ONLY BILLS
-  // =============================================
-  if (chaBillCount > 0) {
-    const cs = workbook.addWorksheet('CHA Only Bills', { properties: { tabColor: { argb: '16A34A' } } });
-    const chaShipments = shipments.filter(s => s.shipmentType === 'CHA Only');
-
-    cs.mergeCells('A1:V1');
-    cs.getCell('A1').value = '🛃 CHA ONLY BILLS — DETAILED REPORT';
-    cs.getCell('A1').font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFF' } };
-    cs.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '16A34A' } };
-    cs.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-    cs.getRow(1).height = 32;
-
-    cs.mergeCells('A2:V2');
-    cs.getCell('A2').value = `Total CHA Bills: ${chaBillCount}  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
-    cs.getCell('A2').font = { name: 'Calibri', size: 9, color: { argb: '6B7280' } };
-    cs.getCell('A2').alignment = { horizontal: 'center' };
-    cs.getRow(2).height = 20;
-
-    const chaCols = [
-      { header: 'SL No', w: 7 },
-      { header: 'Ref No', w: 18 },
-      { header: 'Status', w: 16 },
-      { header: 'Created By', w: 16 },
-      { header: 'Import/Export', w: 13 },
-      { header: 'Consignee', w: 22 },
-      { header: 'Shipper', w: 22 },
-      { header: 'Agent', w: 18 },
-      { header: 'HAWB No', w: 17 },
-      { header: 'MAWB No', w: 17 },
-      { header: 'AWB Date', w: 13 },
-      { header: 'Pkgs', w: 7 },
-      { header: 'Gross Weight (kg)', w: 15 },
-      { header: 'Chargeable Weight (kg)', w: 18 },
-      { header: 'Job No', w: 13 },
-      { header: 'SB No', w: 14 },
-      { header: 'SB Date', w: 14 },
-      { header: 'BOE No', w: 14 },
-      { header: 'BOE Date', w: 13 },
-      { header: 'DO Date', w: 13 },
-      { header: 'OOC Date', w: 13 },
-      { header: 'LEO Date', w: 14 },
-      { header: 'Gate Pass', w: 13 },
-      { header: 'Hand Over Date', w: 16 },
-      { header: 'Delivery', w: 13 },
-      { header: 'Invoice No', w: 15 },
-      { header: 'Invoice Date', w: 14 },
-      { header: 'Remarks', w: 25 },
-    ];
-
-    const cHead = cs.getRow(3);
-    cHead.height = 28;
-    chaCols.forEach((col, i) => {
-      const cell = cHead.getCell(i + 1);
-      cell.value = col.header;
-      cell.font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '16A34A' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    });
-
-    chaShipments.forEach((s, i) => {
-      const ff = s.freightForwarding || {};
-      const cha = s.cha || {};
-      const acc = s.accounts || {};
-
-      const r = cs.addRow([
-        i + 1,
-        s.refNo,
-        s.currentStatus?.replace(/_/g, ' '),
-        s.createdByName || '',
-        s.importExport || '',
-        ff.consigneeName || '',
-        ff.shipperName || '',
-        ff.agent || '',
-        ff.hawb || '',
-        ff.mawb || '',
-        fmt(ff.awbDate),
-        num(ff.noOfPackages),
-        num(ff.grossWeight),
-        ff.weight ? num(ff.weight) : '',
-        cha.jobNo || '',
-        cha.sbNo || '',
-        fmt(cha.sbDate),
-        cha.boeNo || '',
-        fmt(cha.boeDate),
-        fmt(cha.doCollectionDate),
-        fmt(cha.oocDate),
-        fmt(cha.leoDate),
-        fmt(cha.gatePassDate),
-        fmt(cha.handOverDate),
-        fmt(cha.deliveryDate),
-        acc.invoiceNumber || '',
-        fmt(acc.invoiceDate),
-        s.remarks || '',
-      ]);
-
-      r.height = 22;
-      r.font = { name: 'Calibri', size: 9 };
-      r.alignment = { horizontal: 'center', vertical: 'middle' };
-      if (i % 2 === 0) r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F0FDF4' } };
-      r.getCell(1).font = { name: 'Calibri', size: 9, bold: true, color: { argb: '166534' } };
-      r.getCell(2).font = { name: 'Calibri', size: 9, bold: true, color: { argb: '166534' } };
-
-      r.eachCell(cell => {
-        cell.border = { top: { style: 'thin', color: { argb: 'D1D5DB' } }, left: { style: 'thin', color: { argb: 'D1D5DB' } }, bottom: { style: 'thin', color: { argb: 'D1D5DB' } }, right: { style: 'thin', color: { argb: 'D1D5DB' } } };
-      });
-    });
-
-    chaCols.forEach((col, i) => { cs.getColumn(i + 1).width = col.w; });
-    cs.views = [{ state: 'frozen', ySplit: 3 }];
-  }
+  ss.getColumn(1).width = 14; ss.getColumn(2).width = 14; ss.getColumn(3).width = 14; ss.getColumn(4).width = 14;
+  ss.getColumn(5).width = 14; ss.getColumn(6).width = 14; ss.getColumn(7).width = 14; ss.getColumn(8).width = 14;
 
   // =============================================
   // SEND
