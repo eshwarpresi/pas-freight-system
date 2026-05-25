@@ -9,70 +9,36 @@ async function exportShipmentsToExcel(shipments, res) {
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
   const num = (v) => (v !== null && v !== undefined && v !== '') ? Number(v) : null;
 
-  // Split shipments by type
   const freightShipments = shipments.filter(s => s.shipmentType !== 'CHA Only' && s.shipmentType !== 'Transport');
   const chaImportShipments = shipments.filter(s => s.shipmentType === 'CHA Only' && s.importExport !== 'Export');
   const chaExportShipments = shipments.filter(s => s.shipmentType === 'CHA Only' && s.importExport === 'Export');
   const transportShipments = shipments.filter(s => s.shipmentType === 'Transport');
 
-  // =============================================
-  // COLUMN DEFINITIONS PER TYPE
-  // =============================================
-  
-  // All columns (used in All Shipments sheet)
   const allColumns = [
-    { header: 'SL No', key: 'slNo', width: 7 },
-    { header: 'Ref No', key: 'refNo', width: 18 },
-    { header: 'Status', key: 'status', width: 16 },
-    { header: 'Stage', key: 'shipmentStage', width: 14 },
-    { header: 'Type', key: 'mode', width: 14 },
-    { header: 'I/E', key: 'importExport', width: 10 },
-    { header: 'Created By', key: 'createdBy', width: 16 },
-    { header: 'Consignee/Customer', key: 'customer', width: 22 },
-    { header: 'Shipper', key: 'shipper', width: 22 },
-    { header: 'Agent', key: 'agent', width: 18 },
-    { header: 'From', key: 'fromLocation', width: 18 },
-    { header: 'To', key: 'toLocation', width: 18 },
-    { header: 'Pkgs', key: 'packages', width: 8 },
-    { header: 'Gross Wt', key: 'grossWeight', width: 12 },
-    { header: 'Chg Wt', key: 'weight', width: 12 },
-    { header: 'CBM', key: 'cbm', width: 10 },
-    { header: 'Rate', key: 'rate', width: 12 },
-    { header: 'Vehicle', key: 'vehicleType', width: 12 },
-    { header: 'Containers', key: 'containers', width: 10 },
-    { header: 'Package Type', key: 'packageType', width: 18 },
-    { header: 'Delivery Date', key: 'deliveryDate', width: 14 },
-    { header: 'Terms', key: 'terms', width: 12 },
-    { header: 'Port', key: 'portLocation', width: 14 },
-    { header: 'Booking', key: 'booking', width: 14 },
-    { header: 'ETD', key: 'etd', width: 14 },
-    { header: 'ETA', key: 'eta', width: 14 },
-    { header: 'MAWB', key: 'mawb', width: 16 },
-    { header: 'HAWB', key: 'hawb', width: 16 },
-    { header: 'AWB Date', key: 'awbDate', width: 14 },
-    { header: 'Job No', key: 'jobNo', width: 12 },
-    { header: 'SB No', key: 'sbNo', width: 14 },
-    { header: 'SB Date', key: 'sbDate', width: 14 },
-    { header: 'BOE No', key: 'boeNo', width: 14 },
-    { header: 'BOE Date', key: 'boeDate', width: 14 },
-    { header: 'DO Date', key: 'doDate', width: 14 },
-    { header: 'OOC Date', key: 'oocDate', width: 14 },
-    { header: 'LEO Date', key: 'leoDate', width: 14 },
-    { header: 'Gate Pass', key: 'gatePass', width: 14 },
-    { header: 'Hand Over', key: 'handOverDate', width: 14 },
-    { header: 'Delivery', key: 'delivery', width: 14 },
-    { header: 'Tracking', key: 'tracking', width: 18 },
-    { header: 'Invoice No', key: 'invoiceNo', width: 16 },
-    { header: 'Inv Date', key: 'invoiceDate', width: 14 },
-    { header: 'Inv Sent', key: 'invoiceSent', width: 14 },
-    { header: 'Created', key: 'createdAt', width: 14 },
-    { header: 'Remarks', key: 'remarks', width: 25 },
+    { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 }, { header: 'Status', key: 'status', width: 16 },
+    { header: 'Stage', key: 'shipmentStage', width: 14 }, { header: 'Type', key: 'mode', width: 14 }, { header: 'I/E', key: 'importExport', width: 10 },
+    { header: 'Created By', key: 'createdBy', width: 16 }, { header: 'Consignee/Customer', key: 'customer', width: 22 },
+    { header: 'Shipper', key: 'shipper', width: 22 }, { header: 'Agent', key: 'agent', width: 18 },
+    { header: 'From', key: 'fromLocation', width: 18 }, { header: 'To', key: 'toLocation', width: 18 },
+    { header: 'Pkgs', key: 'packages', width: 8 }, { header: 'Gross Wt', key: 'grossWeight', width: 12 },
+    { header: 'Chg Wt', key: 'weight', width: 12 }, { header: 'CBM', key: 'cbm', width: 10 }, { header: 'Rate', key: 'rate', width: 12 },
+    { header: 'Vehicle', key: 'vehicleType', width: 12 }, { header: 'Containers', key: 'containers', width: 10 },
+    { header: 'Package Type', key: 'packageType', width: 18 }, { header: 'Delivery Date', key: 'deliveryDate', width: 14 },
+    { header: 'Terms', key: 'terms', width: 12 }, { header: 'Port', key: 'portLocation', width: 14 },
+    { header: 'Booking', key: 'booking', width: 14 }, { header: 'ETD', key: 'etd', width: 14 }, { header: 'ETA', key: 'eta', width: 14 },
+    { header: 'MAWB', key: 'mawb', width: 16 }, { header: 'HAWB', key: 'hawb', width: 16 }, { header: 'AWB Date', key: 'awbDate', width: 14 },
+    { header: 'Job No', key: 'jobNo', width: 12 }, { header: 'SB No', key: 'sbNo', width: 14 }, { header: 'SB Date', key: 'sbDate', width: 14 },
+    { header: 'BOE No', key: 'boeNo', width: 14 }, { header: 'BOE Date', key: 'boeDate', width: 14 },
+    { header: 'DO Date', key: 'doDate', width: 14 }, { header: 'OOC Date', key: 'oocDate', width: 14 },
+    { header: 'LEO Date', key: 'leoDate', width: 14 }, { header: 'Gate Pass', key: 'gatePass', width: 14 },
+    { header: 'Hand Over', key: 'handOverDate', width: 14 }, { header: 'Delivery', key: 'delivery', width: 14 },
+    { header: 'Tracking', key: 'tracking', width: 18 }, { header: 'Invoice No', key: 'invoiceNo', width: 16 },
+    { header: 'Inv Date', key: 'invoiceDate', width: 14 }, { header: 'Inv Sent', key: 'invoiceSent', width: 14 },
+    { header: 'Created', key: 'createdAt', width: 14 }, { header: 'Remarks', key: 'remarks', width: 25 },
   ];
 
-  // Freight columns (no CHA export fields, no transport-specific)
   const freightColumns = allColumns.filter(c => !['sbNo','sbDate','leoDate','handOverDate','vehicleType','containers','packageType','deliveryDate'].includes(c.key));
 
-  // CHA Import columns (no freight fields like ETD, Booking, etc.)
   const chaImportCols = [
     { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 }, { header: 'Status', key: 'status', width: 16 },
     { header: 'Stage', key: 'shipmentStage', width: 14 }, { header: 'I/E', key: 'importExport', width: 10 }, { header: 'Created By', key: 'createdBy', width: 16 },
@@ -86,7 +52,6 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Inv Sent', key: 'invoiceSent', width: 14 }, { header: 'Created', key: 'createdAt', width: 14 }, { header: 'Remarks', key: 'remarks', width: 25 },
   ];
 
-  // CHA Export columns
   const chaExportCols = [
     { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 }, { header: 'Status', key: 'status', width: 16 },
     { header: 'Stage', key: 'shipmentStage', width: 14 }, { header: 'I/E', key: 'importExport', width: 10 }, { header: 'Created By', key: 'createdBy', width: 16 },
@@ -100,7 +65,6 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Created', key: 'createdAt', width: 14 }, { header: 'Remarks', key: 'remarks', width: 25 },
   ];
 
-  // Transport columns
   const transportCols = [
     { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 }, { header: 'Status', key: 'status', width: 16 },
     { header: 'Stage', key: 'shipmentStage', width: 14 }, { header: 'Created By', key: 'createdBy', width: 16 },
@@ -112,30 +76,44 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Created', key: 'createdAt', width: 14 }, { header: 'Remarks', key: 'remarks', width: 25 },
   ];
 
-  // Helper: get last column letter
-  function getLastCol(colCount) { return String.fromCharCode(64 + colCount); }
+  function getLastCol(colCount) { 
+    let result = '';
+    let n = colCount;
+    while (n > 0) { n--; result = String.fromCharCode(65 + (n % 26)) + result; n = Math.floor(n / 26); }
+    return result;
+  }
 
-  // Helper: write a sheet with specific columns
   function writeSheet(ws, data, title, color, columns) {
     ws.columns = columns;
     const colCount = columns.length;
     const lastCol = getLastCol(colCount);
 
-    ws.insertRow(1, [title]);
+    // Row 1: Company name
+    ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD']);
     ws.mergeCells(`A1:${lastCol}1`);
-    const tCell = ws.getCell('A1');
-    tCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFF' } };
-    tCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
-    tCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    const coCell = ws.getCell('A1');
+    coCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: color } };
+    coCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 35;
 
-    ws.insertRow(2, [`Total: ${data.length}  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`]);
+    // Row 2: Sheet title
+    ws.insertRow(2, [title]);
     ws.mergeCells(`A2:${lastCol}2`);
-    ws.getCell('A2').font = { name: 'Arial', size: 10, color: { argb: '666666' } };
-    ws.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
-    ws.getRow(2).height = 22;
+    const tCell = ws.getCell('A2');
+    tCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFF' } };
+    tCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+    tCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(2).height = 30;
 
-    const headerRow = ws.getRow(3);
+    // Row 3: Total + Date
+    ws.insertRow(3, [`Total: ${data.length}  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`]);
+    ws.mergeCells(`A3:${lastCol}3`);
+    ws.getCell('A3').font = { name: 'Arial', size: 10, color: { argb: '666666' } };
+    ws.getCell('A3').alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(3).height = 22;
+
+    // Row 4: Header
+    const headerRow = ws.getRow(4);
     headerRow.height = 32;
     columns.forEach((col, i) => {
       const cell = headerRow.getCell(i + 1);
@@ -156,8 +134,7 @@ async function exportShipmentsToExcel(shipments, res) {
         packages: num(ff.noOfPackages), grossWeight: num(ff.grossWeight), weight: num(ff.weight), cbm: num(ff.cbm),
         rate: ff.sellingRate ? num(ff.sellingRate) : '', terms: ff.terms || '', portLocation: ff.portLocation || '',
         booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString('en-US') : '',
-        etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '',
-        eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
+        etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '', eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
         mawb: ff.mawb || '', hawb: ff.hawb || '', awbDate: ff.awbDate ? new Date(ff.awbDate).toLocaleDateString('en-US') : '',
         vehicleType: ff.vehicleType || '', containers: num(ff.noOfContainers), packageType: ff.packageType || '',
         deliveryDate: ff.deliveryDate ? new Date(ff.deliveryDate).toLocaleDateString('en-US') : '',
@@ -183,15 +160,29 @@ async function exportShipmentsToExcel(shipments, res) {
       row.eachCell(cell => { cell.border = { top: { style: 'thin', color: { argb: 'D1D5DB' } }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; });
     });
 
-    ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3 + data.length, column: colCount } };
-    ws.views = [{ state: 'frozen', ySplit: 3 }];
+    ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 3 + data.length, column: colCount } };
+    ws.views = [{ state: 'frozen', ySplit: 4 }];
+
+    // Footer
+    const fr = ws.addRow(['']);
+    ws.mergeCells(`A${fr.number}:${lastCol}${fr.number}`);
+    ws.getCell(`A${fr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential`;
+    ws.getCell(`A${fr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
+    ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
   }
 
   // =============================================
   // SHEET 1: ALL SHIPMENTS
   // =============================================
   const wsAll = workbook.addWorksheet('All Shipments', { properties: { tabColor: { argb: '1E40AF' } } });
-  writeSheet(wsAll, shipments, 'ALL SHIPMENTS', '1E40AF', allColumns);
+  writeSheet(wsAll, shipments, 'ALL SHIPMENTS REPORT', '1E40AF', allColumns);
+
+  // Add logo to All Shipments
+  try {
+    const fs = require('fs'); let lp = path.join(__dirname, '..', 'logo.webp'), ext = 'webp';
+    if (!fs.existsSync(lp)) { lp = path.join(__dirname, '..', 'logo.png'); ext = 'png'; }
+    if (fs.existsSync(lp)) { const id = workbook.addImage({ filename: lp, extension: ext }); wsAll.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 80, height: 45 } }); }
+  } catch (e) {}
 
   // =============================================
   // SHEET 2: FREIGHT
@@ -230,19 +221,23 @@ async function exportShipmentsToExcel(shipments, res) {
   // =============================================
   const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '8B5CF6' } } });
   
-  // Title
   ss.mergeCells('A1:H1');
-  ss.getCell('A1').value = 'PAS FREIGHT - DASHBOARD SUMMARY';
-  ss.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFF' } };
-  ss.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '8B5CF6' } };
+  ss.getCell('A1').value = 'PAS FREIGHT SERVICES PVT LTD';
+  ss.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: '8B5CF6' } };
   ss.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-  ss.getRow(1).height = 35;
+  ss.getRow(1).height = 30;
 
-  // Shipment Type Breakdown
-  ss.mergeCells('A3:B3');
-  ss.getCell('A3').value = 'SHIPMENT TYPE BREAKDOWN';
-  ss.getCell('A3').font = { name: 'Arial', size: 12, bold: true, color: { argb: '8B5CF6' } };
-  ss.getRow(3).height = 24;
+  ss.mergeCells('A2:H2');
+  ss.getCell('A2').value = 'DASHBOARD SUMMARY';
+  ss.getCell('A2').font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFF' } };
+  ss.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '8B5CF6' } };
+  ss.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+  ss.getRow(2).height = 28;
+
+  ss.mergeCells('A4:B4');
+  ss.getCell('A4').value = 'SHIPMENT TYPE BREAKDOWN';
+  ss.getCell('A4').font = { name: 'Arial', size: 12, bold: true, color: { argb: '8B5CF6' } };
+  ss.getRow(4).height = 24;
 
   const typeBreakdown = [
     ['Type', 'Count', '%'],
@@ -255,19 +250,12 @@ async function exportShipmentsToExcel(shipments, res) {
 
   typeBreakdown.forEach((row, i) => {
     const r = ss.addRow(row);
-    if (i === 0) {
-      r.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-      r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '8B5CF6' } };
-    } else if (i === typeBreakdown.length - 1) {
-      r.font = { name: 'Arial', size: 10, bold: true };
-      r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE9FE' } };
-    }
-    r.alignment = { horizontal: 'center', vertical: 'middle' };
-    r.height = 22;
+    if (i === 0) { r.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } }; r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '8B5CF6' } }; }
+    else if (i === typeBreakdown.length - 1) { r.font = { name: 'Arial', size: 10, bold: true }; r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE9FE' } }; }
+    r.alignment = { horizontal: 'center', vertical: 'middle' }; r.height = 22;
   });
 
-  // Status Breakdown per type
-  let statusRow = typeBreakdown.length + 5;
+  let statusRow = typeBreakdown.length + 6;
   ss.mergeCells(`A${statusRow}:H${statusRow}`);
   ss.getCell(`A${statusRow}`).value = 'STATUS BREAKDOWN BY TYPE';
   ss.getCell(`A${statusRow}`).font = { name: 'Arial', size: 12, bold: true, color: { argb: '8B5CF6' } };
@@ -280,7 +268,6 @@ async function exportShipmentsToExcel(shipments, res) {
     else if (type === 'CHA Import') data = chaImportShipments;
     else if (type === 'CHA Export') data = chaExportShipments;
     else data = transportShipments;
-
     if (data.length === 0) return;
 
     ss.mergeCells(`A${statusRow}:H${statusRow}`);
@@ -293,13 +280,18 @@ async function exportShipmentsToExcel(shipments, res) {
     data.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
     Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([status, count]) => {
       const r = ss.addRow(['', status, count, Math.round((count / data.length) * 100) + '%']);
-      r.alignment = { horizontal: 'center', vertical: 'middle' };
-      r.font = { name: 'Arial', size: 9 };
-      r.height = 20;
+      r.alignment = { horizontal: 'center', vertical: 'middle' }; r.font = { name: 'Arial', size: 9 }; r.height = 20;
       statusRow++;
     });
     statusRow++;
   });
+
+  // Footer
+  const sfr = ss.addRow(['']);
+  ss.mergeCells(`A${sfr.number}:H${sfr.number}`);
+  ss.getCell(`A${sfr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential`;
+  ss.getCell(`A${sfr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
+  ss.getCell(`A${sfr.number}`).alignment = { horizontal: 'center' };
 
   ss.getColumn(1).width = 5; ss.getColumn(2).width = 20; ss.getColumn(3).width = 12; ss.getColumn(4).width = 10;
   for (let i = 5; i <= 8; i++) ss.getColumn(i).width = 14;
