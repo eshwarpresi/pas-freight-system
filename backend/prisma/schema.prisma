@@ -23,7 +23,8 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
-  shipments Shipment[] @relation("CreatedShipments")
+  shipments     Shipment[]     @relation("CreatedShipments")
+  notifications Notification[] // User's notifications
 }
 
 // ==========================================
@@ -53,7 +54,8 @@ model Shipment {
   cha               CHA?
   accounts          Accounts?
   
-  statusHistory StatusHistory[]
+  statusHistory  StatusHistory[]
+  notifications  Notification[]  // Notifications related to this shipment
 }
 
 // ==========================================
@@ -166,4 +168,24 @@ model StatusHistory {
   remarks     String?
   changedBy   String?
   createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// NOTIFICATIONS (In-App Notification Bell)
+// ==========================================
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  shipmentId String?
+  shipment   Shipment? @relation(fields: [shipmentId], references: [id])
+  
+  refNo      String?   // PAS-2026-001
+  title      String    // "AWB Generated"
+  message    String    // "AWB ready for customs clearance"
+  type       String    // AWB, BOE, INVOICE, DELIVERED, STATUS
+  icon       String    @default("bell") // bell, truck, file, invoice, check
+  
+  isRead     Boolean   @default(false)
+  createdAt  DateTime  @default(now())
 }

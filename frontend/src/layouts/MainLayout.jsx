@@ -1,20 +1,81 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Package, Menu, X, 
   Box, Command,
-  LogOut, User, ChevronDown, Moon, Sun
+  LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck
 } from 'lucide-react'
 import api from '../lib/api'
+import { useSocket } from '../App'
+import { useToast } from '../components/Toast'
 
 export default function MainLayout({ user }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const socket = useSocket()
+  const { addToast } = useToast()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [notifOpen, setNotifOpen] = useState(false)
+  const [notifications, setNotifications] = useState([])
+  const notifRef = useRef(null)
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('pas_dark_mode') === 'true'
   })
+
+  // Play notification beep sound
+  const playSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.frequency.value = 800
+      osc.type = 'sine'
+      gain.gain.value = 0.1
+      osc.start()
+      osc.stop(ctx.currentTime + 0.15)
+    } catch(e) {}
+  }
+
+  // Load notifications on mount
+  useEffect(() => {
+    fetchNotifications()
+  }, [])
+
+  // Socket listener for new notifications
+  useEffect(() => {
+    if (!socket) return
+
+    const handleNewNotification = (data) => {
+      setNotifications(prev => [{ ...data, id: Date.now().toString(), isRead: false, createdAt: new Date().toISOString() }, ...prev])
+      playSound()
+      addToast(data.message, 'info')
+    }
+
+    socket.on('notification:new', handleNewNotification)
+    return () => socket.off('notification:new', handleNewNotification)
+  }, [socket, addToast])
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) {
+        setNotifOpen(false)
+      }
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = () => setUserMenuOpen(false)
+    if (userMenuOpen) {
+      document.addEventListener('click', handler)
+      return () => document.removeEventListener('click', handler)
+    }
+  }, [userMenuOpen])
 
   useEffect(() => {
     if (darkMode) {
@@ -24,6 +85,25 @@ export default function MainLayout({ user }) {
     }
     localStorage.setItem('pas_dark_mode', darkMode)
   }, [darkMode])
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await api.get('/notifications?limit=20')
+      setNotifications(res.data.data || [])
+    } catch (e) {}
+  }
+
+  const markAllRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
+  }
+
+  const markAsRead = (notifId, shipmentId) => {
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, isRead: true } : n))
+    setNotifOpen(false)
+    if (shipmentId) navigate(`/shipment/${shipmentId}`)
+  }
+
+  const unreadCount = notifications.filter(n => !n.isRead).length
 
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: 'Overview', shortcut: 'O' },
@@ -39,16 +119,28 @@ export default function MainLayout({ user }) {
     navigate('/login')
   }
 
-  useEffect(() => {
-    const handler = () => setUserMenuOpen(false)
-    if (userMenuOpen) {
-      document.addEventListener('click', handler)
-      return () => document.removeEventListener('click', handler)
-    }
-  }, [userMenuOpen])
-
   const displayName = user?.name || user?.email?.split('@')[0] || 'User'
   const userInitial = displayName.charAt(0).toUpperCase()
+
+  const getNotifIcon = (type) => {
+    switch (type) {
+      case 'AWB': return '📋'
+      case 'BOE': return '📄'
+      case 'INVOICE': return '💰'
+      case 'DELIVERED': return '✅'
+      case 'STATUS': return '🔄'
+      case 'SB': return '📤'
+      default: return '🔔'
+    }
+  }
+
+  const timeAgo = (date) => {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000)
+    if (seconds < 60) return 'just now'
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+    return `${Math.floor(seconds / 86400)}d ago`
+  }
 
   return (
     <div className="min-h-screen bg-[var(--bg-secondary)]">
@@ -131,6 +223,62 @@ export default function MainLayout({ user }) {
 
       <div className="lg:ml-[260px]">
         <header className="hidden lg:flex sticky top-0 z-30 bg-[var(--glass-bg-strong)] backdrop-blur-lg border-b border-[var(--border-color)] px-6 py-3 items-center justify-end gap-3">
+          {/* Notification Bell */}
+          <div className="relative" ref={notifRef}>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setNotifOpen(!notifOpen) }}
+              className="relative p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors"
+            >
+              <Bell size={18} className="text-[var(--text-secondary)]" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-md">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <div className="absolute right-0 mt-1 w-80 bg-[var(--bg-primary)] rounded-xl shadow-xl border border-[var(--border-color)] z-50 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <button onClick={markAllRead} className="text-[11px] text-indigo-500 hover:text-indigo-600 flex items-center gap-1 font-medium">
+                      <CheckCheck size={13} /> Mark all read
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-[350px] overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <Bell size={28} className="text-gray-300 mx-auto mb-2" />
+                      <p className="text-xs text-[var(--text-muted)]">No notifications yet</p>
+                    </div>
+                  ) : (
+                    notifications.slice(0, 20).map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => markAsRead(n.id, n.shipmentId)}
+                        className={`w-full text-left px-4 py-3 border-b border-[var(--border-color)] hover:bg-[var(--bg-secondary)] transition-colors flex gap-3 ${
+                          !n.isRead ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''
+                        }`}
+                      >
+                        <span className="text-lg mt-0.5">{getNotifIcon(n.type)}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-[var(--text-primary)] truncate">{n.title}</p>
+                            {!n.isRead && <span className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />}
+                          </div>
+                          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{n.message}</p>
+                          <p className="text-[10px] text-[var(--text-muted)] mt-1">{timeAgo(n.createdAt)}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Dark Mode Toggle */}
           <button
             onClick={() => setDarkMode(!darkMode)}
@@ -184,6 +332,17 @@ export default function MainLayout({ user }) {
             <Menu size={20} className="text-[var(--text-secondary)]" />
           </button>
           <div className="flex items-center gap-2">
+            {/* Mobile Notification Bell */}
+            <div className="relative">
+              <button onClick={(e) => { e.stopPropagation(); setNotifOpen(!notifOpen) }} className="relative p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors">
+                <Bell size={18} className="text-[var(--text-secondary)]" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+            </div>
             <button
               onClick={() => setDarkMode(!darkMode)}
               className="p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors"
