@@ -20,8 +20,9 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Created By', key: 'createdBy', width: 16 }, { header: 'Consignee/Customer', key: 'customer', width: 22 },
     { header: 'Shipper', key: 'shipper', width: 22 }, { header: 'Agent', key: 'agent', width: 18 },
     { header: 'From', key: 'fromLocation', width: 18 }, { header: 'To', key: 'toLocation', width: 18 },
-    { header: 'Pkgs', key: 'packages', width: 8 }, { header: 'Gross Wt', key: 'grossWeight', width: 12 },
-    { header: 'Chg Wt', key: 'weight', width: 12 }, { header: 'CBM', key: 'cbm', width: 10 }, { header: 'Rate', key: 'rate', width: 12 },
+    { header: 'Transport Mode', key: 'transportMode', width: 14 }, { header: 'Pkgs', key: 'packages', width: 8 },
+    { header: 'Gross Wt', key: 'grossWeight', width: 12 }, { header: 'Chg Wt', key: 'weight', width: 12 },
+    { header: 'CBM', key: 'cbm', width: 10 }, { header: 'Rate', key: 'rate', width: 12 },
     { header: 'Vehicle', key: 'vehicleType', width: 12 }, { header: 'Containers', key: 'containers', width: 10 },
     { header: 'Package Type', key: 'packageType', width: 18 }, { header: 'Delivery Date', key: 'deliveryDate', width: 14 },
     { header: 'Terms', key: 'terms', width: 12 }, { header: 'Port', key: 'portLocation', width: 14 },
@@ -37,7 +38,7 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'Created', key: 'createdAt', width: 14 }, { header: 'Remarks', key: 'remarks', width: 25 },
   ];
 
-  const freightColumns = allColumns.filter(c => !['sbNo','sbDate','leoDate','handOverDate','vehicleType','containers','packageType','deliveryDate'].includes(c.key));
+  const freightColumns = allColumns.filter(c => !['sbNo','sbDate','leoDate','handOverDate','transportMode'].includes(c.key));
 
   const chaImportCols = [
     { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 }, { header: 'Status', key: 'status', width: 16 },
@@ -66,14 +67,16 @@ async function exportShipmentsToExcel(shipments, res) {
   ];
 
   const transportCols = [
-    { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 }, { header: 'Status', key: 'status', width: 16 },
-    { header: 'Stage', key: 'shipmentStage', width: 14 }, { header: 'Created By', key: 'createdBy', width: 16 },
+    { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Vehicle No', key: 'refNo', width: 18 },
+    { header: 'Status', key: 'status', width: 16 }, { header: 'Stage', key: 'shipmentStage', width: 14 },
+    { header: 'Transport Mode', key: 'transportMode', width: 14 }, { header: 'Created By', key: 'createdBy', width: 16 },
     { header: 'Customer', key: 'customer', width: 24 }, { header: 'Vehicle Type', key: 'vehicleType', width: 14 },
-    { header: 'Containers', key: 'containers', width: 10 }, { header: 'Package Type', key: 'packageType', width: 20 },
-    { header: 'From', key: 'fromLocation', width: 20 }, { header: 'To', key: 'toLocation', width: 20 },
-    { header: 'Delivery Date', key: 'deliveryDate', width: 14 }, { header: 'Invoice No', key: 'invoiceNo', width: 16 },
-    { header: 'Inv Date', key: 'invoiceDate', width: 14 }, { header: 'Inv Sent', key: 'invoiceSent', width: 14 },
-    { header: 'Created', key: 'createdAt', width: 14 }, { header: 'Remarks', key: 'remarks', width: 25 },
+    { header: 'No of Containers', key: 'containers', width: 14 }, { header: 'Package Type', key: 'packageType', width: 22 },
+    { header: 'Weight (kg)', key: 'weight', width: 12 }, { header: 'From', key: 'fromLocation', width: 22 },
+    { header: 'To', key: 'toLocation', width: 22 }, { header: 'Delivery Date', key: 'deliveryDate', width: 14 },
+    { header: 'Invoice No', key: 'invoiceNo', width: 16 }, { header: 'Inv Date', key: 'invoiceDate', width: 14 },
+    { header: 'Inv Sent', key: 'invoiceSent', width: 14 }, { header: 'Created', key: 'createdAt', width: 14 },
+    { header: 'Remarks', key: 'remarks', width: 25 },
   ];
 
   function getLastCol(colCount) { 
@@ -88,7 +91,6 @@ async function exportShipmentsToExcel(shipments, res) {
     const colCount = columns.length;
     const lastCol = getLastCol(colCount);
 
-    // Row 1: Company name
     ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD']);
     ws.mergeCells(`A1:${lastCol}1`);
     const coCell = ws.getCell('A1');
@@ -96,7 +98,6 @@ async function exportShipmentsToExcel(shipments, res) {
     coCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(1).height = 35;
 
-    // Row 2: Sheet title
     ws.insertRow(2, [title]);
     ws.mergeCells(`A2:${lastCol}2`);
     const tCell = ws.getCell('A2');
@@ -105,14 +106,12 @@ async function exportShipmentsToExcel(shipments, res) {
     tCell.alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(2).height = 30;
 
-    // Row 3: Total + Date
     ws.insertRow(3, [`Total: ${data.length}  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`]);
     ws.mergeCells(`A3:${lastCol}3`);
     ws.getCell('A3').font = { name: 'Arial', size: 10, color: { argb: '666666' } };
     ws.getCell('A3').alignment = { horizontal: 'center', vertical: 'middle' };
     ws.getRow(3).height = 22;
 
-    // Row 4: Header
     const headerRow = ws.getRow(4);
     headerRow.height = 32;
     columns.forEach((col, i) => {
@@ -131,6 +130,7 @@ async function exportShipmentsToExcel(shipments, res) {
         shipmentStage: s.shipmentStage || '', mode: s.shipmentType || '', importExport: s.importExport || '',
         createdBy: s.createdByName || '', customer: ff.customerName || ff.consigneeName || '', shipper: ff.shipperName || '',
         agent: ff.agent || '', fromLocation: ff.fromLocation || '', toLocation: ff.toLocation || '',
+        transportMode: ff.transportMode || '',
         packages: num(ff.noOfPackages), grossWeight: num(ff.grossWeight), weight: num(ff.weight), cbm: num(ff.cbm),
         rate: ff.sellingRate ? num(ff.sellingRate) : '', terms: ff.terms || '', portLocation: ff.portLocation || '',
         booking: ff.bookingDate ? new Date(ff.bookingDate).toLocaleDateString('en-US') : '',
@@ -163,7 +163,6 @@ async function exportShipmentsToExcel(shipments, res) {
     ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 3 + data.length, column: colCount } };
     ws.views = [{ state: 'frozen', ySplit: 4 }];
 
-    // Footer
     const fr = ws.addRow(['']);
     ws.mergeCells(`A${fr.number}:${lastCol}${fr.number}`);
     ws.getCell(`A${fr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential`;
@@ -172,12 +171,76 @@ async function exportShipmentsToExcel(shipments, res) {
   }
 
   // =============================================
+  // HELPER: Section header
+  // =============================================
+  function sectionHeader(ws, rowNum, title, color) {
+    ws.mergeCells(`A${rowNum}:J${rowNum}`);
+    const cell = ws.getCell(`A${rowNum}`);
+    cell.value = title;
+    cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+    cell.alignment = { horizontal: 'left', vertical: 'middle' };
+    ws.getRow(rowNum).height = 28;
+    return rowNum + 1;
+  }
+
+  function statCardRow(ws, rowNum, cards) {
+    cards.forEach((card, i) => {
+      const col = String.fromCharCode(65 + i * 3);
+      ws.mergeCells(`${col}${rowNum}:${String.fromCharCode(65 + i * 3 + 1)}${rowNum}`);
+      ws.getCell(`${col}${rowNum}`).value = card.label;
+      ws.getCell(`${col}${rowNum}`).font = { name: 'Arial', size: 9, bold: true, color: { argb: card.color || '6B7280' } };
+      ws.getCell(`${col}${rowNum}`).alignment = { horizontal: 'center', vertical: 'middle' };
+
+      ws.mergeCells(`${col}${rowNum + 1}:${String.fromCharCode(65 + i * 3 + 1)}${rowNum + 1}`);
+      ws.getCell(`${col}${rowNum + 1}`).value = card.value;
+      ws.getCell(`${col}${rowNum + 1}`).font = { name: 'Arial', size: 20, bold: true, color: { argb: '111827' } };
+      ws.getCell(`${col}${rowNum + 1}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(rowNum + 1).height = 38;
+
+      if (card.desc) {
+        ws.mergeCells(`${col}${rowNum + 2}:${String.fromCharCode(65 + i * 3 + 1)}${rowNum + 2}`);
+        ws.getCell(`${col}${rowNum + 2}`).value = card.desc;
+        ws.getCell(`${col}${rowNum + 2}`).font = { name: 'Arial', size: 8, color: { argb: '9CA3AF' } };
+        ws.getCell(`${col}${rowNum + 2}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      }
+    });
+    return rowNum + 3;
+  }
+
+  function tableSection(ws, rowNum, headers, rows, color) {
+    headers.forEach((h, i) => {
+      const col = String.fromCharCode(65 + i);
+      ws.getCell(`${col}${rowNum}`).value = h;
+      ws.getCell(`${col}${rowNum}`).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+      ws.getCell(`${col}${rowNum}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+      ws.getCell(`${col}${rowNum}`).alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getCell(`${col}${rowNum}`).border = { bottom: { style: 'medium' } };
+    });
+    ws.getRow(rowNum).height = 24;
+    let r = rowNum + 1;
+    rows.forEach((row, idx) => {
+      row.forEach((val, i) => {
+        const col = String.fromCharCode(65 + i);
+        ws.getCell(`${col}${r}`).value = val;
+        ws.getCell(`${col}${r}`).font = { name: 'Arial', size: 9, bold: idx === rows.length - 1 };
+        ws.getCell(`${col}${r}`).alignment = { horizontal: 'center', vertical: 'middle' };
+        if (idx === rows.length - 1) {
+          ws.getCell(`${col}${r}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F3F4F6' } };
+        }
+      });
+      ws.getRow(r).height = 22;
+      r++;
+    });
+    return r + 1;
+  }
+
+  // =============================================
   // SHEET 1: ALL SHIPMENTS
   // =============================================
   const wsAll = workbook.addWorksheet('All Shipments', { properties: { tabColor: { argb: '1E40AF' } } });
   writeSheet(wsAll, shipments, 'ALL SHIPMENTS REPORT', '1E40AF', allColumns);
 
-  // Add logo to All Shipments
   try {
     const fs = require('fs'); let lp = path.join(__dirname, '..', 'logo.webp'), ext = 'webp';
     if (!fs.existsSync(lp)) { lp = path.join(__dirname, '..', 'logo.png'); ext = 'png'; }
@@ -217,51 +280,64 @@ async function exportShipmentsToExcel(shipments, res) {
   }
 
   // =============================================
-  // SHEET 6: ADVANCED SUMMARY
+  // SHEET 6: MASSIVE SUMMARY DASHBOARD
   // =============================================
-  const ss = workbook.addWorksheet('Summary', { properties: { tabColor: { argb: '8B5CF6' } } });
+  const ss = workbook.addWorksheet('📊 Summary', { properties: { tabColor: { argb: '8B5CF6' } } });
   
-  ss.mergeCells('A1:H1');
-  ss.getCell('A1').value = 'PAS FREIGHT SERVICES PVT LTD';
-  ss.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: '8B5CF6' } };
-  ss.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-  ss.getRow(1).height = 30;
+  // Column widths
+  ss.getColumn(1).width = 5; ss.getColumn(2).width = 22; ss.getColumn(3).width = 14;
+  ss.getColumn(4).width = 12; ss.getColumn(5).width = 22; ss.getColumn(6).width = 14;
+  ss.getColumn(7).width = 14; ss.getColumn(8).width = 22; ss.getColumn(9).width = 14; ss.getColumn(10).width = 14;
 
-  ss.mergeCells('A2:H2');
-  ss.getCell('A2').value = 'DASHBOARD SUMMARY';
-  ss.getCell('A2').font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFF' } };
-  ss.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '8B5CF6' } };
-  ss.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
-  ss.getRow(2).height = 28;
+  let r = 1;
+  ss.mergeCells(`A${r}:J${r}`);
+  ss.getCell(`A${r}`).value = 'PAS FREIGHT SERVICES PVT LTD';
+  ss.getCell(`A${r}`).font = { name: 'Arial', size: 18, bold: true, color: { argb: '8B5CF6' } };
+  ss.getCell(`A${r}`).alignment = { horizontal: 'center', vertical: 'middle' };
+  ss.getRow(r).height = 38; r++;
 
-  ss.mergeCells('A4:B4');
-  ss.getCell('A4').value = 'SHIPMENT TYPE BREAKDOWN';
-  ss.getCell('A4').font = { name: 'Arial', size: 12, bold: true, color: { argb: '8B5CF6' } };
-  ss.getRow(4).height = 24;
+  ss.mergeCells(`A${r}:J${r}`);
+  ss.getCell(`A${r}`).value = `EXECUTIVE DASHBOARD  |  Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}  |  ${new Date().toLocaleTimeString()}`;
+  ss.getCell(`A${r}`).font = { name: 'Arial', size: 10, color: { argb: '6B7280' } };
+  ss.getCell(`A${r}`).alignment = { horizontal: 'center', vertical: 'middle' };
+  ss.getRow(r).height = 24; r += 2;
 
-  const typeBreakdown = [
-    ['Type', 'Count', '%'],
-    ['Freight', freightShipments.length, Math.round((freightShipments.length / shipments.length) * 100) + '%'],
-    ['CHA Import', chaImportShipments.length, Math.round((chaImportShipments.length / shipments.length) * 100) + '%'],
-    ['CHA Export', chaExportShipments.length, Math.round((chaExportShipments.length / shipments.length) * 100) + '%'],
-    ['Transport', transportShipments.length, Math.round((transportShipments.length / shipments.length) * 100) + '%'],
-    ['TOTAL', shipments.length, '100%'],
+  // ---- OVERVIEW CARDS ----
+  const totalDelivered = shipments.filter(s => s.currentStatus === 'DELIVERED').length;
+  const totalInvoiced = shipments.filter(s => ['INVOICE_GENERATED', 'INVOICE_SENT'].includes(s.currentStatus)).length;
+  const activeShipments = shipments.filter(s => !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(s.currentStatus)).length;
+  const deliveryRate = shipments.length > 0 ? Math.round((totalDelivered / shipments.length) * 100) : 0;
+
+  const totalTransportWt = transportShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.weight) || 0), 0);
+  const totalContainers = transportShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.noOfContainers) || 0), 0);
+  const totalFreightPkgs = freightShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.noOfPackages) || 0), 0);
+  const totalFreightWt = freightShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.grossWeight) || 0), 0);
+
+  r = statCardRow(ss, r, [
+    { label: 'TOTAL SHIPMENTS', value: shipments.length, desc: 'All types', color: '8B5CF6' },
+    { label: 'ACTIVE', value: activeShipments, desc: 'In progress', color: '3B82F6' },
+    { label: 'DELIVERED', value: totalDelivered, desc: `${deliveryRate}% success rate`, color: '10B981' },
+  ]);
+  r = statCardRow(ss, r, [
+    { label: 'INVOICED', value: totalInvoiced, desc: 'Invoice generated/sent', color: 'F59E0B' },
+    { label: 'TRANSPORT', value: transportShipments.length, desc: `${totalTransportWt.toLocaleString()} kg | ${totalContainers} containers`, color: '0EA5E9' },
+    { label: 'FREIGHT PKGS', value: totalFreightPkgs, desc: `${totalFreightWt.toLocaleString()} kg gross`, color: '7C3AED' },
+  ]);
+  r++;
+
+  // ---- SHIPMENT TYPE BREAKDOWN ----
+  r = sectionHeader(ss, r, '📦 SHIPMENT TYPE BREAKDOWN', '8B5CF6');
+  const typeData = [
+    ['Freight', freightShipments.length, shipments.length > 0 ? Math.round((freightShipments.length / shipments.length) * 100) + '%' : '0%', totalFreightPkgs, `${totalFreightWt.toLocaleString()} kg`],
+    ['CHA Import', chaImportShipments.length, shipments.length > 0 ? Math.round((chaImportShipments.length / shipments.length) * 100) + '%' : '0%', '', ''],
+    ['CHA Export', chaExportShipments.length, shipments.length > 0 ? Math.round((chaExportShipments.length / shipments.length) * 100) + '%' : '0%', '', ''],
+    ['Transport', transportShipments.length, shipments.length > 0 ? Math.round((transportShipments.length / shipments.length) * 100) + '%' : '0%', totalContainers, `${totalTransportWt.toLocaleString()} kg`],
+    ['TOTAL', shipments.length, '100%', '', ''],
   ];
+  r = tableSection(ss, r, ['Type', 'Count', 'Share %', 'Units (Pkgs/Cont)', 'Weight'], typeData, '8B5CF6');
 
-  typeBreakdown.forEach((row, i) => {
-    const r = ss.addRow(row);
-    if (i === 0) { r.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } }; r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '8B5CF6' } }; }
-    else if (i === typeBreakdown.length - 1) { r.font = { name: 'Arial', size: 10, bold: true }; r.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDE9FE' } }; }
-    r.alignment = { horizontal: 'center', vertical: 'middle' }; r.height = 22;
-  });
-
-  let statusRow = typeBreakdown.length + 6;
-  ss.mergeCells(`A${statusRow}:H${statusRow}`);
-  ss.getCell(`A${statusRow}`).value = 'STATUS BREAKDOWN BY TYPE';
-  ss.getCell(`A${statusRow}`).font = { name: 'Arial', size: 12, bold: true, color: { argb: '8B5CF6' } };
-  ss.getRow(statusRow).height = 24;
-  statusRow++;
-
+  // ---- STATUS BREAKDOWN BY TYPE ----
+  r = sectionHeader(ss, r, '📊 STATUS BREAKDOWN BY TYPE', '3B82F6');
   ['Freight', 'CHA Import', 'CHA Export', 'Transport'].forEach(type => {
     let data;
     if (type === 'Freight') data = freightShipments;
@@ -270,31 +346,131 @@ async function exportShipmentsToExcel(shipments, res) {
     else data = transportShipments;
     if (data.length === 0) return;
 
-    ss.mergeCells(`A${statusRow}:H${statusRow}`);
-    ss.getCell(`A${statusRow}`).value = `${type} (${data.length} shipments)`;
-    ss.getCell(`A${statusRow}`).font = { name: 'Arial', size: 10, bold: true, color: { argb: '6B7280' } };
-    ss.getCell(`A${statusRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F3F4F6' } };
-    statusRow++;
+    ss.mergeCells(`A${r}:J${r}`);
+    ss.getCell(`A${r}`).value = `${type} (${data.length} shipments)`;
+    ss.getCell(`A${r}`).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
+    ss.getCell(`A${r}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '6B7280' } };
+    ss.getRow(r).height = 24; r++;
 
     const counts = {};
     data.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
+    const statusRows = [['Status', 'Count', '%']];
     Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([status, count]) => {
-      const r = ss.addRow(['', status, count, Math.round((count / data.length) * 100) + '%']);
-      r.alignment = { horizontal: 'center', vertical: 'middle' }; r.font = { name: 'Arial', size: 9 }; r.height = 20;
-      statusRow++;
+      statusRows.push([status, count, Math.round((count / data.length) * 100) + '%']);
     });
-    statusRow++;
+    r = tableSection(ss, r, ['Status', 'Count', '%'], statusRows, '6B7280');
+    r++;
   });
+
+  // ---- MONTHLY TREND ----
+  r = sectionHeader(ss, r, '📅 MONTHLY SHIPMENT TREND', 'F59E0B');
+  const monthlyCounts = {};
+  shipments.forEach(s => {
+    const d = new Date(s.createdAt);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    monthlyCounts[key] = (monthlyCounts[key] || 0) + 1;
+  });
+  const monthRows = [['Month', 'Shipments', 'Cumulative']];
+  let cum = 0;
+  Object.entries(monthlyCounts).sort().forEach(([month, count]) => {
+    cum += count;
+    monthRows.push([month, count, cum]);
+  });
+  if (monthRows.length > 1) r = tableSection(ss, r, ['Month', 'Shipments', 'Cumulative'], monthRows, 'F59E0B');
+
+  // ---- TRANSPORT STATS ----
+  if (transportShipments.length > 0) {
+    r = sectionHeader(ss, r, '🚛 TRANSPORT DETAILED STATS', '0EA5E9');
+    const vehicleCounts = {};
+    transportShipments.forEach(s => { const v = s.freightForwarding?.vehicleType || 'Unknown'; vehicleCounts[v] = (vehicleCounts[v] || 0) + 1; });
+    const vehicleRows = [['Vehicle Type', 'Count', '%']];
+    Object.entries(vehicleCounts).sort((a, b) => b[1] - a[1]).forEach(([v, c]) => {
+      vehicleRows.push([v, c, Math.round((c / transportShipments.length) * 100) + '%']);
+    });
+    r = tableSection(ss, r, ['Vehicle Type', 'Count', '%'], vehicleRows, '0EA5E9');
+
+    const deliveredTransport = transportShipments.filter(s => s.currentStatus === 'DELIVERED').length;
+    const transportRows = [
+      ['Metric', 'Value'],
+      ['Total Trips', transportShipments.length],
+      ['Total Containers', totalContainers],
+      ['Total Weight (kg)', `${totalTransportWt.toLocaleString()} kg`],
+      ['Avg Weight/Trip', transportShipments.length > 0 ? `${Math.round(totalTransportWt / transportShipments.length).toLocaleString()} kg` : '0 kg'],
+      ['Delivered', deliveredTransport],
+      ['Delivery Rate', `${Math.round((deliveredTransport / transportShipments.length) * 100)}%`],
+    ];
+    r = tableSection(ss, r, ['Metric', 'Value'], transportRows, '0EA5E9');
+  }
+
+  // ---- TOP CUSTOMERS ----
+  r = sectionHeader(ss, r, '👥 TOP CUSTOMERS (All Types)', '7C3AED');
+  const customerCounts = {};
+  shipments.forEach(s => {
+    const name = s.freightForwarding?.customerName || s.freightForwarding?.consigneeName;
+    if (name && name.trim()) { customerCounts[name] = (customerCounts[name] || 0) + 1; }
+  });
+  const topCustomers = Object.entries(customerCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const customerRows = [['Customer', 'Shipments', '%']];
+  topCustomers.forEach(([name, count]) => {
+    customerRows.push([name, count, Math.round((count / shipments.length) * 100) + '%']);
+  });
+  if (customerRows.length > 1) r = tableSection(ss, r, ['Customer', 'Shipments', '%'], customerRows, '7C3AED');
+
+  // ---- TOP ROUTES (Transport) ----
+  if (transportShipments.length > 0) {
+    r = sectionHeader(ss, r, '📍 TOP TRANSPORT ROUTES', '0891B2');
+    const routeCounts = {};
+    transportShipments.forEach(s => {
+      const route = `${s.freightForwarding?.fromLocation || '?'} → ${s.freightForwarding?.toLocation || '?'}`;
+      routeCounts[route] = (routeCounts[route] || 0) + 1;
+    });
+    const topRoutes = Object.entries(routeCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const routeRows = [['Route', 'Trips', '%']];
+    topRoutes.forEach(([route, count]) => {
+      routeRows.push([route, count, Math.round((count / transportShipments.length) * 100) + '%']);
+    });
+    if (routeRows.length > 1) r = tableSection(ss, r, ['Route', 'Trips', '%'], routeRows, '0891B2');
+  }
+
+  // ---- CHA SUMMARY ----
+  if (chaImportShipments.length > 0 || chaExportShipments.length > 0) {
+    r = sectionHeader(ss, r, '🛃 CHA OPERATIONS SUMMARY', '10B981');
+    const boeFiled = chaImportShipments.filter(s => s.currentStatus && ['BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED'].includes(s.currentStatus)).length;
+    const sbFiled = chaExportShipments.filter(s => s.currentStatus && ['SB_FILED', 'LEO_DONE', 'HAND_OVER', 'DELIVERED'].includes(s.currentStatus)).length;
+    const chaDelivered = [...chaImportShipments, ...chaExportShipments].filter(s => s.currentStatus === 'DELIVERED').length;
+    const chaRows = [
+      ['Metric', 'Value'],
+      ['Total CHA Bills', chaImportShipments.length + chaExportShipments.length],
+      ['Import Bills', chaImportShipments.length],
+      ['Export Bills', chaExportShipments.length],
+      ['BOE Filed (Import)', boeFiled],
+      ['SB Filed (Export)', sbFiled],
+      ['Delivered', chaDelivered],
+      ['Delivery Rate', (chaImportShipments.length + chaExportShipments.length) > 0 ? `${Math.round((chaDelivered / (chaImportShipments.length + chaExportShipments.length)) * 100)}%` : '0%'],
+    ];
+    r = tableSection(ss, r, ['Metric', 'Value'], chaRows, '10B981');
+  }
+
+  // ---- RECENT ACTIVITY ----
+  r = sectionHeader(ss, r, '🕐 RECENT ACTIVITY (Last 50)', 'EF4444');
+  const recentActivityRows = [['Date', 'Ref No', 'Type', 'Customer', 'Status']];
+  shipments.slice(-50).reverse().forEach(s => {
+    recentActivityRows.push([
+      new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      s.refNo || '',
+      s.shipmentType || '',
+      s.freightForwarding?.customerName || s.freightForwarding?.consigneeName || '',
+      (s.currentStatus || '').replace(/_/g, ' '),
+    ]);
+  });
+  r = tableSection(ss, r, ['Date', 'Ref No', 'Type', 'Customer', 'Status'], recentActivityRows, 'EF4444');
 
   // Footer
   const sfr = ss.addRow(['']);
-  ss.mergeCells(`A${sfr.number}:H${sfr.number}`);
-  ss.getCell(`A${sfr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential`;
+  ss.mergeCells(`A${sfr.number}:J${sfr.number}`);
+  ss.getCell(`A${sfr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential | Auto-Generated Report`;
   ss.getCell(`A${sfr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
   ss.getCell(`A${sfr.number}`).alignment = { horizontal: 'center' };
-
-  ss.getColumn(1).width = 5; ss.getColumn(2).width = 20; ss.getColumn(3).width = 12; ss.getColumn(4).width = 10;
-  for (let i = 5; i <= 8; i++) ss.getColumn(i).width = 14;
 
   // =============================================
   // SEND

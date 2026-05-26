@@ -17,6 +17,7 @@ const STAGE_COLORS = {
   'Completed': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900', 'Cancelled': 'bg-gradient-to-r from-red-400 to-red-300 text-red-900', 'On Hold': 'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900',
 }
 const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
+const TRANSPORT_MODE_OPTIONS = ['Air', 'Sea', 'Courier']
 const IMPORT_EXPORT_OPTIONS = ['Import', 'Export']
 const COUNTRY_PORTS = ['SINGAPORE', 'MALAYSIA', 'CHINA', 'HONG KONG', 'JAPAN', 'SOUTH KOREA', 'TAIWAN', 'THAILAND', 'VIETNAM', 'INDONESIA', 'USA', 'UK', 'GERMANY', 'NETHERLANDS', 'FRANCE', 'ITALY', 'SPAIN', 'UAE', 'SAUDI ARABIA', 'AUSTRALIA']
 const INDIA_PORTS = ['BANGALORE', 'CHENNAI', 'MUMBAI', 'DELHI', 'HYDERABAD', 'KOLKATA', 'AHMEDABAD', 'PUNE', 'COCHIN', 'TUTICORIN', 'VISAKHAPATNAM', 'MUNDRA', 'NHAVA SHEVA', 'KATTUPALLI', 'ENNORE']
@@ -247,34 +248,27 @@ export default function ShipmentDetail() {
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
           <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section></div>}
 
-        {/* TRANSPORT TAB - show transport details instead of freight */}
+        {/* TRANSPORT TAB - Transport Details → Route & Delivery → Accounts */}
         {isTransport && activeTab==='freight'&&<div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <C icon={User} l="Customer" v={ff.customerName}/>
-            <C icon={Truck} l="Vehicle Type" v={ff.vehicleType}/>
-            <C icon={Box} l="No of Containers" v={ff.noOfContainers}/>
-            <C icon={Package} l="Package Type" v={ff.packageType}/>
-            <C icon={MapPinned} l="From" v={ff.fromLocation}/>
-            <C icon={Navigation} l="To" v={ff.toLocation}/>
-            <C icon={Calendar} l="Delivery Date" v={Fmt(ff.deliveryDate)}/>
-          </div>
-          <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
           <Section title="Transport Details" icon={Truck}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div><label className="text-xs text-indigo-400 mb-1 block">Vehicle Type</label><InlineField value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Select vehicle" /></div>
-              <div><label className="text-xs text-indigo-400 mb-1 block">Package Type</label><InlineField value={ff.packageType} options={PACKAGE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { packageType: v } })} placeholder="Select package" /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <ComboField label="Transport Mode" value={ff.transportMode} options={TRANSPORT_MODE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'rates', data: { transportMode: v } })} placeholder="Custom mode..." />
+              <ComboField label="Vehicle Type" value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Custom type..." />
               <Field label="No of Containers" value={ff.noOfContainers} onSave={v => updateMutation.mutate({ section: 'rates', data: { noOfContainers: v } })} type="number" />
+              <ComboField label="Package Type" value={ff.packageType} options={PACKAGE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { packageType: v } })} placeholder="Custom package..." />
+              <Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" />
               <Field label="Customer Name" value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} />
             </div>
           </Section>
-          <Section title="Route" icon={MapPinned}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Section title="Route & Delivery" icon={MapPinned}>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} />
               <Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} />
+              <Field label="Delivery Date" value={Fmt(ff.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'rates', data: { deliveryDate: v } })} type="date" />
             </div>
           </Section>
-          <Section title="Delivery" icon={Calendar}>
-            <Field label="Delivery Date" value={Fmt(ff.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'rates', data: { deliveryDate: v } })} type="date" />
+          <Section title="Notification Settings" icon={Mail}>
+            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
           </Section>
         </div>}
         
