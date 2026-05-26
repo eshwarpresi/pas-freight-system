@@ -27,6 +27,26 @@ const PORT_LOCATIONS = ['SIN', 'INBLR4', 'INMAA4', 'INBOM4', 'INDEA4', 'INHYD4',
 const VEHICLE_TYPES = ['10ft', '20ft', '32ft', '40ft']
 const PACKAGE_TYPES = ['Box / Carton', 'Envelope / Document', 'Parcel', 'Pallet', 'Crate', 'Bag / Sack', 'Drum / Barrel', 'Tube', 'Container', 'Wooden Box', 'Plastic Bin', 'Roll', 'Bundle', 'Cargo Package', 'Freight Package']
 
+// Section-to-status mapping for instant timeline updates
+const SECTION_TO_STATUS = {
+  rates: 'RATES_ADDED',
+  nomination: 'NOMINATED',
+  booking: 'BOOKED',
+  schedule: 'SCHEDULED',
+  awb: 'AWB_GENERATED',
+  checklist: 'CHECKLIST_APPROVED',
+  boe: 'BOE_FILED',
+  do: 'DO_COLLECTED',
+  ooc: 'OOC_DONE',
+  gatepass: 'GATE_PASS',
+  pod: 'DELIVERED',
+  leo: 'LEO_DONE',
+  handover: 'HAND_OVER',
+  shippingbill: 'SB_FILED',
+  invoice: 'INVOICE_GENERATED',
+  invoiceSend: 'INVOICE_SENT',
+}
+
 const FULL_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',d:'Pricing added',i:DollarSign},{s:'NOMINATED',l:'Nominated',d:'Agent assigned',i:User},
   {s:'BOOKED',l:'Booked',d:'Confirmed with carrier',i:Calendar},{s:'SCHEDULED',l:'Scheduled',d:'ETD/ETA set',i:Clock},{s:'AWB_GENERATED',l:'AWB',d:'Air Waybill created',i:Barcode},
@@ -136,10 +156,18 @@ export default function ShipmentDetail() {
       }
       return api[eps[section].m](eps[section].u, data)
     },
-    onSuccess: (_, variables) => { 
-      addToast('Saved!', 'success'); 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
-      queryClient.invalidateQueries({ queryKey: ['shipment', id] });
+    onSuccess: (response, variables) => {
+      const updatedShipment = response?.data?.data
+      addToast('Saved!', 'success')
+
+      // ✅ INSTANTLY update the cache so timeline updates immediately
+      if (updatedShipment) {
+        queryClient.setQueryData(['shipment', id], updatedShipment)
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['shipment', id] })
+      }
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+
       // Broadcast to other users
       if (socket && shipment) {
         socket.emit('shipment:updated', { 
@@ -147,13 +175,14 @@ export default function ShipmentDetail() {
           refNo: shipment.refNo, 
           user: shipment.createdByName || 'Someone'
         })
-        // Also emit status change if the mutation changes status
-        if (variables.section === 'schedule' || variables.section === 'awb' || 
-            variables.section === 'checklist' || variables.section === 'boe' || 
-            variables.section === 'rates' || variables.section === 'invoice' ||
-            variables.section === 'pod' || variables.section === 'leo') {
-          const newStatus = shipment.currentStatus
-          socket.emit('shipment:statusChanged', { id, refNo: shipment.refNo, status: newStatus?.replace(/_/g, ' ') || 'Updated' })
+        // Emit status change
+        const newStatus = SECTION_TO_STATUS[variables.section]
+        if (newStatus) {
+          socket.emit('shipment:statusChanged', { 
+            id, 
+            refNo: shipment.refNo, 
+            status: newStatus.replace(/_/g, ' ')
+          })
         }
       }
     },
