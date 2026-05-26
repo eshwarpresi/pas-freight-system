@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
+import { useSocket } from '../App'
 import OnlineUsers from '../components/OnlineUsers'
 import { 
   Package, Clock, Download, Archive, Search, Plus,
@@ -10,7 +11,7 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
@@ -50,6 +51,7 @@ function loadStickyFilters() {
 
 export default function Dashboard() {
   const { addToast } = useToast()
+  const socket = useSocket()
   const sticky = loadStickyFilters()
   const [search, setSearch] = useState(sticky.search || '')
   const [statusFilter, setStatusFilter] = useState(sticky.statusFilter || '')
@@ -61,9 +63,62 @@ export default function Dashboard() {
   const [showFilters, setShowFilters] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const [liveNotification, setLiveNotification] = useState(null)
   const queryClient = useQueryClient()
 
   const isTransportFilter = shipmentTypeFilter === 'TRANSPORT'
+
+  // Auto-dismiss live notification
+  useEffect(() => {
+    if (liveNotification) {
+      const timer = setTimeout(() => setLiveNotification(null), 4000)
+      return () => clearTimeout(timer)
+    }
+  }, [liveNotification])
+
+  // Socket listeners for real-time updates
+  useEffect(() => {
+    if (!socket) return
+
+    // New shipment created by another user
+    const handleNewShipment = (data) => {
+      if (!showArchived) {
+        setLiveNotification({ type: 'new', refNo: data.refNo, message: `New shipment created: ${data.refNo}` })
+        // Refetch shipments to include the new one
+        queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      }
+    }
+
+    // Shipment updated by another user
+    const handleUpdate = (data) => {
+      setLiveNotification({ type: 'update', refNo: data.refNo, message: `Shipment updated: ${data.refNo}` })
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+    }
+
+    // Status changed by another user
+    const handleStatusUpdate = (data) => {
+      setLiveNotification({ type: 'status', refNo: data.refNo, message: `${data.refNo} → ${data.status}` })
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+    }
+
+    // Archive/unarchive by another user
+    const handleArchiveUpdate = (data) => {
+      setLiveNotification({ type: 'archive', refNo: data.refNo, message: `${data.refNo} ${data.archived ? 'archived' : 'restored'}` })
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+    }
+
+    socket.on('shipment:new', handleNewShipment)
+    socket.on('shipment:update', handleUpdate)
+    socket.on('shipment:statusUpdate', handleStatusUpdate)
+    socket.on('shipment:archiveUpdate', handleArchiveUpdate)
+
+    return () => {
+      socket.off('shipment:new', handleNewShipment)
+      socket.off('shipment:update', handleUpdate)
+      socket.off('shipment:statusUpdate', handleStatusUpdate)
+      socket.off('shipment:archiveUpdate', handleArchiveUpdate)
+    }
+  }, [socket, showArchived, queryClient])
 
   useEffect(() => {
     if (initialized) {
@@ -145,12 +200,27 @@ export default function Dashboard() {
 
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment archived', 'success') },
+    onSuccess: (_, id) => { 
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
+      addToast('Shipment archived', 'success');
+      // Broadcast to other users
+      if (socket) {
+        const s = shipments.find(s => s.id === id)
+        socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: true, id })
+      }
+    },
     onError: () => addToast('Failed to archive', 'error')
   })
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment restored', 'success') },
+    onSuccess: (_, id) => { 
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
+      addToast('Shipment restored', 'success');
+      if (socket) {
+        const s = shipments.find(s => s.id === id)
+        socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: false, id })
+      }
+    },
     onError: () => addToast('Failed to restore', 'error')
   })
   const bulkArchiveMutation = useMutation({
@@ -198,12 +268,32 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* Live Notification Toast */}
+      {liveNotification && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-down">
+          <div className={`px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-3 text-sm font-medium ${
+            liveNotification.type === 'new' ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-800' :
+            liveNotification.type === 'status' ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 text-blue-800' :
+            'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-300 text-amber-800'
+          }`}>
+            <Zap size={16} className="flex-shrink-0" />
+            <span>{liveNotification.message}</span>
+            <button onClick={() => setLiveNotification(null)} className="ml-2 text-gray-400 hover:text-gray-600"><X size={14} /></button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[11px] font-semibold tracking-wider text-indigo-600 uppercase bg-gradient-to-r from-indigo-100 to-blue-100 px-2.5 py-0.5 rounded-md">Shipments</span>
             <span className="text-xs text-gray-500 font-medium">{totalCount} total</span>
+            {socket?.connected && (
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live
+              </span>
+            )}
             <OnlineUsers />
           </div>
           <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent tracking-tight">{showArchived ? 'Archive' : 'Overview'}</h1>

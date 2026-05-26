@@ -3,11 +3,12 @@ import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
+import { useSocket } from '../App'
 import { 
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -70,16 +71,47 @@ function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }
 
 export default function ShipmentDetail() {
   const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
+  const socket = useSocket()
   const [initialTabSet, setInitialTabSet] = useState(false)
   const [activeTab, setActiveTab] = useState('freight')
   const [sendingEmail, setSendingEmail] = useState(false)
   const [showEmailDropdown, setShowEmailDropdown] = useState(false)
+  const [liveEditBy, setLiveEditBy] = useState(null)
   
   const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
     queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`, { params: { _t: Date.now() } }); return r.data.data },
     staleTime: 0, gcTime: 0,
   })
+
+  // Socket listeners for real-time updates on this shipment
+  useEffect(() => {
+    if (!socket || !id) return
+
+    const handleStatusUpdate = (data) => {
+      if (data.id === id) {
+        addToast(`Status changed to: ${data.status}`, 'info')
+        queryClient.invalidateQueries({ queryKey: ['shipment', id] })
+        queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      }
+    }
+
+    const handleUpdate = (data) => {
+      if (data.id === id) {
+        setLiveEditBy(data.user || 'Someone')
+        setTimeout(() => setLiveEditBy(null), 3000)
+        queryClient.invalidateQueries({ queryKey: ['shipment', id] })
+      }
+    }
+
+    socket.on('shipment:statusUpdate', handleStatusUpdate)
+    socket.on('shipment:update', handleUpdate)
+
+    return () => {
+      socket.off('shipment:statusUpdate', handleStatusUpdate)
+      socket.off('shipment:update', handleUpdate)
+    }
+  }, [socket, id, queryClient, addToast])
 
   const isTransport = shipment?.shipmentType === 'Transport'
   const isCHAOnly = shipment?.shipmentType === 'CHA Only'
@@ -104,7 +136,27 @@ export default function ShipmentDetail() {
       }
       return api[eps[section].m](eps[section].u, data)
     },
-    onSuccess: () => { addToast('Saved!', 'success'); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipment', id] }); },
+    onSuccess: (_, variables) => { 
+      addToast('Saved!', 'success'); 
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
+      queryClient.invalidateQueries({ queryKey: ['shipment', id] });
+      // Broadcast to other users
+      if (socket && shipment) {
+        socket.emit('shipment:updated', { 
+          id, 
+          refNo: shipment.refNo, 
+          user: shipment.createdByName || 'Someone'
+        })
+        // Also emit status change if the mutation changes status
+        if (variables.section === 'schedule' || variables.section === 'awb' || 
+            variables.section === 'checklist' || variables.section === 'boe' || 
+            variables.section === 'rates' || variables.section === 'invoice' ||
+            variables.section === 'pod' || variables.section === 'leo') {
+          const newStatus = shipment.currentStatus
+          socket.emit('shipment:statusChanged', { id, refNo: shipment.refNo, status: newStatus?.replace(/_/g, ' ') || 'Updated' })
+        }
+      }
+    },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
 
@@ -186,6 +238,11 @@ export default function ShipmentDetail() {
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span>
                 {isTransport && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-sky-500 to-blue-500 border border-sky-400">Transport</span>}
                 {isCHAOnly && <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white border ${isCHAExport ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-400' : 'bg-gradient-to-r from-emerald-500 to-green-500 border-emerald-400'}`}>{isCHAExport ? 'CHA Export' : 'CHA Import'}</span>}
+                {liveEditBy && (
+                  <span className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">
+                    <Zap size={10} /> {liveEditBy} is editing...
+                  </span>
+                )}
               </div>
               <p className="text-sm text-gray-500 mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
             </div>
