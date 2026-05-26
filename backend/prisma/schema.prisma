@@ -31,7 +31,7 @@ model User {
 // ==========================================
 model Shipment {
   id           String   @id @default(uuid())
-  refNo        String   @unique
+  refNo        String   // ✅ Duplicates allowed — removed @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   
@@ -98,6 +98,7 @@ model FreightForwarding {
   noOfContainers  Int?      // Number of containers
   packageType     String?   // Box/Carton, Envelope, Parcel, Pallet, etc
   deliveryDate    DateTime? // Delivery date
+  transportMode   String?   // Air, Sea, Courier, or custom
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
