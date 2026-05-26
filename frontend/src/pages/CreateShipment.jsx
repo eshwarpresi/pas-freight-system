@@ -14,6 +14,7 @@ const IMPORT_EXPORT_TYPES = ['Import', 'Export']
 const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
 const VEHICLE_TYPES = ['10ft', '20ft', '32ft', '40ft']
 const PACKAGE_TYPES = ['Box / Carton', 'Envelope / Document', 'Parcel', 'Pallet', 'Crate', 'Bag / Sack', 'Drum / Barrel', 'Tube', 'Container', 'Wooden Box', 'Plastic Bin', 'Roll', 'Bundle', 'Cargo Package', 'Freight Package']
+const TRANSPORT_MODE_OPTIONS = ['Air', 'Sea', 'Courier']
 
 export default function CreateShipment() {
   const navigate = useNavigate()
@@ -57,7 +58,8 @@ export default function CreateShipment() {
       hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '',
       notificationEmail: '',
       customerName: '', vehicleType: '', noOfContainers: '', packageType: '',
-      fromLocation: '', toLocation: '', deliveryDate: ''
+      fromLocation: '', toLocation: '', deliveryDate: '',
+      transportMode: ''
     }
   })
 
@@ -107,7 +109,8 @@ export default function CreateShipment() {
         packageType: ff.packageType || '',
         fromLocation: ff.fromLocation || '',
         toLocation: ff.toLocation || '',
-        deliveryDate: ff.deliveryDate ? new Date(ff.deliveryDate).toISOString().split('T')[0] : ''
+        deliveryDate: ff.deliveryDate ? new Date(ff.deliveryDate).toISOString().split('T')[0] : '',
+        transportMode: s.shipmentType === 'Transport' ? s.shipmentType : ''
       })
     } catch (err) {
       addToast('Failed to load shipment for editing', 'error')
@@ -194,7 +197,9 @@ export default function CreateShipment() {
           vehicleType: formData.vehicleType || null,
           noOfContainers: formData.noOfContainers ? parseInt(formData.noOfContainers) : null,
           packageType: formData.packageType || null,
-          deliveryDate: formData.deliveryDate || null
+          deliveryDate: formData.deliveryDate || null,
+          fromLocation: formData.fromLocation || null,
+          toLocation: formData.toLocation || null
         }
         const response = await api.post('/freight/shipments', submitData)
         localStorage.removeItem(DRAFT_KEY)
@@ -211,7 +216,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '' })
     setErrors({}); setTouched({})
   }
 
@@ -387,43 +392,46 @@ export default function CreateShipment() {
             </>
           )}
 
-          {/* TRANSPORT SHIPMENT */}
+          {/* TRANSPORT SHIPMENT - SIMPLIFIED */}
           {isTransport && (
             <>
               <div className="p-6 border-b border-sky-100 bg-gradient-to-br from-white to-sky-50/30">
-                <div className="flex items-center gap-2 mb-1"><Hash size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Reference Details</h3></div>
+                <div className="flex items-center gap-2 mb-1"><Truck size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Reference Details</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number</label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
-                      {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-sky-100 to-blue-100 rounded-lg text-xs font-medium text-sky-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
-                    </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Vehicle No</label>
+                    <div className="relative"><Hash size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} placeholder="KA-01-AB-1234" className={`${inputClass}`} /></div>
                   </div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
-                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
+                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`${inputClass}`} /></div>
                   </div>
                 </div>
               </div>
 
               <div className="p-6 border-b border-sky-100">
                 <div className="flex items-center gap-2 mb-1"><User size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Customer Details</h3></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="customerName" value={formData.customerName} onChange={handleChange} className={`${inputClass} ${getFieldClass('customerName')}`} /></div></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="customerName" value={formData.customerName} onChange={handleChange} placeholder="Customer name" className={`${inputClass} ${getFieldClass('customerName')}`} /></div></div>
               </div>
 
               <div className="p-6 border-b border-sky-100">
-                <div className="flex items-center gap-2 mb-1"><Truck size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Transport Details</h3></div>
+                <div className="flex items-center gap-2 mb-1"><Ship size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Transport Details</h3></div>
+                <div className="mb-4"><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
+                  <div className="flex gap-2">
+                    <select name="transportMode" value={TRANSPORT_MODE_OPTIONS.includes(formData.transportMode) ? formData.transportMode : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select mode...</option>{TRANSPORT_MODE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <input type="text" name="transportMode" value={!TRANSPORT_MODE_OPTIONS.includes(formData.transportMode) ? formData.transportMode : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Vehicle Type</label>
                     <div className="flex gap-2">
-                      <select name="vehicleType" value={VEHICLE_TYPES.includes(formData.vehicleType) ? formData.vehicleType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select vehicle...</option>{VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <select name="vehicleType" value={VEHICLE_TYPES.includes(formData.vehicleType) ? formData.vehicleType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
                       <input type="text" name="vehicleType" value={!VEHICLE_TYPES.includes(formData.vehicleType) ? formData.vehicleType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
                     </div>
                   </div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Containers</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="number" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
                 </div>
-                <div className="mb-4"><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Type</label>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Type</label>
                   <div className="flex gap-2">
-                    <select name="packageType" value={PACKAGE_TYPES.includes(formData.packageType) ? formData.packageType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select package...</option>{PACKAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                    <select name="packageType" value={PACKAGE_TYPES.includes(formData.packageType) ? formData.packageType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{PACKAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
                     <input type="text" name="packageType" value={!PACKAGE_TYPES.includes(formData.packageType) ? formData.packageType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
                   </div>
                 </div>
@@ -432,10 +440,13 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-sky-100">
                 <div className="flex items-center gap-2 mb-1"><MapPin size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Route & Delivery</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">From <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="fromLocation" value={formData.fromLocation} onChange={handleChange} className={`${inputClass} ${getFieldClass('fromLocation')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">To <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="toLocation" value={formData.toLocation} onChange={handleChange} className={`${inputClass} ${getFieldClass('toLocation')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">From <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="fromLocation" value={formData.fromLocation} onChange={handleChange} placeholder="Origin" className={`${inputClass} ${getFieldClass('fromLocation')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">To <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="toLocation" value={formData.toLocation} onChange={handleChange} placeholder="Destination" className={`${inputClass} ${getFieldClass('toLocation')}`} /></div></div>
                 </div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Delivery Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="deliveryDate" value={formData.deliveryDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Delivery Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="deliveryDate" value={formData.deliveryDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
+                </div>
               </div>
 
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
