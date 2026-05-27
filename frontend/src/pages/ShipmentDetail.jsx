@@ -27,24 +27,10 @@ const PORT_LOCATIONS = ['SIN', 'INBLR4', 'INMAA4', 'INBOM4', 'INDEA4', 'INHYD4',
 const VEHICLE_TYPES = ['10ft', '20ft', '32ft', '40ft']
 const PACKAGE_TYPES = ['Box / Carton', 'Envelope / Document', 'Parcel', 'Pallet', 'Crate', 'Bag / Sack', 'Drum / Barrel', 'Tube', 'Container', 'Wooden Box', 'Plastic Bin', 'Roll', 'Bundle', 'Cargo Package', 'Freight Package']
 
-// Section-to-status mapping for instant timeline updates
 const SECTION_TO_STATUS = {
-  rates: 'RATES_ADDED',
-  nomination: 'NOMINATED',
-  booking: 'BOOKED',
-  schedule: 'SCHEDULED',
-  awb: 'AWB_GENERATED',
-  checklist: 'CHECKLIST_APPROVED',
-  boe: 'BOE_FILED',
-  do: 'DO_COLLECTED',
-  ooc: 'OOC_DONE',
-  gatepass: 'GATE_PASS',
-  pod: 'DELIVERED',
-  leo: 'LEO_DONE',
-  handover: 'HAND_OVER',
-  shippingbill: 'SB_FILED',
-  invoice: 'INVOICE_GENERATED',
-  invoiceSend: 'INVOICE_SENT',
+  rates: 'RATES_ADDED', nomination: 'NOMINATED', booking: 'BOOKED', schedule: 'SCHEDULED', awb: 'AWB_GENERATED',
+  checklist: 'CHECKLIST_APPROVED', boe: 'BOE_FILED', do: 'DO_COLLECTED', ooc: 'OOC_DONE', gatepass: 'GATE_PASS',
+  pod: 'DELIVERED', leo: 'LEO_DONE', handover: 'HAND_OVER', shippingbill: 'SB_FILED', invoice: 'INVOICE_GENERATED', invoiceSend: 'INVOICE_SENT',
 }
 
 const FULL_STEPS = [
@@ -78,15 +64,15 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
   useEffect(() => { setVal(value || '') }, [value])
   const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
   if (editing) {
-    if (options) return <select ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} className="border border-indigo-300 rounded px-2 py-1 text-sm bg-white focus:ring-2 focus:ring-indigo-500 w-full"><option value="">Select...</option>{options.map(o => <option key={o} value={o}>{o}</option>)}</select>
-    return <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="border border-indigo-300 rounded px-2 py-1 text-sm bg-white focus:ring-2 focus:ring-indigo-500 w-full" step={type === 'number' ? '0.01' : undefined} />
+    if (options) return <select ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} className="border border-indigo-300 dark:border-indigo-600 rounded px-2 py-1 text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 w-full"><option value="">Select...</option>{options.map(o => <option key={o} value={o}>{o}</option>)}</select>
+    return <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="border border-indigo-300 dark:border-indigo-600 rounded px-2 py-1 text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 w-full" step={type === 'number' ? '0.01' : undefined} />
   }
-  return <div onClick={() => setEditing(true)} className={`cursor-pointer group flex items-center gap-1 ${className}`}><span className={value ? '' : 'text-gray-400 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
+  return <div onClick={() => setEditing(true)} className={`cursor-pointer group flex items-center gap-1 ${className}`}><span className={value ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
 }
 
 function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }) {
   const isInOptions = options.includes(value || '')
-  return (<div><label className="block text-xs text-indigo-400 mb-1">{label}</label><div className="flex gap-2"><div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div><div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div></div></div>)
+  return (<div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label><div className="flex gap-2"><div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div><div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div></div></div>)
 }
 
 export default function ShipmentDetail() {
@@ -104,33 +90,17 @@ export default function ShipmentDetail() {
     staleTime: 0, gcTime: 0,
   })
 
-  // Socket listeners for real-time updates on this shipment
   useEffect(() => {
     if (!socket || !id) return
-
     const handleStatusUpdate = (data) => {
-      if (data.id === id) {
-        addToast(`Status changed to: ${data.status}`, 'info')
-        queryClient.invalidateQueries({ queryKey: ['shipment', id] })
-        queryClient.invalidateQueries({ queryKey: ['shipments'] })
-      }
+      if (data.id === id) { addToast(`Status changed to: ${data.status}`, 'info'); queryClient.invalidateQueries({ queryKey: ['shipment', id] }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) }
     }
-
     const handleUpdate = (data) => {
-      if (data.id === id) {
-        setLiveEditBy(data.user || 'Someone')
-        setTimeout(() => setLiveEditBy(null), 3000)
-        queryClient.invalidateQueries({ queryKey: ['shipment', id] })
-      }
+      if (data.id === id) { setLiveEditBy(data.user || 'Someone'); setTimeout(() => setLiveEditBy(null), 3000); queryClient.invalidateQueries({ queryKey: ['shipment', id] }) }
     }
-
     socket.on('shipment:statusUpdate', handleStatusUpdate)
     socket.on('shipment:update', handleUpdate)
-
-    return () => {
-      socket.off('shipment:statusUpdate', handleStatusUpdate)
-      socket.off('shipment:update', handleUpdate)
-    }
+    return () => { socket.off('shipment:statusUpdate', handleStatusUpdate); socket.off('shipment:update', handleUpdate) }
   }, [socket, id, queryClient, addToast])
 
   const isTransport = shipment?.shipmentType === 'Transport'
@@ -159,31 +129,13 @@ export default function ShipmentDetail() {
     onSuccess: (response, variables) => {
       const updatedShipment = response?.data?.data
       addToast('Saved!', 'success')
-
-      // ✅ INSTANTLY update the cache so timeline updates immediately
-      if (updatedShipment) {
-        queryClient.setQueryData(['shipment', id], updatedShipment)
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['shipment', id] })
-      }
+      if (updatedShipment) { queryClient.setQueryData(['shipment', id], updatedShipment) }
+      else { queryClient.invalidateQueries({ queryKey: ['shipment', id] }) }
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
-
-      // Broadcast to other users
       if (socket && shipment) {
-        socket.emit('shipment:updated', { 
-          id, 
-          refNo: shipment.refNo, 
-          user: shipment.createdByName || 'Someone'
-        })
-        // Emit status change
+        socket.emit('shipment:updated', { id, refNo: shipment.refNo, user: shipment.createdByName || 'Someone' })
         const newStatus = SECTION_TO_STATUS[variables.section]
-        if (newStatus) {
-          socket.emit('shipment:statusChanged', { 
-            id, 
-            refNo: shipment.refNo, 
-            status: newStatus.replace(/_/g, ' ')
-          })
-        }
+        if (newStatus) { socket.emit('shipment:statusChanged', { id, refNo: shipment.refNo, status: newStatus.replace(/_/g, ' ') }) }
       }
     },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
@@ -245,8 +197,8 @@ export default function ShipmentDetail() {
 
   const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 border-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 border-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 border-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 border-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 border-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 border-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 border-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 border-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white border-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 border-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 border-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 border-gray-300'}; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 border-gray-300' }
 
-  if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-12 h-12 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" /></div>
-  if (!shipment) return <div className="text-center py-16"><div className="w-16 h-16 bg-gradient-to-br from-indigo-400 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Package size={32} className="text-white"/></div><h3 className="text-lg font-semibold text-gray-800">Shipment not found</h3><Link to="/" className="inline-flex items-center gap-1 mt-4 text-indigo-600"><ArrowLeft size={14} />Back</Link></div>
+  if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-12 h-12 border-3 border-indigo-200 dark:border-indigo-800 border-t-indigo-600 rounded-full animate-spin" /></div>
+  if (!shipment) return <div className="text-center py-16"><div className="w-16 h-16 bg-gradient-to-br from-indigo-400 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Package size={32} className="text-white"/></div><h3 className="text-lg font-semibold text-[var(--text-primary)]">Shipment not found</h3><Link to="/" className="inline-flex items-center gap-1 mt-4 text-indigo-600 dark:text-indigo-400"><ArrowLeft size={14} />Back</Link></div>
   const ff = shipment.freightForwarding || {}; const cha = shipment.cha || {}; const accounts = shipment.accounts || {}; const Fmt = d => d ? new Date(d).toLocaleDateString() : null
 
   const tabs = [
@@ -257,74 +209,74 @@ export default function ShipmentDetail() {
   ]
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
-      <div><Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-700 mb-3"><ArrowLeft size={15} />Back to shipments</Link>
-        <div className="bg-gradient-to-br from-white to-indigo-50/30 rounded-xl border border-indigo-100 p-5 shadow-lg space-y-4">
+    <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
+      <div><Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-3"><ArrowLeft size={15} />Back to shipments</Link>
+        <div className="glass rounded-xl border border-[var(--border-color)] p-5 shadow-lg space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">{shipment.refNo}</h1>
+                <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent">{shipment.refNo}</h1>
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span>
                 {isTransport && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-sky-500 to-blue-500 border border-sky-400">Transport</span>}
                 {isCHAOnly && <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white border ${isCHAExport ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-400' : 'bg-gradient-to-r from-emerald-500 to-green-500 border-emerald-400'}`}>{isCHAExport ? 'CHA Export' : 'CHA Import'}</span>}
                 {liveEditBy && (
-                  <span className="flex items-center gap-1 text-[10px] text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full animate-pulse">
+                  <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full animate-pulse">
                     <Zap size={10} /> {liveEditBy} is editing...
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-500 mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
+              <p className="text-sm text-[var(--text-secondary)] mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200"><Pencil size={16} />Edit</Link>
-              <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200"><Printer size={16} />Print</button>
+              <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200 hover-lift"><Pencil size={16} />Edit</Link>
+              <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200 hover-lift"><Printer size={16} />Print</button>
               <div className="relative">
-                <button onClick={() => setShowEmailDropdown(!showEmailDropdown)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-lg hover:from-sky-500 hover:to-blue-600 text-sm font-medium shadow-lg shadow-sky-200"><Send size={16} />Send Email <ChevronDown size={14} /></button>
+                <button onClick={() => setShowEmailDropdown(!showEmailDropdown)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-lg hover:from-sky-500 hover:to-blue-600 text-sm font-medium shadow-lg shadow-sky-200 hover-lift"><Send size={16} />Send Email <ChevronDown size={14} /></button>
                 {showEmailDropdown && (
-                  <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-xl border border-gray-200 z-20 py-1">
-                    <button onClick={handleSendTestEmail} disabled={sendingEmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2 disabled:opacity-50">{sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="text-indigo-500" />}{sendingEmail ? 'Sending...' : 'Send via System'}</button>
-                    <button onClick={handleOpenGmail} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 flex items-center gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.649 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068A1.485 1.485 0 011.5 3H2l10 7.25L22 3h.5c.425 0 .8.162 1.069.432.27.268.431.643.431 1.068z"/></svg>Open in Gmail</button>
+                  <div className="absolute right-0 top-full mt-1 w-52 glass rounded-lg shadow-xl border border-[var(--border-color)] z-20 py-1 animate-scale-in">
+                    <button onClick={handleSendTestEmail} disabled={sendingEmail} className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-indigo-50 dark:hover:bg-indigo-900/20 flex items-center gap-2 disabled:opacity-50">{sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="text-indigo-500" />}{sendingEmail ? 'Sending...' : 'Send via System'}</button>
+                    <button onClick={handleOpenGmail} className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-indigo-50 dark:hover:bg-indigo-900/20 flex items-center gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.649 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068A1.485 1.485 0 011.5 3H2l10 7.25L22 3h.5c.425 0 .8.162 1.069.432.27.268.431.643.431 1.068z"/></svg>Open in Gmail</button>
                   </div>
                 )}
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-indigo-100">
+          <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--border-color)]">
             {!isTransport && (
               <>
-                <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
-                <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Import/Export:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
+                <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
+                <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Import/Export:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
               </>
             )}
             {isTransport && (
               <>
-                <div className="flex items-center gap-2"><Truck size={14} className="text-sky-400" /><span className="text-xs text-sky-500 font-medium">Vehicle:</span><InlineField value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Set vehicle" /></div>
-                <div className="flex items-center gap-2"><User size={14} className="text-sky-400" /><span className="text-xs text-sky-500 font-medium">Customer:</span><InlineField value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} placeholder="Set customer" /></div>
+                <div className="flex items-center gap-2"><Truck size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Vehicle:</span><InlineField value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Set vehicle" /></div>
+                <div className="flex items-center gap-2"><User size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Customer:</span><InlineField value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} placeholder="Set customer" /></div>
               </>
             )}
-            <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Stage:</span>
+            <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Stage:</span>
               <div className="flex items-center gap-1"><InlineField value={STAGE_OPTIONS.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!STAGE_OPTIONS.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} placeholder="Custom..." /></div>
             </div>
-            <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
+            <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
           </div>
         </div>
       </div>
       
-      <div className="bg-white rounded-xl border border-indigo-100 p-5 overflow-x-auto shadow-sm">
-        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">{isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
+      <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
+        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
           {steps.map((step, i) => { const Icon = step.i; const done = i <= cur; const now = i === cur
-            return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50' : 'border-gray-300 bg-white'}`} title={step.d}>{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600' : 'text-gray-500'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200'}`} />}</div>)
+            return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={step.d}>{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
           })}
         </div>
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-indigo-50 justify-center"><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-300" /><span className="text-[10px] text-gray-500">Completed</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-300" /><span className="text-[10px] text-gray-500">Current</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-300" /><span className="text-[10px] text-gray-500">Pending</span></div></div>
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--border-color)] justify-center"><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Completed</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Current</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-300 dark:bg-gray-600" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Pending</span></div></div>
       </div>
       
-      <div className="hidden sm:flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 border border-indigo-100">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500 hover:text-indigo-500'}`}><Icon size={16}/><span>{t.l}</span></button>})}</div>
-      <div className="sm:hidden flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 gap-1 overflow-x-auto border border-indigo-100">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.k?'bg-white text-indigo-600 shadow-md':'text-gray-500'}`}><Icon size={14}/>{t.l}</button>})}</div>
+      <div className="hidden sm:flex glass rounded-xl p-1 gap-1 border border-[var(--border-color)]">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md':'text-[var(--text-secondary)] hover:text-indigo-500 dark:hover:text-indigo-400'}`}><Icon size={16}/><span>{t.l}</span></button>})}</div>
+      <div className="sm:hidden flex glass rounded-xl p-1 gap-1 overflow-x-auto border border-[var(--border-color)]">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.k?'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md':'text-[var(--text-secondary)]'}`}><Icon size={14}/>{t.l}</button>})}</div>
 
-      <div className="bg-white rounded-xl border border-indigo-100 p-4 sm:p-6 shadow-sm">
-        {/* FREIGHT TAB - only for freight shipments */}
+      <div className="glass rounded-xl border border-[var(--border-color)] p-4 sm:p-6 shadow-sm">
+        {/* FREIGHT TAB */}
         {activeTab==='freight'&&!isTransport&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
           <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
           <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>
@@ -334,7 +286,7 @@ export default function ShipmentDetail() {
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
           <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section></div>}
 
-        {/* TRANSPORT TAB - Transport Details → Route & Delivery → Accounts */}
+        {/* TRANSPORT TAB */}
         {isTransport && activeTab==='freight'&&<div className="space-y-4">
           <Section title="Transport Details" icon={Truck}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -358,50 +310,43 @@ export default function ShipmentDetail() {
           </Section>
         </div>}
         
-        {/* CUSTOMS TAB - only for non-transport */}
+        {/* CUSTOMS TAB */}
         {activeTab==='cha'&&!isTransport&&<div className="space-y-4">
-          <Section title="Checklist" icon={ClipboardCheck}>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Field label="Job No" value={cha.jobNo} onSave={v => updateMutation.mutate({ section: 'checklist', data: { jobNo: v } })} />
-              <Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistDate: v } })} type="date" />
-              <Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" />
-            </div>
-          </Section>
-          {!isCHAExport && (
-            <>
-              <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
-              <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>
-              <Section title="OOC" icon={CheckCircle2}><Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => updateMutation.mutate({ section: 'ooc', data: { oocDate: v } })} type="date" /></Section>
-              <Section title="Gate Pass" icon={Truck}><Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => updateMutation.mutate({ section: 'gatepass', data: { gatePassDate: v } })} type="date" /></Section>
-              <Section title="POD (Delivery)" icon={MapPin}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'pod', data: { deliveryDate: v } })} type="date" /><Field label="Tracking No" value={cha.trackingNumber} onSave={v => updateMutation.mutate({ section: 'pod', data: { trackingNumber: v } })} /></div></Section>
-            </>
-          )}
-          {isCHAExport && (
-            <>
-              <Section title="Shipping Bill" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="SB No" value={cha.sbNo} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbNo: v } })} /><Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbDate: v } })} type="date" /></div></Section>
-              <Section title="LEO" icon={CheckCircle2}><Field label="LEO Date" value={Fmt(cha.leoDate)} onSave={v => updateMutation.mutate({ section: 'leo', data: { leoDate: v } })} type="date" /></Section>
-              <Section title="Hand Over" icon={Truck}><Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => updateMutation.mutate({ section: 'handover', data: { handOverDate: v } })} type="date" /></Section>
-            </>
-          )}
+          <Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => updateMutation.mutate({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
+          {!isCHAExport && (<>
+            <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
+            <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>
+            <Section title="OOC" icon={CheckCircle2}><Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => updateMutation.mutate({ section: 'ooc', data: { oocDate: v } })} type="date" /></Section>
+            <Section title="Gate Pass" icon={Truck}><Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => updateMutation.mutate({ section: 'gatepass', data: { gatePassDate: v } })} type="date" /></Section>
+            <Section title="POD (Delivery)" icon={MapPin}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'pod', data: { deliveryDate: v } })} type="date" /><Field label="Tracking No" value={cha.trackingNumber} onSave={v => updateMutation.mutate({ section: 'pod', data: { trackingNumber: v } })} /></div></Section>
+          </>)}
+          {isCHAExport && (<>
+            <Section title="Shipping Bill" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="SB No" value={cha.sbNo} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbNo: v } })} /><Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbDate: v } })} type="date" /></div></Section>
+            <Section title="LEO" icon={CheckCircle2}><Field label="LEO Date" value={Fmt(cha.leoDate)} onSave={v => updateMutation.mutate({ section: 'leo', data: { leoDate: v } })} type="date" /></Section>
+            <Section title="Hand Over" icon={Truck}><Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => updateMutation.mutate({ section: 'handover', data: { handOverDate: v } })} type="date" /></Section>
+          </>)}
         </div>}
         
+        {/* ACCOUNTS TAB */}
         {activeTab==='accounts'&&<div className="space-y-4"><Section title="Invoice" icon={Banknote}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => updateMutation.mutate({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}
-        {activeTab==='history'&&<div><h3 className="text-base font-semibold mb-4 text-indigo-700">Status Timeline</h3>{shipment.statusHistory?.length>0?<div className="relative pl-6 border-l-2 border-indigo-200 space-y-6">{[...shipment.statusHistory].reverse().map((h,i)=><div key={i} className="relative"><div className="absolute -left-[25px] w-3 h-3 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 border-2 border-white ring-2 ring-indigo-200 shadow-sm"/><div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg p-3 ml-2 border border-indigo-100"><p className="text-sm font-semibold text-indigo-700">{h.status.replace(/_/g,' ')}</p>{h.remarks&&<p className="text-xs text-gray-500 mt-0.5">{h.remarks}</p>}<p className="text-xs text-gray-400 mt-1">{new Date(h.createdAt).toLocaleString()}</p></div></div>)}</div>:<div className="text-center py-8 text-gray-500"><Clock size={32} className="mx-auto text-gray-300 mb-2"/><p className="text-sm">No status changes recorded yet.</p></div>}</div>}
+        
+        {/* HISTORY TAB */}
+        {activeTab==='history'&&<div><h3 className="text-base font-semibold mb-4 text-indigo-700 dark:text-indigo-300">Status Timeline</h3>{shipment.statusHistory?.length>0?<div className="relative pl-6 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-6">{[...shipment.statusHistory].reverse().map((h,i)=><div key={i} className="relative"><div className="absolute -left-[25px] w-3 h-3 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 border-2 border-white dark:border-slate-800 ring-2 ring-indigo-200 dark:ring-indigo-800 shadow-sm"/><div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50 rounded-lg p-3 ml-2 border border-indigo-100 dark:border-indigo-900"><p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{h.status.replace(/_/g,' ')}</p>{h.remarks&&<p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{h.remarks}</p>}<p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{new Date(h.createdAt).toLocaleString()}</p></div></div>)}</div>:<div className="text-center py-8 text-gray-500 dark:text-gray-400"><Clock size={32} className="mx-auto text-gray-300 dark:text-gray-600 mb-2"/><p className="text-sm">No status changes recorded yet.</p></div>}</div>}
       </div>
     </div>
   )
 }
 
-function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-100"><I size={16} className="text-indigo-400 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-indigo-400">{l}</p><p className="text-sm font-medium text-gray-800 truncate">{v||'—'}</p></div></div>}
-function Section({ title, icon: Icon, children }) { return <div className="border border-indigo-100 rounded-xl overflow-hidden shadow-sm"><div className="flex items-center gap-2 p-4 bg-gradient-to-r from-indigo-50 to-blue-50/50 border-b border-indigo-100"><Icon size={14} className="text-indigo-400" /><p className="text-sm font-semibold text-indigo-600">{title}</p></div><div className="p-4">{children}</div></div> }
+function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 rounded-lg border border-indigo-100 dark:border-indigo-900"><I size={16} className="text-indigo-400 dark:text-indigo-300 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-indigo-400 dark:text-indigo-300">{l}</p><p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{v||'—'}</p></div></div>}
+function Section({ title, icon: Icon, children }) { return <div className="border border-[var(--border-color)] rounded-xl overflow-hidden shadow-sm"><div className="flex items-center gap-2 p-4 bg-gradient-to-r from-indigo-50 to-blue-50/50 dark:from-indigo-950/30 dark:to-blue-950/20 border-b border-[var(--border-color)]"><Icon size={14} className="text-indigo-400 dark:text-indigo-300" /><p className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{title}</p></div><div className="p-4">{children}</div></div> }
 function Field({ label, value, onSave, type = 'text', placeholder = 'Not set' }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
   useEffect(() => { setVal(value || '') }, [value])
   const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
-  return <div><label className="block text-xs text-indigo-400 mb-1">{label}</label>{editing ? (
-    <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="w-full px-3 py-2 border border-indigo-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white" step={type === 'number' ? '0.01' : undefined} />
+  return <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label>{editing ? (
+    <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="w-full px-3 py-2 border border-indigo-300 dark:border-indigo-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100" step={type === 'number' ? '0.01' : undefined} />
   ) : (
-    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-indigo-100 rounded-lg text-sm cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors flex items-center justify-between group"><span className={value ? 'font-medium text-gray-800' : 'text-gray-400 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
+    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-[var(--border-color)] rounded-lg text-sm cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between group"><span className={value ? 'font-medium text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
   )}</div>
 }

@@ -19,21 +19,21 @@ const STICKY_KEY = 'pas_dashboard_filters'
 
 function TableSkeleton() {
   return (
-    <div className="bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 overflow-hidden shadow-lg animate-pulse">
+    <div className="glass rounded-xl border border-[var(--border-color)] overflow-hidden shadow-lg animate-pulse">
       <div className="p-4 space-y-3">
         {[...Array(5)].map((_, i) => (
           <div key={i} className="flex items-center gap-4">
-            <div className="w-4 h-4 bg-gray-200 rounded" />
-            <div className="h-4 bg-gray-200 rounded w-6" />
-            <div className="h-4 bg-gray-200 rounded w-24" />
-            <div className="h-4 bg-gray-200 rounded w-20" />
-            <div className="h-4 bg-gray-200 rounded w-20" />
-            <div className="h-4 bg-gray-200 rounded w-32 flex-1" />
-            <div className="h-4 bg-gray-200 rounded w-16" />
-            <div className="h-4 bg-gray-200 rounded w-16" />
-            <div className="h-6 bg-gray-200 rounded-full w-20" />
-            <div className="h-4 bg-gray-200 rounded w-16" />
-            <div className="h-4 bg-gray-200 rounded w-16" />
+            <div className="w-4 h-4 bg-gray-200 dark:bg-gray-700 rounded" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-6" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-24" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-20" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-20" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-32 flex-1" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-16" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-16" />
+            <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded-full w-20" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-16" />
+            <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-16" />
           </div>
         ))}
       </div>
@@ -68,7 +68,6 @@ export default function Dashboard() {
 
   const isTransportFilter = shipmentTypeFilter === 'TRANSPORT'
 
-  // Auto-dismiss live notification
   useEffect(() => {
     if (liveNotification) {
       const timer = setTimeout(() => setLiveNotification(null), 4000)
@@ -76,32 +75,26 @@ export default function Dashboard() {
     }
   }, [liveNotification])
 
-  // Socket listeners for real-time updates
   useEffect(() => {
     if (!socket) return
 
-    // New shipment created by another user
     const handleNewShipment = (data) => {
       if (!showArchived) {
         setLiveNotification({ type: 'new', refNo: data.refNo, message: `New shipment created: ${data.refNo}` })
-        // Refetch shipments to include the new one
         queryClient.invalidateQueries({ queryKey: ['shipments'] })
       }
     }
 
-    // Shipment updated by another user
     const handleUpdate = (data) => {
       setLiveNotification({ type: 'update', refNo: data.refNo, message: `Shipment updated: ${data.refNo}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
     }
 
-    // Status changed by another user
     const handleStatusUpdate = (data) => {
       setLiveNotification({ type: 'status', refNo: data.refNo, message: `${data.refNo} → ${data.status}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
     }
 
-    // Archive/unarchive by another user
     const handleArchiveUpdate = (data) => {
       setLiveNotification({ type: 'archive', refNo: data.refNo, message: `${data.refNo} ${data.archived ? 'archived' : 'restored'}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
@@ -130,9 +123,7 @@ export default function Dashboard() {
     }
   }, [search, statusFilter, shipmentTypeFilter, page, perPage, initialized])
 
-  useEffect(() => {
-    setInitialized(true)
-  }, [])
+  useEffect(() => { setInitialized(true) }, [])
 
   const buildEditUrl = (shipmentId) => {
     const params = new URLSearchParams()
@@ -158,10 +149,7 @@ export default function Dashboard() {
   const toggleArchived = (val) => { setShowArchived(val); setPage(1); setSelected([]) }
 
   const clearAllFilters = () => {
-    setSearch('')
-    setStatusFilter('')
-    setShipmentTypeFilter('')
-    setPage(1)
+    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setPage(1)
     addToast('Filters cleared', 'info')
   }
 
@@ -201,25 +189,16 @@ export default function Dashboard() {
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
     onSuccess: (_, id) => { 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
-      addToast('Shipment archived', 'success');
-      // Broadcast to other users
-      if (socket) {
-        const s = shipments.find(s => s.id === id)
-        socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: true, id })
-      }
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment archived', 'success');
+      if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: true, id }) }
     },
     onError: () => addToast('Failed to archive', 'error')
   })
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
     onSuccess: (_, id) => { 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
-      addToast('Shipment restored', 'success');
-      if (socket) {
-        const s = shipments.find(s => s.id === id)
-        socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: false, id })
-      }
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment restored', 'success');
+      if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: false, id }) }
     },
     onError: () => addToast('Failed to restore', 'error')
   })
@@ -267,18 +246,18 @@ export default function Dashboard() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Live Notification Toast */}
       {liveNotification && (
         <div className="fixed top-4 right-4 z-50 animate-slide-down">
           <div className={`px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-3 text-sm font-medium ${
-            liveNotification.type === 'new' ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-800' :
-            liveNotification.type === 'status' ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 text-blue-800' :
-            'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-300 text-amber-800'
+            liveNotification.type === 'new' ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-300 text-emerald-800 dark:from-emerald-900/40 dark:to-teal-900/40 dark:border-emerald-700 dark:text-emerald-200' :
+            liveNotification.type === 'status' ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-300 text-blue-800 dark:from-blue-900/40 dark:to-indigo-900/40 dark:border-blue-700 dark:text-blue-200' :
+            'bg-gradient-to-r from-amber-50 to-orange-50 border-amber-300 text-amber-800 dark:from-amber-900/40 dark:to-orange-900/40 dark:border-amber-700 dark:text-amber-200'
           }`}>
             <Zap size={16} className="flex-shrink-0" />
             <span>{liveNotification.message}</span>
-            <button onClick={() => setLiveNotification(null)} className="ml-2 text-gray-400 hover:text-gray-600"><X size={14} /></button>
+            <button onClick={() => setLiveNotification(null)} className="ml-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"><X size={14} /></button>
           </div>
         </div>
       )}
@@ -287,147 +266,253 @@ export default function Dashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold tracking-wider text-indigo-600 uppercase bg-gradient-to-r from-indigo-100 to-blue-100 px-2.5 py-0.5 rounded-md">Shipments</span>
-            <span className="text-xs text-gray-500 font-medium">{totalCount} total</span>
+            <span className="text-[11px] font-semibold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-0.5 rounded-md">Shipments</span>
+            <span className="text-xs text-[var(--text-secondary)] font-medium">{totalCount} total</span>
             {socket?.connected && (
-              <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+              <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live
               </span>
             )}
             <OnlineUsers />
           </div>
-          <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent tracking-tight">{showArchived ? 'Archive' : 'Overview'}</h1>
+          <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">{showArchived ? 'Archive' : 'Overview'}</h1>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="flex bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur rounded-lg p-0.5 border border-indigo-200/50">
-            <button onClick={()=>updateShipmentTypeFilter('')} className={`px-3 py-2 rounded-md text-xs font-semibold ${!shipmentTypeFilter?'bg-white text-indigo-700 shadow-sm':'text-gray-500'}`}>All</button>
-            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white text-indigo-700 shadow-sm':'text-gray-500'}`}>Freight</button>
-            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 ${shipmentTypeFilter==='CHA_ONLY'?'bg-white text-emerald-700 shadow-sm':'text-gray-500'}`}><FileCheck size={12}/>CHA</button>
-            <button onClick={()=>updateShipmentTypeFilter('TRANSPORT')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 ${shipmentTypeFilter==='TRANSPORT'?'bg-white text-sky-700 shadow-sm':'text-gray-500'}`}><Truck size={12}/>Transport</button>
+          <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
+            <button onClick={()=>updateShipmentTypeFilter('')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${!shipmentTypeFilter?'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm':'text-[var(--text-secondary)]'}`}>All</button>
+            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm':'text-[var(--text-secondary)]'}`}>Freight</button>
+            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='CHA_ONLY'?'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm':'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</button>
+            <button onClick={()=>updateShipmentTypeFilter('TRANSPORT')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='TRANSPORT'?'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm':'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</button>
           </div>
-          <div className="flex bg-gradient-to-r from-gray-50 to-slate-50 backdrop-blur rounded-lg p-0.5 border border-gray-200/50">
-            <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold ${!showArchived?'bg-white text-gray-800 shadow-sm':'text-gray-500'}`}>Active</button>
-            <button onClick={()=>toggleArchived(true)} className={`px-3.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 ${showArchived?'bg-white text-gray-800 shadow-sm':'text-gray-500'}`}><Archive size={13}/>Archive</button>
+          <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
+            <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all ${!showArchived?'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm':'text-[var(--text-secondary)]'}`}>Active</button>
+            <button onClick={()=>toggleArchived(true)} className={`px-3.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${showArchived?'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm':'text-[var(--text-secondary)]'}`}><Archive size={13}/>Archive</button>
           </div>
-          <Link to="/create" className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 text-xs font-semibold shadow-lg shadow-indigo-200"><Plus size={15}/> New Shipment</Link>
+          <Link to="/create" className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 text-xs font-semibold shadow-lg shadow-indigo-200 hover-lift"><Plus size={15}/> New Shipment</Link>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{statCards.map((stat,i)=>{const Icon=stat.icon;return (<div key={i} className="relative overflow-hidden bg-white/80 backdrop-blur rounded-xl p-4 border border-white/50 hover:scale-[1.02] transition-all duration-300 shadow-lg group"><div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${stat.gradient} opacity-10 rounded-bl-full group-hover:opacity-20`}/><div className="relative"><div className="flex items-center justify-between mb-2"><div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center shadow-lg`}><Icon size={18} className="text-white"/></div></div><p className="text-2xl font-bold text-gray-800">{stat.value.toLocaleString()}</p><p className="text-[11px] text-gray-500 mt-0.5 font-semibold">{stat.label}</p><p className="text-[10px] text-gray-400 mt-0.5">{stat.desc}</p></div></div>)})}</div>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {statCards.map((stat,i)=>{
+          const Icon=stat.icon;
+          return (
+            <div key={i} className="glass rounded-xl p-4 border border-[var(--glass-border)] hover-lift group animate-scale-in" style={{animationDelay: `${i*100}ms`}}>
+              <div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${stat.gradient} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`}/>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-2">
+                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
+                    <Icon size={18} className="text-white"/>
+                  </div>
+                </div>
+                <p className="text-2xl font-bold text-[var(--text-primary)]">{stat.value.toLocaleString()}</p>
+                <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 font-semibold">{stat.label}</p>
+                <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{stat.desc}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
-      {/* Progress */}
-      <div className="bg-gradient-to-r from-indigo-50 to-blue-50 backdrop-blur rounded-xl border border-indigo-200/50 p-4"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><span className="text-xs font-semibold text-indigo-500 uppercase">Delivery Progress</span><Info size={12} className="text-indigo-400"/></div><span className="text-xs font-bold text-indigo-700">{analytics.deliveryRate}%</span></div><div className="w-full bg-gray-200/50 rounded-full h-2 overflow-hidden"><div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700" style={{width:`${analytics.deliveryRate}%`}}/></div></div>
+      {/* Progress Bar */}
+      <div className="glass rounded-xl border border-[var(--border-color)] p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Delivery Progress</span>
+            <Info size={12} className="text-indigo-400"/>
+          </div>
+          <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">{analytics.deliveryRate}%</span>
+        </div>
+        <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-2 overflow-hidden">
+          <div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700 animate-pulse-glow" style={{width:`${analytics.deliveryRate}%`}}/>
+        </div>
+      </div>
 
       {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
         <div className="relative flex-1 w-full">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400"/>
-          <input type="text" placeholder={isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 bg-white/80 backdrop-blur border border-indigo-200/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm"/>
-          {search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400"><X size={14}/></button>}
+          <input type="text" placeholder={isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"/>
+          {search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={14}/></button>}
         </div>
         <div className="flex items-center gap-2">
           {hasFilters && (
-            <button onClick={clearAllFilters} className="px-3 py-2.5 bg-white/80 border border-indigo-200/50 rounded-lg text-xs font-semibold text-indigo-600 flex items-center gap-1.5 hover:bg-indigo-50" title="Clear all filters">
+            <button onClick={clearAllFilters} className="px-3 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30">
               <RotateCcw size={14} /> Clear
             </button>
           )}
-          <button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border ${showFilters?'bg-gradient-to-r from-indigo-100 to-blue-100 border-indigo-300 text-indigo-600':'bg-white/80 border-indigo-200/50 text-gray-500'}`}><SlidersHorizontal size={15}/></button>
-          <button onClick={handleExport} disabled={exporting} className="px-3.5 py-2.5 bg-gradient-to-r from-white to-indigo-50 border border-indigo-200/50 rounded-lg text-xs font-semibold text-indigo-600 flex items-center gap-2 disabled:opacity-50">{exporting?<RefreshCw size={14} className="animate-spin"/>:<Download size={14}/>}{exporting?'Exporting...':'Export'}</button>
+          <button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border transition-all ${showFilters?'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400':'glass border-[var(--border-color)] text-[var(--text-secondary)]'}`}><SlidersHorizontal size={15}/></button>
+          <button onClick={handleExport} disabled={exporting} className="px-3.5 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 disabled:opacity-50">{exporting?<RefreshCw size={14} className="animate-spin"/>:<Download size={14}/>}{exporting?'Exporting...':'Export'}</button>
         </div>
       </div>
 
-      {showFilters&&(<div className="flex flex-wrap gap-2 p-3.5 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl border border-indigo-200/50"><span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center mr-1"><Filter size={11} className="mr-1"/>Status</span>{quickFilters.map(f=>{const I=f.i;const a=statusFilter===f.v;return <button key={f.v} onClick={()=>updateStatus(a?'':f.v)} className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 ${a?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'bg-white/80 text-gray-600'}`}><I size={12}/>{f.l}{a&&<X size={11}/>}</button>})}</div>)}
+      {showFilters&&(<div className="flex flex-wrap gap-2 p-3.5 glass rounded-xl border border-[var(--border-color)] animate-slide-down"><span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center mr-1"><Filter size={11} className="mr-1"/>Status</span>{quickFilters.map(f=>{const I=f.i;const a=statusFilter===f.v;return <button key={f.v} onClick={()=>updateStatus(a?'':f.v)} className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all ${a?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'glass text-[var(--text-secondary)]'}`}><I size={12}/>{f.l}{a&&<X size={11}/>}</button>})}</div>)}
 
-      {selected.length>0&&(<div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-300/50 rounded-xl px-4 py-3 flex items-center justify-between"><span className="text-sm text-indigo-700 font-medium">{selected.length} selected</span><div className="flex gap-2">{!showArchived&&<button onClick={()=>bulkArchiveMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg"><Archive size={13}/> Archive</button>}<button onClick={()=>setSelected([])} className="px-3.5 py-1.5 border border-indigo-300 text-indigo-700 rounded-lg text-xs font-semibold">Clear</button></div></div>)}
+      {selected.length>0&&(<div className="glass border border-indigo-300/50 dark:border-indigo-700/50 rounded-xl px-4 py-3 flex items-center justify-between animate-slide-down"><span className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">{selected.length} selected</span><div className="flex gap-2">{!showArchived&&<button onClick={()=>bulkArchiveMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg"><Archive size={13}/> Archive</button>}<button onClick={()=>setSelected([])} className="px-3.5 py-1.5 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg text-xs font-semibold">Clear</button></div></div>)}
 
-      {isError&&(<div className="bg-white/80 rounded-xl border border-red-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-red-400 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><AlertCircle size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">Connection Error</h3><p className="text-sm text-gray-500 mb-4">Unable to load shipments.</p><button onClick={()=>refetch()} className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><RefreshCw size={14}/> Retry</button></div>)}
-      {!isError&&isEmpty&&hasFilters&&(<div className="bg-white/80 rounded-xl border border-amber-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">No Results</h3><p className="text-sm text-gray-500 mb-4">Try adjusting your search or filters.</p><button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600"><RotateCcw size={14}/> Clear All Filters</button></div>)}
-      {!isError&&isEmpty&&!hasFilters&&!showArchived&&(<div className="bg-white/80 rounded-xl border border-indigo-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">Welcome to PAS Freight</h3><p className="text-sm text-gray-500 mb-4">Create your first shipment to get started.</p><Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><Plus size={14}/> Create Shipment</Link></div>)}
-      {!isError&&isEmpty&&!hasFilters&&showArchived&&(<div className="bg-white/80 rounded-xl border border-gray-200/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-gray-400 to-slate-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><ArchiveIcon size={28} className="text-white"/></div><h3 className="text-base font-semibold text-gray-800 mb-1">Archive Empty</h3><button onClick={()=>toggleArchived(false)} className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm font-semibold text-gray-600"><Package size={14}/> View Active Shipments</button></div>)}
+      {/* Error & Empty States */}
+      {isError&&(<div className="glass rounded-xl border border-red-200/50 dark:border-red-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-red-400 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><AlertCircle size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Connection Error</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Unable to load shipments.</p><button onClick={()=>refetch()} className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><RefreshCw size={14}/> Retry</button></div>)}
+      {!isError&&isEmpty&&hasFilters&&(<div className="glass rounded-xl border border-amber-200/50 dark:border-amber-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">No Results</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Try adjusting your search or filters.</p><button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] rounded-lg text-sm font-semibold text-[var(--text-primary)]"><RotateCcw size={14}/> Clear All Filters</button></div>)}
+      {!isError&&isEmpty&&!hasFilters&&!showArchived&&(<div className="glass rounded-xl border border-indigo-200/50 dark:border-indigo-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Welcome to PAS Freight</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Create your first shipment to get started.</p><Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><Plus size={14}/> Create Shipment</Link></div>)}
+      {!isError&&isEmpty&&!hasFilters&&showArchived&&(<div className="glass rounded-xl border border-gray-200/50 dark:border-gray-700/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-gray-400 to-slate-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><ArchiveIcon size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Archive Empty</h3><button onClick={()=>toggleArchived(false)} className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] rounded-lg text-sm font-semibold text-[var(--text-primary)]"><Package size={14}/> View Active Shipments</button></div>)}
       {showSkeleton&&<TableSkeleton/>}
 
       {!showSkeleton&&!isError&&shipments.length>0&&(<>
         {/* DESKTOP TABLE */}
-        <div className="hidden md:block bg-white/80 backdrop-blur rounded-xl border border-indigo-100/50 overflow-hidden shadow-lg"><div className="overflow-x-auto"><table className="w-full"><thead><tr className="bg-gradient-to-r from-indigo-50 to-blue-50"><th className="w-10 pl-4 py-3"><input type="checkbox" checked={selected.length===shipments.length&&shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></th><th className="text-center px-2 py-3 text-[11px] font-semibold text-indigo-500 uppercase w-12">SL No</th>
-          {/* TRANSPORT COLUMNS */}
-          {isTransportFilter ? (
-            <>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Vehicle No</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Transport Mode</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Customer</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Weight</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">From</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">To</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Delivery</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Status</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Date</th>
-            </>
-          ) : (
-            <>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Ref No</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Transport Mode</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Import/Export</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Consignee</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Created By</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">HAWB</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">SB/BOE No</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Status</th>
-              <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Date</th>
-            </>
-          )}
-          <th className="text-right pr-4 py-3 text-[11px] font-semibold text-indigo-500 uppercase">Actions</th></tr></thead><tbody className="divide-y divide-gray-50">{shipments.map((s, idx)=> { const slNo = (page - 1) * perPage + idx + 1; const isTransport = s.shipmentType === 'Transport'; return (<tr key={s.id} className="group hover:bg-gradient-to-r hover:from-indigo-50 hover:to-transparent"><td className="pl-4 py-3"><input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></td><td className="px-2 py-3 text-center text-xs font-semibold text-gray-500">{slNo}</td>
-          {/* TRANSPORT ROW DATA */}
-          {isTransportFilter ? (
-            <>
-              <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600">{s.refNo}</Link></td>
-              <td className="px-3 py-3 text-sm text-gray-700 font-medium">{s.freightForwarding?.transportMode || <span className="text-gray-300">—</span>}</td>
-              <td className="px-3 py-3 text-sm text-gray-700 font-medium">{s.freightForwarding?.customerName || <span className="text-gray-300">—</span>}</td>
-              <td className="px-3 py-3 text-sm text-gray-700">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : <span className="text-gray-300">—</span>}</td>
-              <td className="px-3 py-3 text-sm text-gray-700">{s.freightForwarding?.fromLocation || <span className="text-gray-300">—</span>}</td>
-              <td className="px-3 py-3 text-sm text-gray-700">{s.freightForwarding?.toLocation || <span className="text-gray-300">—</span>}</td>
-              <td className="px-3 py-3 text-sm text-gray-500">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : <span className="text-gray-300">—</span>}</td>
-            </>
-          ) : (
-            <>
-              <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600">{s.refNo}</Link></td>
-              <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></td>
-              <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></td>
-              <td className="px-3 py-3 text-sm text-gray-700 font-medium">{s.freightForwarding?.consigneeName||<span className="text-gray-300">—</span>}</td>
-              <td className="px-3 py-3 text-xs text-gray-500"><span className="flex items-center gap-1"><User size={10} className="text-gray-400"/>{s.createdByName||<span className="text-gray-300">—</span>}</span></td>
-              <td className="px-3 py-3 text-sm text-gray-500">{s.freightForwarding?.hawb||<span className="text-gray-300">—</span>}</td>
-              <td className="px-3 py-3 text-sm text-gray-500">{s.cha?.sbNo || s.cha?.boeNo || <span className="text-gray-300">—</span>}</td>
-            </>
-          )}
-          <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td><td className="px-3 py-3 text-sm text-gray-500">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td><td className="pr-4 py-3 text-right"><div className="flex items-center justify-end gap-1"><Link to={buildEditUrl(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-md flex items-center gap-1.5"><Pencil size={12}/> Edit</Link><Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>{showArchived?<button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>:<button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:bg-amber-50 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>}</div></td></tr>)})}</tbody></table></div></div>
+        <div className="hidden md:block glass rounded-xl border border-[var(--border-color)] overflow-hidden shadow-lg animate-scale-in">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50">
+                  <th className="w-10 pl-4 py-3"><input type="checkbox" checked={selected.length===shipments.length&&shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></th>
+                  <th className="text-center px-2 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase w-12">SL No</th>
+                  {isTransportFilter ? (
+                    <>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Vehicle No</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Transport Mode</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Customer</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Weight</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">From</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">To</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Delivery</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Ref No</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Transport Mode</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Import/Export</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Consignee</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Created By</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">HAWB</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">SB/BOE No</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
+                    </>
+                  )}
+                  <th className="text-right pr-4 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-color)]">
+                {shipments.map((s, idx)=> { 
+                  const slNo = (page - 1) * perPage + idx + 1; 
+                  return (
+                    <tr key={s.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
+                      <td className="pl-4 py-3"><input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></td>
+                      <td className="px-2 py-3 text-center text-xs font-semibold text-[var(--text-muted)]">{slNo}</td>
+                      {isTransportFilter ? (
+                        <>
+                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.transportMode || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.fromLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.toLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
+                          <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></td>
+                          <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-xs text-[var(--text-secondary)]"><span className="flex items-center gap-1"><User size={10} className="text-[var(--text-muted)]"/>{s.createdByName||<span className="text-[var(--text-muted)]">—</span>}</span></td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.hawb||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.cha?.sbNo || s.cha?.boeNo || <span className="text-[var(--text-muted)]">—</span>}</td>
+                        </>
+                      )}
+                      <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
+                      <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+                      <td className="pr-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Link to={buildEditUrl(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Pencil size={12}/> Edit</Link>
+                          <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>
+                          {showArchived
+                            ?<button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>
+                            :<button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
         {/* MOBILE CARDS */}
-        <div className="md:hidden space-y-3">{shipments.map((s, idx) => { const slNo = (page - 1) * perPage + idx + 1; const isTransport = s.shipmentType === 'Transport'; return (<div key={s.id} className="bg-white/80 rounded-xl border border-indigo-100/50 p-4 shadow-sm"><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><span className="text-xs font-bold text-gray-400">#{slNo}</span><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600">{s.refNo}</Link></div><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></div>
-          {isTransportFilter ? (
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div><span className="text-gray-400">Transport Mode:</span> <span className="text-gray-700 font-medium">{s.freightForwarding?.transportMode||'—'}</span></div>
-              <div><span className="text-gray-400">Customer:</span> <span className="text-gray-700 font-medium">{s.freightForwarding?.customerName||'—'}</span></div>
-              <div><span className="text-gray-400">Weight:</span> <span className="text-gray-700">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : '—'}</span></div>
-              <div><span className="text-gray-400">From:</span> <span className="text-gray-700">{s.freightForwarding?.fromLocation||'—'}</span></div>
-              <div><span className="text-gray-400">To:</span> <span className="text-gray-700">{s.freightForwarding?.toLocation||'—'}</span></div>
-              <div><span className="text-gray-400">Delivery:</span> <span className="text-gray-700">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</span></div>
-              <div><span className="text-gray-400">Date:</span> <span className="text-gray-700">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div><span className="text-gray-400">Consignee:</span> <span className="text-gray-700 font-medium">{s.freightForwarding?.consigneeName||'—'}</span></div>
-              <div><span className="text-gray-400">Mode:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></div>
-              <div><span className="text-gray-400">Created By:</span> <span className="text-gray-700 flex items-center gap-1"><User size={10}/>{s.createdByName||'—'}</span></div>
-              <div><span className="text-gray-400">HAWB:</span> <span className="text-gray-700">{s.freightForwarding?.hawb||'—'}</span></div>
-              <div><span className="text-gray-400">SB/BOE:</span> <span className="text-gray-700">{s.cha?.sbNo || s.cha?.boeNo || '—'}</span></div>
-              <div><span className="text-gray-400">I/E:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></div>
-              <div><span className="text-gray-400">Date:</span> <span className="text-gray-700">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
-            </div>
-          )}
-          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100"><input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 text-indigo-600 w-3.5 h-3.5"/><div className="flex items-center gap-1"><Link to={buildEditUrl(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:bg-amber-50 rounded-md flex items-center gap-1.5"><Pencil size={12}/> Edit</Link><Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>{showArchived?<button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-50 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>:<button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 hover:bg-amber-50 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>}</div></div></div>)})}</div>
+        <div className="md:hidden space-y-3">
+          {shipments.map((s, idx) => { 
+            const slNo = (page - 1) * perPage + idx + 1; 
+            return (
+              <div key={s.id} className="glass rounded-xl border border-[var(--border-color)] p-4 shadow-sm hover-lift animate-scale-in">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[var(--text-muted)]">#{slNo}</span>
+                    <Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{s.refNo}</Link>
+                  </div>
+                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span>
+                </div>
+                {isTransportFilter ? (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-[var(--text-muted)]">Transport Mode:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.transportMode||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Customer:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Weight:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : '—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">From:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.fromLocation||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">To:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.toLocation||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Delivery:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-[var(--text-muted)]">Consignee:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Mode:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Created By:</span> <span className="text-[var(--text-primary)] flex items-center gap-1"><User size={10}/>{s.createdByName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">HAWB:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.hawb||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">SB/BOE:</span> <span className="text-[var(--text-primary)]">{s.cha?.sbNo || s.cha?.boeNo || '—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">I/E:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
+                  </div>
+                )}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border-color)]">
+                  <input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 w-3.5 h-3.5"/>
+                  <div className="flex items-center gap-1">
+                    <Link to={buildEditUrl(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Pencil size={12}/> Edit</Link>
+                    <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>
+                    {showArchived
+                      ?<button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>
+                      :<button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>
+                    }
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
 
         {/* Pagination */}
-        <div className="bg-white/80 rounded-xl border border-indigo-100/50 px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3"><div className="flex items-center gap-2 text-xs text-gray-500"><span className="font-semibold text-indigo-700">{startItem}-{endItem}</span><span className="text-gray-400">of</span><span className="font-semibold text-indigo-700">{totalCount.toLocaleString()}</span><select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}} className="ml-2 border border-indigo-200 rounded-md px-2 py-1 text-[11px] font-semibold text-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">{PER_PAGE_OPTIONS.map(n=><option key={n} value={n}>{n}</option>)}</select></div><div className="flex items-center gap-0.5"><button onClick={()=>setPage(1)} disabled={page===1} className="p-1.5 rounded-md hover:bg-indigo-50 disabled:opacity-30"><ChevronsLeft size={14}/></button><button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className="p-1.5 rounded-md hover:bg-indigo-50 disabled:opacity-30"><ChevronLeft size={14}/></button>{generatePageNumbers(page,totalPages).map((p,i)=>p==='...'?<span key={i} className="px-1.5 text-gray-400 text-xs">...</span>:<button key={p} onClick={()=>setPage(p)} className={`w-8 h-8 rounded-md text-[11px] font-semibold ${page===p?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'text-indigo-600 hover:bg-indigo-50'}`}>{p}</button>)}<button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages||totalPages===0} className="p-1.5 rounded-md hover:bg-indigo-50 disabled:opacity-30"><ChevronRight size={14}/></button><button onClick={()=>setPage(totalPages)} disabled={page===totalPages||totalPages===0} className="p-1.5 rounded-md hover:bg-indigo-50 disabled:opacity-30"><ChevronsRight size={14}/></button></div></div>
+        <div className="glass rounded-xl border border-[var(--border-color)] px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+            <span className="font-semibold text-indigo-700 dark:text-indigo-300">{startItem}-{endItem}</span>
+            <span className="text-[var(--text-muted)]">of</span>
+            <span className="font-semibold text-indigo-700 dark:text-indigo-300">{totalCount.toLocaleString()}</span>
+            <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}} className="ml-2 border border-[var(--border-color)] rounded-md px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-[var(--input-bg)] text-[var(--input-text)]">
+              {PER_PAGE_OPTIONS.map(n=><option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <button onClick={()=>setPage(1)} disabled={page===1} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronsLeft size={14}/></button>
+            <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronLeft size={14}/></button>
+            {generatePageNumbers(page,totalPages).map((p,i)=>p==='...'
+              ?<span key={i} className="px-1.5 text-[var(--text-muted)] text-xs">...</span>
+              :<button key={p} onClick={()=>setPage(p)} className={`w-8 h-8 rounded-md text-[11px] font-semibold transition-all ${page===p?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}>{p}</button>
+            )}
+            <button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages||totalPages===0} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronRight size={14}/></button>
+            <button onClick={()=>setPage(totalPages)} disabled={page===totalPages||totalPages===0} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronsRight size={14}/></button>
+          </div>
+        </div>
       </>)}
     </div>
   )
