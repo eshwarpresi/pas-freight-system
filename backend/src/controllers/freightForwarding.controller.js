@@ -24,7 +24,6 @@ const createShipment = async (req, res) => {
   try {
     const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
-    // ✅ Duplicate refNo allowed — removed duplicate check
     const createdById = req.user?.id || null;
     const createdByName = req.user?.name || req.user?.email || null;
     const shipment = await prisma.shipment.create({
@@ -96,7 +95,6 @@ const getShipmentById = async (req, res) => {
 // UPDATE REFERENCE NUMBER (allows duplicate refNo)
 const updateRefNo = async (req, res) => {
   try { const { refNo } = req.body; if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number is required' }); 
-    // ✅ Duplicate refNo allowed — removed duplicate check
     await prisma.shipment.update({ where: { id: req.params.id }, data: { refNo } }); await upsertStatusEntry(req.params.id, 'REFNO_UPDATED', `Ref No: ${refNo}`); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
@@ -150,9 +148,41 @@ const updateTerms = async (req, res) => {
   try { const val = req.body.terms; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { terms: val } } } }); await upsertStatusEntry(req.params.id, 'TERMS', `Terms: ${val}`); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
-// UPDATE RATES (includes all freight forwarding fields)
+// UPDATE RATES (NOW DOES NOT FORCE STATUS CHANGE - only saves data)
 const updateRates = async (req, res) => {
-  try { const { sellingRate, weight, cbm, grossWeight, notificationEmail, enquiryDate, noOfPackages, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation, transportMode } = req.body; const data = {}; const parts = []; if (sellingRate !== undefined) { data.sellingRate = parseFloat(sellingRate); parts.push(`Rate: ₹${sellingRate}`); } if (weight !== undefined) { data.weight = parseFloat(weight); parts.push(`Chargeable Wt: ${weight}kg`); } if (cbm !== undefined) { data.cbm = parseFloat(cbm); parts.push(`CBM: ${cbm}`); } if (grossWeight !== undefined) { data.grossWeight = parseFloat(grossWeight); parts.push(`Gross Wt: ${grossWeight}kg`); } if (notificationEmail !== undefined) { data.notificationEmail = notificationEmail; } if (enquiryDate !== undefined) { data.enquiryDate = enquiryDate ? new Date(enquiryDate) : null; } if (noOfPackages !== undefined) { data.noOfPackages = noOfPackages ? parseInt(noOfPackages) : null; } if (customerName !== undefined) { data.customerName = customerName; } if (vehicleType !== undefined) { data.vehicleType = vehicleType; } if (noOfContainers !== undefined) { data.noOfContainers = noOfContainers ? parseInt(noOfContainers) : null; } if (packageType !== undefined) { data.packageType = packageType; } if (deliveryDate !== undefined) { data.deliveryDate = deliveryDate ? new Date(deliveryDate) : null; } if (fromLocation !== undefined) { data.fromLocation = fromLocation; } if (toLocation !== undefined) { data.toLocation = toLocation; } if (transportMode !== undefined) { data.transportMode = transportMode; } if (Object.keys(data).length > 0) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'RATES_ADDED', freightForwarding: { update: { data } } } }); if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_ADDED', parts.join(' | ')); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); console.log('🔍 Rates email debug - notificationEmail:', s.freightForwarding?.notificationEmail, '| ref:', s.refNo); sendStatusEmail(s).catch(() => {}); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { 
+    const { sellingRate, weight, cbm, grossWeight, notificationEmail, enquiryDate, noOfPackages, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation, transportMode } = req.body; 
+    const data = {}; 
+    const parts = []; 
+    if (sellingRate !== undefined) { data.sellingRate = parseFloat(sellingRate); parts.push(`Rate: ₹${sellingRate}`); } 
+    if (weight !== undefined) { data.weight = parseFloat(weight); parts.push(`Chargeable Wt: ${weight}kg`); } 
+    if (cbm !== undefined) { data.cbm = parseFloat(cbm); parts.push(`CBM: ${cbm}`); } 
+    if (grossWeight !== undefined) { data.grossWeight = parseFloat(grossWeight); parts.push(`Gross Wt: ${grossWeight}kg`); } 
+    if (notificationEmail !== undefined) { data.notificationEmail = notificationEmail; } 
+    if (enquiryDate !== undefined) { data.enquiryDate = enquiryDate ? new Date(enquiryDate) : null; } 
+    if (noOfPackages !== undefined) { data.noOfPackages = noOfPackages ? parseInt(noOfPackages) : null; } 
+    if (customerName !== undefined) { data.customerName = customerName; } 
+    if (vehicleType !== undefined) { data.vehicleType = vehicleType; } 
+    if (noOfContainers !== undefined) { data.noOfContainers = noOfContainers ? parseInt(noOfContainers) : null; } 
+    if (packageType !== undefined) { data.packageType = packageType; } 
+    if (deliveryDate !== undefined) { data.deliveryDate = deliveryDate ? new Date(deliveryDate) : null; } 
+    if (fromLocation !== undefined) { data.fromLocation = fromLocation; } 
+    if (toLocation !== undefined) { data.toLocation = toLocation; } 
+    if (transportMode !== undefined) { data.transportMode = transportMode; } 
+    
+    if (Object.keys(data).length > 0) { 
+      // ✅ FIXED: Don't force status change - just update the data
+      await prisma.shipment.update({ 
+        where: { id: req.params.id }, 
+        data: { freightForwarding: { update: { data } } } 
+      }); 
+      if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_UPDATED', parts.join(' | ')); 
+    } 
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); 
+    console.log('🔍 Rates update - ref:', s.refNo); 
+    sendStatusEmail(s).catch(() => {}); 
+    res.json({ status: 'success', data: s }); 
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // UPDATE CBM
