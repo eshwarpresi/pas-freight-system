@@ -15,6 +15,7 @@ const app = express();
 // ========== CONFIG ==========
 const JWT_SECRET = process.env.JWT_SECRET || 'pas-freight-jwt-secret-2026';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const ALLOWED_DOMAIN = '@pasfreight.com'; // Only this domain can login
 
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
@@ -22,7 +23,7 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 app.use(compression({ level: 6, threshold: 100 }));
 app.use(helmet());
 app.use(cors({
-  origin: ['https://pas-freight-system.onrender.com', 'http://localhost:5173', 'http://localhost:5174'],
+  origin: ['https://pas-freight-system.onrender.com', 'http://localhost:5173'],
   credentials: true
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
@@ -33,8 +34,7 @@ app.use(express.static('public', { maxAge: '1d' }));
 
 // ========== AUTH MIDDLEWARE ==========
 function authenticateToken(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = req.cookies?.token || (authHeader ? authHeader.split(' ')[1] : null);
+  const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
   
   if (!token) {
     return res.status(401).json({ status: 'error', message: 'Authentication required. Please login.' });
@@ -49,12 +49,13 @@ function authenticateToken(req, res, next) {
   }
 }
 
-// Optional auth
+// Optional auth - doesn't block, but adds user if token exists
 function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  const token = req.cookies?.token || (authHeader ? authHeader.split(' ')[1] : null);
+  const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
   if (token) {
-    try { req.user = jwt.verify(token, JWT_SECRET); } catch (err) {}
+    try {
+      req.user = jwt.verify(token, JWT_SECRET);
+    } catch (err) {}
   }
   next();
 }
@@ -66,7 +67,7 @@ async function trackUserActivity(req, res, next) {
       await prisma.user.update({
         where: { id: req.user.id },
         data: { lastActive: new Date() }
-      }).catch(() => {});
+      }).catch(() => {}); // Silently fail if user doesn't exist yet
     } catch (err) {}
   }
   next();
@@ -74,6 +75,7 @@ async function trackUserActivity(req, res, next) {
 
 // ========== PUBLIC ROUTES (no auth needed) ==========
 
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'success', 
@@ -100,14 +102,15 @@ app.post('/api/auth/google', async (req, res) => {
     const payload = ticket.getPayload();
     const email = payload.email;
     const name = payload.name;
+    const picture = payload.picture;
 
-    console.log('🔐 Login attempt:', email);
-
-    // ✅ ALLOW ALL @pasfreight.com emails (removed strict domain check)
-    // If you want to restrict, uncomment below:
-    // if (!email.endsWith('@pasfreight.com')) {
-    //   return res.status(403).json({ status: 'error', message: 'Only @pasfreight.com emails allowed' });
-    // }
+    // Check if email is from allowed domain
+    if (!email.endsWith(ALLOWED_DOMAIN)) {
+      return res.status(403).json({ 
+        status: 'error', 
+        message: `Only ${ALLOWED_DOMAIN} email addresses are allowed to access this system.` 
+      });
+    }
 
     // Find or create user
     let user = await prisma.user.findUnique({ where: { email } });
@@ -117,11 +120,10 @@ app.post('/api/auth/google', async (req, res) => {
         data: {
           email,
           name,
-          password: '',
+          password: '', // No password needed for Google OAuth
           role: 'OPERATIONS'
         }
       });
-      console.log('👤 New user created:', email);
     }
 
     // Generate JWT token
@@ -136,10 +138,8 @@ app.post('/api/auth/google', async (req, res) => {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
     });
-
-    console.log('✅ Login success:', email);
 
     res.json({
       status: 'success',
@@ -150,8 +150,8 @@ app.post('/api/auth/google', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Google auth error:', error.message);
-    res.status(401).json({ status: 'error', message: 'Invalid Google credential. Please try again.' });
+    console.error('Google auth error:', error);
+    res.status(401).json({ status: 'error', message: 'Invalid Google credential' });
   }
 });
 
@@ -194,12 +194,14 @@ app.get('/api/users/online', authenticateToken, async (req, res) => {
 
 // ========== PROTECTED ROUTES (auth required) ==========
 
+// Import Routes
 const freightForwardingRoutes = require('./routes/freightForwarding.routes');
 const chaRoutes = require('./routes/cha.routes');
 const accountsRoutes = require('./routes/accounts.routes');
 const archiveRoutes = require('./routes/archive.routes');
 const notificationRoutes = require('./routes/notification.routes');
 
+// Apply auth + tracking middleware to ALL shipment routes
 app.use('/api/freight', authenticateToken, trackUserActivity, freightForwardingRoutes);
 app.use('/api/cha', authenticateToken, trackUserActivity, chaRoutes);
 app.use('/api/accounts', authenticateToken, trackUserActivity, accountsRoutes);
