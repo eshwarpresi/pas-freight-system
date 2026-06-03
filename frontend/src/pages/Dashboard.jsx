@@ -11,7 +11,7 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap, ClipboardList
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
@@ -67,8 +67,8 @@ export default function Dashboard() {
   const queryClient = useQueryClient()
 
   const isTransportFilter = shipmentTypeFilter === 'TRANSPORT'
+  const isDOReleaseFilter = shipmentTypeFilter === 'DO_RELEASE'
 
-  // ✅ Fetch TOTAL stats separately (not affected by pagination/filters)
   const { data: totalStats } = useQuery({
     queryKey: ['shipments-total-stats'],
     queryFn: async () => {
@@ -87,7 +87,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!socket) return
-
     const handleNewShipment = (data) => {
       if (!showArchived) {
         setLiveNotification({ type: 'new', refNo: data.refNo, message: `New shipment created: ${data.refNo}` })
@@ -95,30 +94,25 @@ export default function Dashboard() {
         queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
       }
     }
-
     const handleUpdate = (data) => {
       setLiveNotification({ type: 'update', refNo: data.refNo, message: `Shipment updated: ${data.refNo}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
     }
-
     const handleStatusUpdate = (data) => {
       setLiveNotification({ type: 'status', refNo: data.refNo, message: `${data.refNo} → ${data.status}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
     }
-
     const handleArchiveUpdate = (data) => {
       setLiveNotification({ type: 'archive', refNo: data.refNo, message: `${data.refNo} ${data.archived ? 'archived' : 'restored'}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
     }
-
     socket.on('shipment:new', handleNewShipment)
     socket.on('shipment:update', handleUpdate)
     socket.on('shipment:statusUpdate', handleStatusUpdate)
     socket.on('shipment:archiveUpdate', handleArchiveUpdate)
-
     return () => {
       socket.off('shipment:new', handleNewShipment)
       socket.off('shipment:update', handleUpdate)
@@ -129,11 +123,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (initialized) {
-      try {
-        sessionStorage.setItem(STICKY_KEY, JSON.stringify({
-          search, statusFilter, shipmentTypeFilter, page, perPage
-        }))
-      } catch {}
+      try { sessionStorage.setItem(STICKY_KEY, JSON.stringify({ search, statusFilter, shipmentTypeFilter, page, perPage })) } catch {}
     }
   }, [search, statusFilter, shipmentTypeFilter, page, perPage, initialized])
 
@@ -151,10 +141,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     const shouldShowArchived = sessionStorage.getItem('showArchived')
-    if (shouldShowArchived === 'true') {
-      setShowArchived(true)
-      sessionStorage.removeItem('showArchived')
-    }
+    if (shouldShowArchived === 'true') { setShowArchived(true); sessionStorage.removeItem('showArchived') }
   }, [])
 
   const updateSearch = (val) => { setSearch(val); setPage(1) }
@@ -186,8 +173,6 @@ export default function Dashboard() {
   const shipments = data?.data || []
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
-
-  // ✅ Use totalStats for the progress bar (ALL shipments, not just current page)
   const overallTotal = totalStats || totalCount
 
   const handleExport = async () => {
@@ -206,9 +191,8 @@ export default function Dashboard() {
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
     onSuccess: (_, id) => { 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
-      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] });
-      addToast('Shipment archived', 'success');
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      addToast('Shipment archived', 'success')
       if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: true, id }) }
     },
     onError: () => addToast('Failed to archive', 'error')
@@ -216,25 +200,19 @@ export default function Dashboard() {
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
     onSuccess: (_, id) => { 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
-      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] });
-      addToast('Shipment restored', 'success');
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      addToast('Shipment restored', 'success')
       if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: false, id }) }
     },
     onError: () => addToast('Failed to restore', 'error')
   })
   const bulkArchiveMutation = useMutation({
     mutationFn: async (ids) => { await Promise.all(ids.map(id => api.put(`/archive/shipments/${id}/archive`))) },
-    onSuccess: () => { 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
-      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] });
-      setSelected([]); addToast('Shipments archived', 'success') 
-    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] }); setSelected([]); addToast('Shipments archived', 'success') },
     onError: () => addToast('Bulk archive failed', 'error')
   })
 
   const analytics = useMemo(() => {
-    // ✅ Count DELIVERED + HAND_OVER together
     const d = shipments.filter(s => s.currentStatus === 'DELIVERED' || s.currentStatus === 'HAND_OVER').length
     const t = shipments.filter(s => ['BOOKED','SCHEDULED','AWB_GENERATED'].includes(s.currentStatus)).length
     const c = shipments.filter(s => ['CHECKLIST_APPROVED','BOE_FILED','OOC_DONE'].includes(s.currentStatus)).length
@@ -254,6 +232,7 @@ export default function Dashboard() {
   const getModeBadge = (t) => {
     if (t === 'CHA Only') return 'bg-gradient-to-r from-emerald-500 to-green-500 text-white ring-green-400'
     if (t === 'Transport') return 'bg-gradient-to-r from-sky-500 to-blue-500 text-white ring-sky-400'
+    if (t === 'DO Release') return 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white ring-teal-400'
     if (!t) return 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-600 ring-gray-300'
     return 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white ring-blue-400'
   }
@@ -307,6 +286,7 @@ export default function Dashboard() {
             <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm':'text-[var(--text-secondary)]'}`}>Freight</button>
             <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='CHA_ONLY'?'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm':'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</button>
             <button onClick={()=>updateShipmentTypeFilter('TRANSPORT')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='TRANSPORT'?'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm':'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</button>
+            <button onClick={()=>updateShipmentTypeFilter('DO_RELEASE')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='DO_RELEASE'?'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm':'text-[var(--text-secondary)]'}`}><ClipboardList size={12}/>DO Release</button>
           </div>
           <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
             <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all ${!showArchived?'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm':'text-[var(--text-secondary)]'}`}>Active</button>
@@ -337,7 +317,6 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* ✅ Progress Bar - uses overallTotal (ALL shipments) */}
       <div className="glass rounded-xl border border-[var(--border-color)] p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -349,22 +328,18 @@ export default function Dashboard() {
         <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-2 overflow-hidden">
           <div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700 animate-pulse-glow" style={{width:`${analytics.deliveryRate}%`}}/>
         </div>
-        <p className="text-[10px] text-[var(--text-muted)] mt-1.5">
-          {analytics.delivered} of {overallTotal} shipments delivered / handed over
-        </p>
+        <p className="text-[10px] text-[var(--text-muted)] mt-1.5">{analytics.delivered} of {overallTotal} shipments delivered / handed over</p>
       </div>
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
         <div className="relative flex-1 w-full">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400"/>
-          <input type="text" placeholder={isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"/>
+          <input type="text" placeholder={isDOReleaseFilter ? "Search by Ref No, MAWB, Customer..." : isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"/>
           {search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={14}/></button>}
         </div>
         <div className="flex items-center gap-2">
           {hasFilters && (
-            <button onClick={clearAllFilters} className="px-3 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30">
-              <RotateCcw size={14} /> Clear
-            </button>
+            <button onClick={clearAllFilters} className="px-3 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><RotateCcw size={14} /> Clear</button>
           )}
           <button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border transition-all ${showFilters?'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400':'glass border-[var(--border-color)] text-[var(--text-secondary)]'}`}><SlidersHorizontal size={15}/></button>
           <button onClick={handleExport} disabled={exporting} className="px-3.5 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 disabled:opacity-50">{exporting?<RefreshCw size={14} className="animate-spin"/>:<Download size={14}/>}{exporting?'Exporting...':'Export'}</button>
@@ -389,7 +364,18 @@ export default function Dashboard() {
                 <tr className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50">
                   <th className="w-10 pl-4 py-3"><input type="checkbox" checked={selected.length===shipments.length&&shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></th>
                   <th className="text-center px-2 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase w-12">SL No</th>
-                  {isTransportFilter ? (
+                  {/* DO RELEASE COLUMNS */}
+                  {isDOReleaseFilter ? (
+                    <>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Ref No</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">MAWB</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">HAWB</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">CHA Name</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Customer</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
+                    </>
+                  ) : isTransportFilter ? (
                     <>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Vehicle No</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Transport Mode</th>
@@ -424,7 +410,16 @@ export default function Dashboard() {
                     <tr key={s.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
                       <td className="pl-4 py-3"><input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></td>
                       <td className="px-2 py-3 text-center text-xs font-semibold text-[var(--text-muted)]">{slNo}</td>
-                      {isTransportFilter ? (
+                      {/* DO RELEASE ROW DATA */}
+                      {isDOReleaseFilter ? (
+                        <>
+                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.mawb || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.hawb || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.agent || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName || <span className="text-[var(--text-muted)]">—</span>}</td>
+                        </>
+                      ) : isTransportFilter ? (
                         <>
                           <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
                           <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.transportMode || <span className="text-[var(--text-muted)]">—</span>}</td>
@@ -465,6 +460,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* MOBILE CARDS */}
         <div className="md:hidden space-y-3">
           {shipments.map((s, idx) => { 
             const slNo = (page - 1) * perPage + idx + 1; 
@@ -477,7 +473,15 @@ export default function Dashboard() {
                   </div>
                   <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span>
                 </div>
-                {isTransportFilter ? (
+                {isDOReleaseFilter ? (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-[var(--text-muted)]">MAWB:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.mawb||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">HAWB:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.hawb||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">CHA Name:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.agent||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Customer:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
+                  </div>
+                ) : isTransportFilter ? (
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div><span className="text-[var(--text-muted)]">Transport Mode:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.transportMode||'—'}</span></div>
                     <div><span className="text-[var(--text-muted)]">Customer:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName||'—'}</span></div>
@@ -519,17 +523,12 @@ export default function Dashboard() {
             <span className="font-semibold text-indigo-700 dark:text-indigo-300">{startItem}-{endItem}</span>
             <span className="text-[var(--text-muted)]">of</span>
             <span className="font-semibold text-indigo-700 dark:text-indigo-300">{totalCount.toLocaleString()}</span>
-            <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}} className="ml-2 border border-[var(--border-color)] rounded-md px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-[var(--input-bg)] text-[var(--input-text)]">
-              {PER_PAGE_OPTIONS.map(n=><option key={n} value={n}>{n}</option>)}
-            </select>
+            <select value={perPage} onChange={e=>{setPerPage(Number(e.target.value));setPage(1)}} className="ml-2 border border-[var(--border-color)] rounded-md px-2 py-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-[var(--input-bg)] text-[var(--input-text)]">{PER_PAGE_OPTIONS.map(n=><option key={n} value={n}>{n}</option>)}</select>
           </div>
           <div className="flex items-center gap-0.5">
             <button onClick={()=>setPage(1)} disabled={page===1} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronsLeft size={14}/></button>
             <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronLeft size={14}/></button>
-            {generatePageNumbers(page,totalPages).map((p,i)=>p==='...'
-              ?<span key={i} className="px-1.5 text-[var(--text-muted)] text-xs">...</span>
-              :<button key={p} onClick={()=>setPage(p)} className={`w-8 h-8 rounded-md text-[11px] font-semibold transition-all ${page===p?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}>{p}</button>
-            )}
+            {generatePageNumbers(page,totalPages).map((p,i)=>p==='...'?<span key={i} className="px-1.5 text-[var(--text-muted)] text-xs">...</span>:<button key={p} onClick={()=>setPage(p)} className={`w-8 h-8 rounded-md text-[11px] font-semibold transition-all ${page===p?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}>{p}</button>)}
             <button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages||totalPages===0} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronRight size={14}/></button>
             <button onClick={()=>setPage(totalPages)} disabled={page===totalPages||totalPages===0} className="p-1.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-900/30 disabled:opacity-30 text-[var(--text-secondary)]"><ChevronsRight size={14}/></button>
           </div>

@@ -8,7 +8,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
@@ -55,6 +55,12 @@ const CHA_EXPORT_STEPS = [
 const TRANSPORT_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Created',i:ClipboardList},
   {s:'DELIVERED',l:'Delivered',d:'Delivered',i:MapPin},
+  {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
+]
+// ✅ DO RELEASE STEPS — simple 4-step timeline
+const DO_RELEASE_STEPS = [
+  {s:'ENQUIRY',l:'Enquiry',d:'Created',i:ClipboardList},
+  {s:'DO_COLLECTED',l:'DO Collected',d:'DO Released',i:FileCheck},
   {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
 ]
 
@@ -106,7 +112,8 @@ export default function ShipmentDetail() {
   const isTransport = shipment?.shipmentType === 'Transport'
   const isCHAOnly = shipment?.shipmentType === 'CHA Only'
   const isCHAExport = isCHAOnly && shipment?.importExport === 'Export'
-  const steps = isTransport ? TRANSPORT_STEPS : isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
+  const isDORelease = shipment?.shipmentType === 'DO Release'
+  const steps = isDORelease ? DO_RELEASE_STEPS : isTransport ? TRANSPORT_STEPS : isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
   const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
 
   useEffect(() => {
@@ -115,6 +122,7 @@ export default function ShipmentDetail() {
       if (tabParam && ['freight', 'cha', 'accounts', 'history'].includes(tabParam)) setActiveTab(tabParam)
       else if (shipment.shipmentType === 'CHA Only') setActiveTab('cha')
       else if (shipment.shipmentType === 'Transport') setActiveTab('accounts')
+      else if (shipment.shipmentType === 'DO Release') setActiveTab('accounts')
       setInitialTabSet(true)
     }
   }, [shipment, initialTabSet, searchParams])
@@ -175,7 +183,10 @@ export default function ShipmentDetail() {
       @media print{body{padding:20px}}</style></head><body>
       <div class="header"><div><h1>PAS Freight Services Pvt Ltd</h1><p>Shipment Details Report</p></div><p>${new Date().toLocaleDateString()}</p></div>
       <div class="ref-box"><div class="ref">${shipment.refNo}</div><div class="stage">${shipment.currentStatus.replace(/_/g,' ')}</div></div>
-      ${isTransport ? `
+      ${isDORelease ? `
+      <div class="section"><h2>DO Release Details</h2><div class="grid">
+      <div class="item"><label>MAWB</label><span>${ff.mawb||'—'}</span></div><div class="item"><label>HAWB</label><span>${ff.hawb||'—'}</span></div><div class="item"><label>CHA Name</label><span>${ff.agent||'—'}</span></div><div class="item"><label>Customer</label><span>${ff.customerName||'—'}</span></div></div></div>
+      ` : isTransport ? `
       <div class="section"><h2>Transport Details</h2><div class="grid">
       <div class="item"><label>Customer</label><span>${ff.customerName||'—'}</span></div><div class="item"><label>Vehicle</label><span>${ff.vehicleType||'—'}</span></div><div class="item"><label>Containers</label><span>${ff.noOfContainers||'—'}</span></div><div class="item"><label>Package</label><span>${ff.packageType||'—'}</span></div><div class="item"><label>From</label><span>${ff.fromLocation||'—'}</span></div><div class="item"><label>To</label><span>${ff.toLocation||'—'}</span></div><div class="item"><label>Delivery</label><span>${fmd(ff.deliveryDate)}</span></div></div></div>
       ` : `
@@ -202,8 +213,9 @@ export default function ShipmentDetail() {
   const ff = shipment.freightForwarding || {}; const cha = shipment.cha || {}; const accounts = shipment.accounts || {}; const Fmt = d => d ? new Date(d).toLocaleDateString() : null
 
   const tabs = [
-    ...(!isCHAOnly && !isTransport ? [{ k: 'freight', l: 'Freight Forwarding', i: Ship }] : []),
-    ...(!isTransport ? [{ k: 'cha', l: 'Customs Clearance', i: FileCheck }] : []),
+    ...(!isCHAOnly && !isTransport && !isDORelease ? [{ k: 'freight', l: 'Freight Forwarding', i: Ship }] : []),
+    ...(!isTransport && !isDORelease ? [{ k: 'cha', l: 'Customs Clearance', i: FileCheck }] : []),
+    ...(isDORelease ? [{ k: 'do-release', l: 'DO Release', i: ClipboardList }] : []),
     { k: 'accounts', l: 'Accounts', i: Receipt },
     { k: 'history', l: 'Status Timeline', i: Clock }
   ]
@@ -217,6 +229,7 @@ export default function ShipmentDetail() {
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent">{shipment.refNo}</h1>
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span>
+                {isDORelease && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-emerald-500 border border-teal-400">DO Release</span>}
                 {isTransport && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-sky-500 to-blue-500 border border-sky-400">Transport</span>}
                 {isCHAOnly && <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white border ${isCHAExport ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-400' : 'bg-gradient-to-r from-emerald-500 to-green-500 border-emerald-400'}`}>{isCHAExport ? 'CHA Export' : 'CHA Import'}</span>}
                 {liveEditBy && (
@@ -241,29 +254,31 @@ export default function ShipmentDetail() {
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--border-color)]">
-            {!isTransport && (
-              <>
-                <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
-                <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Import/Export:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
-              </>
-            )}
-            {isTransport && (
-              <>
-                <div className="flex items-center gap-2"><Truck size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Vehicle:</span><InlineField value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Set vehicle" /></div>
-                <div className="flex items-center gap-2"><User size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Customer:</span><InlineField value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} placeholder="Set customer" /></div>
-              </>
-            )}
-            <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Stage:</span>
-              <div className="flex items-center gap-1"><InlineField value={STAGE_OPTIONS.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!STAGE_OPTIONS.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} placeholder="Custom..." /></div>
+          {!isDORelease && (
+            <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--border-color)]">
+              {!isTransport && (
+                <>
+                  <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
+                  <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Import/Export:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
+                </>
+              )}
+              {isTransport && (
+                <>
+                  <div className="flex items-center gap-2"><Truck size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Vehicle:</span><InlineField value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Set vehicle" /></div>
+                  <div className="flex items-center gap-2"><User size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Customer:</span><InlineField value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} placeholder="Set customer" /></div>
+                </>
+              )}
+              <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Stage:</span>
+                <div className="flex items-center gap-1"><InlineField value={STAGE_OPTIONS.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!STAGE_OPTIONS.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} placeholder="Custom..." /></div>
+              </div>
+              <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
             </div>
-            <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
-          </div>
+          )}
         </div>
       </div>
       
       <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
-        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
+        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
           {steps.map((step, i) => { const Icon = step.i; const done = i <= cur; const now = i === cur
             return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={step.d}>{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
@@ -277,7 +292,7 @@ export default function ShipmentDetail() {
 
       <div className="glass rounded-xl border border-[var(--border-color)] p-4 sm:p-6 shadow-sm">
         {/* FREIGHT TAB */}
-        {activeTab==='freight'&&!isTransport&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
+        {activeTab==='freight'&&!isTransport&&!isDORelease&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
           <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
           <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>
           <Section title="Weight Details" icon={Scale}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => updateMutation.mutate({ section: 'rates', data: { grossWeight: v } })} type="number" /><Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /><Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" /></div></Section>
@@ -285,6 +300,21 @@ export default function ShipmentDetail() {
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
           <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section></div>}
+
+        {/* DO RELEASE TAB */}
+        {isDORelease && activeTab==='do-release'&&<div className="space-y-4">
+          <Section title="DO Release Details" icon={ClipboardList}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="MAWB No" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} />
+              <Field label="HAWB No" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} />
+              <Field label="CHA Name" value={ff.agent} onSave={v => updateMutation.mutate({ section: 'rates', data: { agent: v } })} />
+              <Field label="Customer Name" value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} />
+            </div>
+          </Section>
+          <Section title="Notification Settings" icon={Mail}>
+            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
+          </Section>
+        </div>}
 
         {/* TRANSPORT TAB */}
         {isTransport && activeTab==='freight'&&<div className="space-y-4">
@@ -311,7 +341,7 @@ export default function ShipmentDetail() {
         </div>}
         
         {/* CUSTOMS TAB */}
-        {activeTab==='cha'&&!isTransport&&<div className="space-y-4">
+        {activeTab==='cha'&&!isTransport&&!isDORelease&&<div className="space-y-4">
           <Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => updateMutation.mutate({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
           {!isCHAExport && (<>
             <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
