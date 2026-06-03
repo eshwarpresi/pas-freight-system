@@ -68,6 +68,16 @@ export default function Dashboard() {
 
   const isTransportFilter = shipmentTypeFilter === 'TRANSPORT'
 
+  // ✅ Fetch TOTAL stats separately (not affected by pagination/filters)
+  const { data: totalStats } = useQuery({
+    queryKey: ['shipments-total-stats'],
+    queryFn: async () => {
+      const res = await api.get('/freight/shipments', { params: { isArchived: 'false', page: 1, limit: 1 } })
+      return res.data.pagination?.total || 0
+    },
+    staleTime: 120000,
+  })
+
   useEffect(() => {
     if (liveNotification) {
       const timer = setTimeout(() => setLiveNotification(null), 4000)
@@ -82,22 +92,26 @@ export default function Dashboard() {
       if (!showArchived) {
         setLiveNotification({ type: 'new', refNo: data.refNo, message: `New shipment created: ${data.refNo}` })
         queryClient.invalidateQueries({ queryKey: ['shipments'] })
+        queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
       }
     }
 
     const handleUpdate = (data) => {
       setLiveNotification({ type: 'update', refNo: data.refNo, message: `Shipment updated: ${data.refNo}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
     }
 
     const handleStatusUpdate = (data) => {
       setLiveNotification({ type: 'status', refNo: data.refNo, message: `${data.refNo} → ${data.status}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
     }
 
     const handleArchiveUpdate = (data) => {
       setLiveNotification({ type: 'archive', refNo: data.refNo, message: `${data.refNo} ${data.archived ? 'archived' : 'restored'}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
     }
 
     socket.on('shipment:new', handleNewShipment)
@@ -173,6 +187,9 @@ export default function Dashboard() {
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
 
+  // ✅ Use totalStats for the progress bar (ALL shipments, not just current page)
+  const overallTotal = totalStats || totalCount
+
   const handleExport = async () => {
     setExporting(true)
     try {
@@ -189,7 +206,9 @@ export default function Dashboard() {
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
     onSuccess: (_, id) => { 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment archived', 'success');
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] });
+      addToast('Shipment archived', 'success');
       if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: true, id }) }
     },
     onError: () => addToast('Failed to archive', 'error')
@@ -197,32 +216,39 @@ export default function Dashboard() {
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
     onSuccess: (_, id) => { 
-      queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Shipment restored', 'success');
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] });
+      addToast('Shipment restored', 'success');
       if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: false, id }) }
     },
     onError: () => addToast('Failed to restore', 'error')
   })
   const bulkArchiveMutation = useMutation({
     mutationFn: async (ids) => { await Promise.all(ids.map(id => api.put(`/archive/shipments/${id}/archive`))) },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); setSelected([]); addToast('Shipments archived', 'success') },
+    onSuccess: () => { 
+      queryClient.invalidateQueries({ queryKey: ['shipments'] }); 
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] });
+      setSelected([]); addToast('Shipments archived', 'success') 
+    },
     onError: () => addToast('Bulk archive failed', 'error')
   })
 
   const analytics = useMemo(() => {
-    const d = shipments.filter(s => s.currentStatus === 'DELIVERED').length
+    // ✅ Count DELIVERED + HAND_OVER together
+    const d = shipments.filter(s => s.currentStatus === 'DELIVERED' || s.currentStatus === 'HAND_OVER').length
     const t = shipments.filter(s => ['BOOKED','SCHEDULED','AWB_GENERATED'].includes(s.currentStatus)).length
     const c = shipments.filter(s => ['CHECKLIST_APPROVED','BOE_FILED','OOC_DONE'].includes(s.currentStatus)).length
     const p = shipments.filter(s => ['ENQUIRY','RATES_ADDED','NOMINATED'].includes(s.currentStatus)).length
     const i = shipments.filter(s => ['INVOICE_GENERATED','INVOICE_SENT'].includes(s.currentStatus)).length
-    return { delivered: d, inTransit: t, customs: c, pending: p, invoiced: i, deliveryRate: shipments.length > 0 ? Math.round((d/shipments.length)*100) : 0 }
-  }, [shipments])
+    return { delivered: d, inTransit: t, customs: c, pending: p, invoiced: i, deliveryRate: overallTotal > 0 ? Math.round((d / overallTotal) * 100) : 0 }
+  }, [shipments, overallTotal])
 
   const toggleSelectAll = () => { if (selected.length === shipments.length) setSelected([]); else setSelected(shipments.map(s => s.id)) }
   const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
 
   const getStatusBadge = (s) => {
     const b = {
-      'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 ring-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 ring-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 ring-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 ring-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 ring-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 ring-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 ring-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 ring-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white ring-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 ring-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 ring-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 ring-gray-300'
+      'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 ring-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 ring-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 ring-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 ring-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 ring-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 ring-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 ring-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 ring-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white ring-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 ring-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 ring-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 ring-gray-300'
     }; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 ring-gray-300'
   }
   const getModeBadge = (t) => {
@@ -239,15 +265,14 @@ export default function Dashboard() {
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   const statCards = [
-    { label: 'Total Shipments', value: totalCount, icon: Box, gradient: statGradients[0], desc: 'All shipments' },
+    { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments' },
     { label: 'In Progress', value: analytics.pending + analytics.inTransit + analytics.customs, icon: Clock, gradient: statGradients[1], desc: 'Enquiry to Customs' },
-    { label: 'Delivered', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed' },
+    { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed' },
     { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent' },
   ]
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Live Notification Toast */}
       {liveNotification && (
         <div className="fixed top-4 right-4 z-50 animate-slide-down">
           <div className={`px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-3 text-sm font-medium ${
@@ -262,12 +287,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[11px] font-semibold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-0.5 rounded-md">Shipments</span>
-            <span className="text-xs text-[var(--text-secondary)] font-medium">{totalCount} total</span>
+            <span className="text-xs text-[var(--text-secondary)] font-medium">{overallTotal} total</span>
             {socket?.connected && (
               <span className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Live
@@ -292,7 +316,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {statCards.map((stat,i)=>{
           const Icon=stat.icon;
@@ -314,7 +337,7 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Progress Bar */}
+      {/* ✅ Progress Bar - uses overallTotal (ALL shipments) */}
       <div className="glass rounded-xl border border-[var(--border-color)] p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -326,9 +349,11 @@ export default function Dashboard() {
         <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-2 overflow-hidden">
           <div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700 animate-pulse-glow" style={{width:`${analytics.deliveryRate}%`}}/>
         </div>
+        <p className="text-[10px] text-[var(--text-muted)] mt-1.5">
+          {analytics.delivered} of {overallTotal} shipments delivered / handed over
+        </p>
       </div>
 
-      {/* Toolbar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
         <div className="relative flex-1 w-full">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400"/>
@@ -350,7 +375,6 @@ export default function Dashboard() {
 
       {selected.length>0&&(<div className="glass border border-indigo-300/50 dark:border-indigo-700/50 rounded-xl px-4 py-3 flex items-center justify-between animate-slide-down"><span className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">{selected.length} selected</span><div className="flex gap-2">{!showArchived&&<button onClick={()=>bulkArchiveMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg"><Archive size={13}/> Archive</button>}<button onClick={()=>setSelected([])} className="px-3.5 py-1.5 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg text-xs font-semibold">Clear</button></div></div>)}
 
-      {/* Error & Empty States */}
       {isError&&(<div className="glass rounded-xl border border-red-200/50 dark:border-red-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-red-400 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><AlertCircle size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Connection Error</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Unable to load shipments.</p><button onClick={()=>refetch()} className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><RefreshCw size={14}/> Retry</button></div>)}
       {!isError&&isEmpty&&hasFilters&&(<div className="glass rounded-xl border border-amber-200/50 dark:border-amber-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">No Results</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Try adjusting your search or filters.</p><button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] rounded-lg text-sm font-semibold text-[var(--text-primary)]"><RotateCcw size={14}/> Clear All Filters</button></div>)}
       {!isError&&isEmpty&&!hasFilters&&!showArchived&&(<div className="glass rounded-xl border border-indigo-200/50 dark:border-indigo-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Welcome to PAS Freight</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Create your first shipment to get started.</p><Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><Plus size={14}/> Create Shipment</Link></div>)}
@@ -358,7 +382,6 @@ export default function Dashboard() {
       {showSkeleton&&<TableSkeleton/>}
 
       {!showSkeleton&&!isError&&shipments.length>0&&(<>
-        {/* DESKTOP TABLE */}
         <div className="hidden md:block glass rounded-xl border border-[var(--border-color)] overflow-hidden shadow-lg animate-scale-in">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -442,7 +465,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* MOBILE CARDS */}
         <div className="md:hidden space-y-3">
           {shipments.map((s, idx) => { 
             const slNo = (page - 1) * perPage + idx + 1; 
@@ -492,7 +514,6 @@ export default function Dashboard() {
           })}
         </div>
 
-        {/* Pagination */}
         <div className="glass rounded-xl border border-[var(--border-color)] px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
             <span className="font-semibold text-indigo-700 dark:text-indigo-300">{startItem}-{endItem}</span>
