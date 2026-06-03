@@ -66,7 +66,7 @@ const exportShipments = async (req, res) => {
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
 
-// GET ALL — ✅ Added DO_RELEASE filter with debug logging
+// GET ALL — ✅ All shipment type filters
 const getAllShipments = async (req, res) => {
   try {
     const { status, search, isArchived, shipmentType, page = 1, limit = 25 } = req.query;
@@ -79,7 +79,8 @@ const getAllShipments = async (req, res) => {
       if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
       else if (shipmentType === 'TRANSPORT') where.shipmentType = 'Transport';
       else if (shipmentType === 'DO_RELEASE') where.shipmentType = 'DO Release';
-      else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release'] } };
+      else if (shipmentType === 'FF_ONLY') where.shipmentType = 'FF Only';
+      else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
     }
     if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { freightForwarding: { mawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }, { freightForwarding: { customerName: { contains: search } } }];
     

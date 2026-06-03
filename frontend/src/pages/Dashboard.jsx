@@ -11,7 +11,7 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap, ClipboardList
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap, ClipboardList, FileText
 } from 'lucide-react'
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
@@ -242,6 +242,7 @@ export default function Dashboard({ defaultType = '' }) {
     if (t === 'CHA Only') return 'bg-gradient-to-r from-emerald-500 to-green-500 text-white ring-green-400'
     if (t === 'Transport') return 'bg-gradient-to-r from-sky-500 to-blue-500 text-white ring-sky-400'
     if (t === 'DO Release') return 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white ring-teal-400'
+    if (t === 'FF Only') return 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white ring-purple-400'
     if (!t) return 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-600 ring-gray-300'
     return 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white ring-blue-400'
   }
@@ -268,7 +269,6 @@ export default function Dashboard({ defaultType = '' }) {
     return 'Overview'
   }
 
-  // ✅ Current route path for active tab
   const currentPath = window.location.pathname
 
   return (
@@ -302,9 +302,9 @@ export default function Dashboard({ defaultType = '' }) {
           <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">{getTitle()}</h1>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* ✅ Navigation buttons to separate dashboards */}
           <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
             <Link to="/" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>All</Link>
+            <Link to="/ff-only" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/ff-only' ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileText size={12}/>FF Only</Link>
             <Link to="/freight" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/freight' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Freight</Link>
             <Link to="/cha" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/cha' ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</Link>
             <Link to="/transport" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/transport' ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</Link>
@@ -318,7 +318,6 @@ export default function Dashboard({ defaultType = '' }) {
         </div>
       </div>
 
-      {/* Rest of the component remains EXACTLY the same */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {statCards.map((stat,i)=>{
           const Icon=stat.icon;

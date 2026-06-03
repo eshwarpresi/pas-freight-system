@@ -9,10 +9,12 @@ async function exportShipmentsToExcel(shipments, res) {
   const fmt = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
   const num = (v) => (v !== null && v !== undefined && v !== '') ? Number(v) : null;
 
-  const freightShipments = shipments.filter(s => s.shipmentType !== 'CHA Only' && s.shipmentType !== 'Transport');
+  const freightShipments = shipments.filter(s => s.shipmentType !== 'CHA Only' && s.shipmentType !== 'Transport' && s.shipmentType !== 'DO Release' && s.shipmentType !== 'FF Only');
   const chaImportShipments = shipments.filter(s => s.shipmentType === 'CHA Only' && s.importExport !== 'Export');
   const chaExportShipments = shipments.filter(s => s.shipmentType === 'CHA Only' && s.importExport === 'Export');
   const transportShipments = shipments.filter(s => s.shipmentType === 'Transport');
+  const doReleaseShipments = shipments.filter(s => s.shipmentType === 'DO Release');
+  const ffOnlyShipments = shipments.filter(s => s.shipmentType === 'FF Only');
 
   const allColumns = [
     { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 }, { header: 'Status', key: 'status', width: 16 },
@@ -74,6 +76,36 @@ async function exportShipmentsToExcel(shipments, res) {
     { header: 'No of Containers', key: 'containers', width: 14 }, { header: 'Package Type', key: 'packageType', width: 22 },
     { header: 'Weight (kg)', key: 'weight', width: 12 }, { header: 'From', key: 'fromLocation', width: 22 },
     { header: 'To', key: 'toLocation', width: 22 }, { header: 'Delivery Date', key: 'deliveryDate', width: 14 },
+    { header: 'Invoice No', key: 'invoiceNo', width: 16 }, { header: 'Inv Date', key: 'invoiceDate', width: 14 },
+    { header: 'Inv Sent', key: 'invoiceSent', width: 14 }, { header: 'Created', key: 'createdAt', width: 14 },
+    { header: 'Remarks', key: 'remarks', width: 25 },
+  ];
+
+  // ✅ DO RELEASE columns
+  const doReleaseCols = [
+    { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 },
+    { header: 'Status', key: 'status', width: 16 }, { header: 'Stage', key: 'shipmentStage', width: 14 },
+    { header: 'Created By', key: 'createdBy', width: 16 }, { header: 'MAWB', key: 'mawb', width: 18 },
+    { header: 'HAWB', key: 'hawb', width: 18 }, { header: 'CHA Name', key: 'agent', width: 22 },
+    { header: 'Customer', key: 'customer', width: 22 }, { header: 'DO Date', key: 'doDate', width: 14 },
+    { header: 'Invoice No', key: 'invoiceNo', width: 16 }, { header: 'Inv Date', key: 'invoiceDate', width: 14 },
+    { header: 'Inv Sent', key: 'invoiceSent', width: 14 }, { header: 'Created', key: 'createdAt', width: 14 },
+    { header: 'Remarks', key: 'remarks', width: 25 },
+  ];
+
+  // ✅ FF ONLY columns (same as freight but with DO Date)
+  const ffOnlyCols = [
+    { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 },
+    { header: 'Status', key: 'status', width: 16 }, { header: 'Stage', key: 'shipmentStage', width: 14 },
+    { header: 'Created By', key: 'createdBy', width: 16 }, { header: 'Consignee', key: 'customer', width: 24 },
+    { header: 'Shipper', key: 'shipper', width: 24 }, { header: 'Agent', key: 'agent', width: 18 },
+    { header: 'From', key: 'fromLocation', width: 18 }, { header: 'To', key: 'toLocation', width: 18 },
+    { header: 'Pkgs', key: 'packages', width: 8 }, { header: 'Gross Wt', key: 'grossWeight', width: 12 },
+    { header: 'Chg Wt', key: 'weight', width: 12 }, { header: 'MAWB', key: 'mawb', width: 16 },
+    { header: 'HAWB', key: 'hawb', width: 16 }, { header: 'AWB Date', key: 'awbDate', width: 14 },
+    { header: 'DO Date', key: 'doDate', width: 14 }, { header: 'Terms', key: 'terms', width: 12 },
+    { header: 'Port', key: 'portLocation', width: 14 }, { header: 'Booking', key: 'booking', width: 14 },
+    { header: 'ETD', key: 'etd', width: 14 }, { header: 'ETA', key: 'eta', width: 14 },
     { header: 'Invoice No', key: 'invoiceNo', width: 16 }, { header: 'Inv Date', key: 'invoiceDate', width: 14 },
     { header: 'Inv Sent', key: 'invoiceSent', width: 14 }, { header: 'Created', key: 'createdAt', width: 14 },
     { header: 'Remarks', key: 'remarks', width: 25 },
@@ -170,9 +202,7 @@ async function exportShipmentsToExcel(shipments, res) {
     ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
   }
 
-  // =============================================
-  // HELPER: Section header
-  // =============================================
+  // HELPERS
   function sectionHeader(ws, rowNum, title, color) {
     ws.mergeCells(`A${rowNum}:J${rowNum}`);
     const cell = ws.getCell(`A${rowNum}`);
@@ -235,56 +265,53 @@ async function exportShipmentsToExcel(shipments, res) {
     return r + 1;
   }
 
-  // =============================================
   // SHEET 1: ALL SHIPMENTS
-  // =============================================
   const wsAll = workbook.addWorksheet('All Shipments', { properties: { tabColor: { argb: '1E40AF' } } });
   writeSheet(wsAll, shipments, 'ALL SHIPMENTS REPORT', '1E40AF', allColumns);
-
   try {
     const fs = require('fs'); let lp = path.join(__dirname, '..', 'logo.webp'), ext = 'webp';
     if (!fs.existsSync(lp)) { lp = path.join(__dirname, '..', 'logo.png'); ext = 'png'; }
     if (fs.existsSync(lp)) { const id = workbook.addImage({ filename: lp, extension: ext }); wsAll.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 80, height: 45 } }); }
   } catch (e) {}
 
-  // =============================================
   // SHEET 2: FREIGHT
-  // =============================================
   if (freightShipments.length > 0) {
     const wsF = workbook.addWorksheet('Freight', { properties: { tabColor: { argb: '3B82F6' } } });
     writeSheet(wsF, freightShipments, 'FREIGHT SHIPMENTS', '3B82F6', freightColumns);
   }
 
-  // =============================================
   // SHEET 3: CHA IMPORT
-  // =============================================
   if (chaImportShipments.length > 0) {
     const wsCI = workbook.addWorksheet('CHA Import', { properties: { tabColor: { argb: '10B981' } } });
     writeSheet(wsCI, chaImportShipments, 'CHA IMPORT BILLS', '10B981', chaImportCols);
   }
 
-  // =============================================
   // SHEET 4: CHA EXPORT
-  // =============================================
   if (chaExportShipments.length > 0) {
     const wsCE = workbook.addWorksheet('CHA Export', { properties: { tabColor: { argb: 'F59E0B' } } });
     writeSheet(wsCE, chaExportShipments, 'CHA EXPORT BILLS', 'F59E0B', chaExportCols);
   }
 
-  // =============================================
   // SHEET 5: TRANSPORT
-  // =============================================
   if (transportShipments.length > 0) {
     const wsT = workbook.addWorksheet('Transport', { properties: { tabColor: { argb: '0EA5E9' } } });
     writeSheet(wsT, transportShipments, 'TRANSPORT SHIPMENTS', '0EA5E9', transportCols);
   }
 
-  // =============================================
-  // SHEET 6: MASSIVE SUMMARY DASHBOARD
-  // =============================================
-  const ss = workbook.addWorksheet('📊 Summary', { properties: { tabColor: { argb: '8B5CF6' } } });
-  
-  // Column widths
+  // ✅ SHEET 6: DO RELEASE
+  if (doReleaseShipments.length > 0) {
+    const wsDR = workbook.addWorksheet('DO Release', { properties: { tabColor: { argb: '14B8A6' } } });
+    writeSheet(wsDR, doReleaseShipments, 'DO RELEASE', '14B8A6', doReleaseCols);
+  }
+
+  // ✅ SHEET 7: FF ONLY
+  if (ffOnlyShipments.length > 0) {
+    const wsFF = workbook.addWorksheet('FF Only', { properties: { tabColor: { argb: '8B5CF6' } } });
+    writeSheet(wsFF, ffOnlyShipments, 'FF ONLY', '8B5CF6', ffOnlyCols);
+  }
+
+  // SUMMARY SHEET
+  const ss = workbook.addWorksheet('📊 Summary', { properties: { tabColor: { argb: '7C3AED' } } });
   ss.getColumn(1).width = 5; ss.getColumn(2).width = 22; ss.getColumn(3).width = 14;
   ss.getColumn(4).width = 12; ss.getColumn(5).width = 22; ss.getColumn(6).width = 14;
   ss.getColumn(7).width = 14; ss.getColumn(8).width = 22; ss.getColumn(9).width = 14; ss.getColumn(10).width = 14;
@@ -302,179 +329,53 @@ async function exportShipmentsToExcel(shipments, res) {
   ss.getCell(`A${r}`).alignment = { horizontal: 'center', vertical: 'middle' };
   ss.getRow(r).height = 24; r += 2;
 
-  // ---- OVERVIEW CARDS ----
   const totalDelivered = shipments.filter(s => s.currentStatus === 'DELIVERED').length;
   const totalInvoiced = shipments.filter(s => ['INVOICE_GENERATED', 'INVOICE_SENT'].includes(s.currentStatus)).length;
   const activeShipments = shipments.filter(s => !['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(s.currentStatus)).length;
   const deliveryRate = shipments.length > 0 ? Math.round((totalDelivered / shipments.length) * 100) : 0;
 
-  const totalTransportWt = transportShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.weight) || 0), 0);
-  const totalContainers = transportShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.noOfContainers) || 0), 0);
-  const totalFreightPkgs = freightShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.noOfPackages) || 0), 0);
-  const totalFreightWt = freightShipments.reduce((sum, s) => sum + (num(s.freightForwarding?.grossWeight) || 0), 0);
-
   r = statCardRow(ss, r, [
-    { label: 'TOTAL SHIPMENTS', value: shipments.length, desc: 'All types', color: '8B5CF6' },
+    { label: 'TOTAL', value: shipments.length, desc: 'All types', color: '8B5CF6' },
     { label: 'ACTIVE', value: activeShipments, desc: 'In progress', color: '3B82F6' },
-    { label: 'DELIVERED', value: totalDelivered, desc: `${deliveryRate}% success rate`, color: '10B981' },
+    { label: 'DELIVERED', value: totalDelivered, desc: `${deliveryRate}%`, color: '10B981' },
   ]);
   r = statCardRow(ss, r, [
-    { label: 'INVOICED', value: totalInvoiced, desc: 'Invoice generated/sent', color: 'F59E0B' },
-    { label: 'TRANSPORT', value: transportShipments.length, desc: `${totalTransportWt.toLocaleString()} kg | ${totalContainers} containers`, color: '0EA5E9' },
-    { label: 'FREIGHT PKGS', value: totalFreightPkgs, desc: `${totalFreightWt.toLocaleString()} kg gross`, color: '7C3AED' },
+    { label: 'INVOICED', value: totalInvoiced, desc: 'Generated/sent', color: 'F59E0B' },
+    { label: 'FF ONLY', value: ffOnlyShipments.length, desc: 'Freight Forwarding Only', color: '8B5CF6' },
+    { label: 'DO RELEASE', value: doReleaseShipments.length, desc: 'Delivery Order', color: '14B8A6' },
   ]);
   r++;
 
-  // ---- SHIPMENT TYPE BREAKDOWN ----
   r = sectionHeader(ss, r, '📦 SHIPMENT TYPE BREAKDOWN', '8B5CF6');
   const typeData = [
-    ['Freight', freightShipments.length, shipments.length > 0 ? Math.round((freightShipments.length / shipments.length) * 100) + '%' : '0%', totalFreightPkgs, `${totalFreightWt.toLocaleString()} kg`],
-    ['CHA Import', chaImportShipments.length, shipments.length > 0 ? Math.round((chaImportShipments.length / shipments.length) * 100) + '%' : '0%', '', ''],
-    ['CHA Export', chaExportShipments.length, shipments.length > 0 ? Math.round((chaExportShipments.length / shipments.length) * 100) + '%' : '0%', '', ''],
-    ['Transport', transportShipments.length, shipments.length > 0 ? Math.round((transportShipments.length / shipments.length) * 100) + '%' : '0%', totalContainers, `${totalTransportWt.toLocaleString()} kg`],
-    ['TOTAL', shipments.length, '100%', '', ''],
+    ['Freight', freightShipments.length, shipments.length > 0 ? Math.round((freightShipments.length / shipments.length) * 100) + '%' : '0%'],
+    ['FF Only', ffOnlyShipments.length, shipments.length > 0 ? Math.round((ffOnlyShipments.length / shipments.length) * 100) + '%' : '0%'],
+    ['CHA Import', chaImportShipments.length, shipments.length > 0 ? Math.round((chaImportShipments.length / shipments.length) * 100) + '%' : '0%'],
+    ['CHA Export', chaExportShipments.length, shipments.length > 0 ? Math.round((chaExportShipments.length / shipments.length) * 100) + '%' : '0%'],
+    ['Transport', transportShipments.length, shipments.length > 0 ? Math.round((transportShipments.length / shipments.length) * 100) + '%' : '0%'],
+    ['DO Release', doReleaseShipments.length, shipments.length > 0 ? Math.round((doReleaseShipments.length / shipments.length) * 100) + '%' : '0%'],
+    ['TOTAL', shipments.length, '100%'],
   ];
-  r = tableSection(ss, r, ['Type', 'Count', 'Share %', 'Units (Pkgs/Cont)', 'Weight'], typeData, '8B5CF6');
+  r = tableSection(ss, r, ['Type', 'Count', 'Share %'], typeData, '8B5CF6');
 
-  // ---- STATUS BREAKDOWN BY TYPE ----
-  r = sectionHeader(ss, r, '📊 STATUS BREAKDOWN BY TYPE', '3B82F6');
-  ['Freight', 'CHA Import', 'CHA Export', 'Transport'].forEach(type => {
-    let data;
-    if (type === 'Freight') data = freightShipments;
-    else if (type === 'CHA Import') data = chaImportShipments;
-    else if (type === 'CHA Export') data = chaExportShipments;
-    else data = transportShipments;
-    if (data.length === 0) return;
-
-    ss.mergeCells(`A${r}:J${r}`);
-    ss.getCell(`A${r}`).value = `${type} (${data.length} shipments)`;
-    ss.getCell(`A${r}`).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFF' } };
-    ss.getCell(`A${r}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '6B7280' } };
-    ss.getRow(r).height = 24; r++;
-
-    const counts = {};
-    data.forEach(s => { const st = s.currentStatus?.replace(/_/g, ' ') || 'Unknown'; counts[st] = (counts[st] || 0) + 1; });
-    const statusRows = [['Status', 'Count', '%']];
-    Object.entries(counts).sort((a, b) => b[1] - a[1]).forEach(([status, count]) => {
-      statusRows.push([status, count, Math.round((count / data.length) * 100) + '%']);
-    });
-    r = tableSection(ss, r, ['Status', 'Count', '%'], statusRows, '6B7280');
-    r++;
-  });
-
-  // ---- MONTHLY TREND ----
-  r = sectionHeader(ss, r, '📅 MONTHLY SHIPMENT TREND', 'F59E0B');
-  const monthlyCounts = {};
-  shipments.forEach(s => {
-    const d = new Date(s.createdAt);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    monthlyCounts[key] = (monthlyCounts[key] || 0) + 1;
-  });
-  const monthRows = [['Month', 'Shipments', 'Cumulative']];
-  let cum = 0;
-  Object.entries(monthlyCounts).sort().forEach(([month, count]) => {
-    cum += count;
-    monthRows.push([month, count, cum]);
-  });
-  if (monthRows.length > 1) r = tableSection(ss, r, ['Month', 'Shipments', 'Cumulative'], monthRows, 'F59E0B');
-
-  // ---- TRANSPORT STATS ----
-  if (transportShipments.length > 0) {
-    r = sectionHeader(ss, r, '🚛 TRANSPORT DETAILED STATS', '0EA5E9');
-    const vehicleCounts = {};
-    transportShipments.forEach(s => { const v = s.freightForwarding?.vehicleType || 'Unknown'; vehicleCounts[v] = (vehicleCounts[v] || 0) + 1; });
-    const vehicleRows = [['Vehicle Type', 'Count', '%']];
-    Object.entries(vehicleCounts).sort((a, b) => b[1] - a[1]).forEach(([v, c]) => {
-      vehicleRows.push([v, c, Math.round((c / transportShipments.length) * 100) + '%']);
-    });
-    r = tableSection(ss, r, ['Vehicle Type', 'Count', '%'], vehicleRows, '0EA5E9');
-
-    const deliveredTransport = transportShipments.filter(s => s.currentStatus === 'DELIVERED').length;
-    const transportRows = [
-      ['Metric', 'Value'],
-      ['Total Trips', transportShipments.length],
-      ['Total Containers', totalContainers],
-      ['Total Weight (kg)', `${totalTransportWt.toLocaleString()} kg`],
-      ['Avg Weight/Trip', transportShipments.length > 0 ? `${Math.round(totalTransportWt / transportShipments.length).toLocaleString()} kg` : '0 kg'],
-      ['Delivered', deliveredTransport],
-      ['Delivery Rate', `${Math.round((deliveredTransport / transportShipments.length) * 100)}%`],
-    ];
-    r = tableSection(ss, r, ['Metric', 'Value'], transportRows, '0EA5E9');
-  }
-
-  // ---- TOP CUSTOMERS ----
-  r = sectionHeader(ss, r, '👥 TOP CUSTOMERS (All Types)', '7C3AED');
-  const customerCounts = {};
-  shipments.forEach(s => {
-    const name = s.freightForwarding?.customerName || s.freightForwarding?.consigneeName;
-    if (name && name.trim()) { customerCounts[name] = (customerCounts[name] || 0) + 1; }
-  });
-  const topCustomers = Object.entries(customerCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const customerRows = [['Customer', 'Shipments', '%']];
-  topCustomers.forEach(([name, count]) => {
-    customerRows.push([name, count, Math.round((count / shipments.length) * 100) + '%']);
-  });
-  if (customerRows.length > 1) r = tableSection(ss, r, ['Customer', 'Shipments', '%'], customerRows, '7C3AED');
-
-  // ---- TOP ROUTES (Transport) ----
-  if (transportShipments.length > 0) {
-    r = sectionHeader(ss, r, '📍 TOP TRANSPORT ROUTES', '0891B2');
-    const routeCounts = {};
-    transportShipments.forEach(s => {
-      const route = `${s.freightForwarding?.fromLocation || '?'} → ${s.freightForwarding?.toLocation || '?'}`;
-      routeCounts[route] = (routeCounts[route] || 0) + 1;
-    });
-    const topRoutes = Object.entries(routeCounts).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    const routeRows = [['Route', 'Trips', '%']];
-    topRoutes.forEach(([route, count]) => {
-      routeRows.push([route, count, Math.round((count / transportShipments.length) * 100) + '%']);
-    });
-    if (routeRows.length > 1) r = tableSection(ss, r, ['Route', 'Trips', '%'], routeRows, '0891B2');
-  }
-
-  // ---- CHA SUMMARY ----
-  if (chaImportShipments.length > 0 || chaExportShipments.length > 0) {
-    r = sectionHeader(ss, r, '🛃 CHA OPERATIONS SUMMARY', '10B981');
-    const boeFiled = chaImportShipments.filter(s => s.currentStatus && ['BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED'].includes(s.currentStatus)).length;
-    const sbFiled = chaExportShipments.filter(s => s.currentStatus && ['SB_FILED', 'LEO_DONE', 'HAND_OVER', 'DELIVERED'].includes(s.currentStatus)).length;
-    const chaDelivered = [...chaImportShipments, ...chaExportShipments].filter(s => s.currentStatus === 'DELIVERED').length;
-    const chaRows = [
-      ['Metric', 'Value'],
-      ['Total CHA Bills', chaImportShipments.length + chaExportShipments.length],
-      ['Import Bills', chaImportShipments.length],
-      ['Export Bills', chaExportShipments.length],
-      ['BOE Filed (Import)', boeFiled],
-      ['SB Filed (Export)', sbFiled],
-      ['Delivered', chaDelivered],
-      ['Delivery Rate', (chaImportShipments.length + chaExportShipments.length) > 0 ? `${Math.round((chaDelivered / (chaImportShipments.length + chaExportShipments.length)) * 100)}%` : '0%'],
-    ];
-    r = tableSection(ss, r, ['Metric', 'Value'], chaRows, '10B981');
-  }
-
-  // ---- RECENT ACTIVITY ----
-  r = sectionHeader(ss, r, '🕐 RECENT ACTIVITY (Last 50)', 'EF4444');
-  const recentActivityRows = [['Date', 'Ref No', 'Type', 'Customer', 'Status']];
+  r = sectionHeader(ss, r, '🕐 RECENT ACTIVITY', 'EF4444');
+  const recentRows = [['Date', 'Ref No', 'Type', 'Customer', 'Status']];
   shipments.slice(-50).reverse().forEach(s => {
-    recentActivityRows.push([
+    recentRows.push([
       new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      s.refNo || '',
-      s.shipmentType || '',
+      s.refNo || '', s.shipmentType || '',
       s.freightForwarding?.customerName || s.freightForwarding?.consigneeName || '',
       (s.currentStatus || '').replace(/_/g, ' '),
     ]);
   });
-  r = tableSection(ss, r, ['Date', 'Ref No', 'Type', 'Customer', 'Status'], recentActivityRows, 'EF4444');
+  r = tableSection(ss, r, ['Date', 'Ref No', 'Type', 'Customer', 'Status'], recentRows, 'EF4444');
 
-  // Footer
   const sfr = ss.addRow(['']);
   ss.mergeCells(`A${sfr.number}:J${sfr.number}`);
-  ss.getCell(`A${sfr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd | Confidential | Auto-Generated Report`;
+  ss.getCell(`A${sfr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd`;
   ss.getCell(`A${sfr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
   ss.getCell(`A${sfr.number}`).alignment = { horizontal: 'center' };
 
-  // =============================================
-  // SEND
-  // =============================================
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename=PAS_Shipments_${new Date().toISOString().split('T')[0]}.xlsx`);
   await workbook.xlsx.write(res);

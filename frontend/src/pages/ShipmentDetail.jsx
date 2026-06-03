@@ -57,9 +57,15 @@ const TRANSPORT_STEPS = [
   {s:'DELIVERED',l:'Delivered',d:'Delivered',i:MapPin},
   {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
 ]
-// ✅ DO RELEASE STEPS — simple 4-step timeline
 const DO_RELEASE_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Created',i:ClipboardList},
+  {s:'DO_COLLECTED',l:'DO Collected',d:'DO Released',i:FileCheck},
+  {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
+]
+// ✅ FF ONLY STEPS
+const FF_ONLY_STEPS = [
+  {s:'ENQUIRY',l:'Enquiry',d:'Created',i:ClipboardList},
+  {s:'AWB_GENERATED',l:'AWB',d:'AWB Generated',i:Barcode},
   {s:'DO_COLLECTED',l:'DO Collected',d:'DO Released',i:FileCheck},
   {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
 ]
@@ -113,7 +119,8 @@ export default function ShipmentDetail() {
   const isCHAOnly = shipment?.shipmentType === 'CHA Only'
   const isCHAExport = isCHAOnly && shipment?.importExport === 'Export'
   const isDORelease = shipment?.shipmentType === 'DO Release'
-  const steps = isDORelease ? DO_RELEASE_STEPS : isTransport ? TRANSPORT_STEPS : isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
+  const isFFOnly = shipment?.shipmentType === 'FF Only'
+  const steps = isFFOnly ? FF_ONLY_STEPS : isDORelease ? DO_RELEASE_STEPS : isTransport ? TRANSPORT_STEPS : isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
   const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
 
   useEffect(() => {
@@ -123,6 +130,7 @@ export default function ShipmentDetail() {
       else if (shipment.shipmentType === 'CHA Only') setActiveTab('cha')
       else if (shipment.shipmentType === 'Transport') setActiveTab('accounts')
       else if (shipment.shipmentType === 'DO Release') setActiveTab('accounts')
+      else if (shipment.shipmentType === 'FF Only') setActiveTab('freight')
       setInitialTabSet(true)
     }
   }, [shipment, initialTabSet, searchParams])
@@ -213,8 +221,8 @@ export default function ShipmentDetail() {
   const ff = shipment.freightForwarding || {}; const cha = shipment.cha || {}; const accounts = shipment.accounts || {}; const Fmt = d => d ? new Date(d).toLocaleDateString() : null
 
   const tabs = [
-    ...(!isCHAOnly && !isTransport && !isDORelease ? [{ k: 'freight', l: 'Freight Forwarding', i: Ship }] : []),
-    ...(!isTransport && !isDORelease ? [{ k: 'cha', l: 'Customs Clearance', i: FileCheck }] : []),
+    { k: 'freight', l: 'Freight Forwarding', i: Ship },
+    ...(!isTransport && !isDORelease && !isFFOnly ? [{ k: 'cha', l: 'Customs Clearance', i: FileCheck }] : []),
     ...(isDORelease ? [{ k: 'do-release', l: 'DO Release', i: ClipboardList }] : []),
     { k: 'accounts', l: 'Accounts', i: Receipt },
     { k: 'history', l: 'Status Timeline', i: Clock }
@@ -229,6 +237,7 @@ export default function ShipmentDetail() {
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent">{shipment.refNo}</h1>
                 <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span>
+                {isFFOnly && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-purple-500 to-indigo-500 border border-purple-400">FF Only</span>}
                 {isDORelease && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-emerald-500 border border-teal-400">DO Release</span>}
                 {isTransport && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-sky-500 to-blue-500 border border-sky-400">Transport</span>}
                 {isCHAOnly && <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white border ${isCHAExport ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-400' : 'bg-gradient-to-r from-emerald-500 to-green-500 border-emerald-400'}`}>{isCHAExport ? 'CHA Export' : 'CHA Import'}</span>}
@@ -254,7 +263,7 @@ export default function ShipmentDetail() {
               </div>
             </div>
           </div>
-          {!isDORelease && (
+          {!isDORelease && !isFFOnly && (
             <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--border-color)]">
               {!isTransport && (
                 <>
@@ -278,7 +287,7 @@ export default function ShipmentDetail() {
       </div>
       
       <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
-        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
+        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isFFOnly ? 'FF Only Workflow' : isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
           {steps.map((step, i) => { const Icon = step.i; const done = i <= cur; const now = i === cur
             return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={step.d}>{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
@@ -341,7 +350,7 @@ export default function ShipmentDetail() {
         </div>}
         
         {/* CUSTOMS TAB */}
-        {activeTab==='cha'&&!isTransport&&!isDORelease&&<div className="space-y-4">
+        {activeTab==='cha'&&!isTransport&&!isDORelease&&!isFFOnly&&<div className="space-y-4">
           <Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => updateMutation.mutate({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
           {!isCHAExport && (<>
             <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
@@ -358,7 +367,9 @@ export default function ShipmentDetail() {
         </div>}
         
         {/* ACCOUNTS TAB */}
-        {activeTab==='accounts'&&<div className="space-y-4"><Section title="Invoice" icon={Banknote}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => updateMutation.mutate({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}
+        {activeTab==='accounts'&&<div className="space-y-4">
+          {isFFOnly && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
+          <Section title="Invoice" icon={Banknote}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => updateMutation.mutate({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}
         
         {/* HISTORY TAB */}
         {activeTab==='history'&&<div><h3 className="text-base font-semibold mb-4 text-indigo-700 dark:text-indigo-300">Status Timeline</h3>{shipment.statusHistory?.length>0?<div className="relative pl-6 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-6">{[...shipment.statusHistory].reverse().map((h,i)=><div key={i} className="relative"><div className="absolute -left-[25px] w-3 h-3 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 border-2 border-white dark:border-slate-800 ring-2 ring-indigo-200 dark:ring-indigo-800 shadow-sm"/><div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50 rounded-lg p-3 ml-2 border border-indigo-100 dark:border-indigo-900"><p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{h.status.replace(/_/g,' ')}</p>{h.remarks&&<p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{h.remarks}</p>}<p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{new Date(h.createdAt).toLocaleString()}</p></div></div>)}</div>:<div className="text-center py-8 text-gray-500 dark:text-gray-400"><Clock size={32} className="mx-auto text-gray-300 dark:text-gray-600 mb-2"/><p className="text-sm">No status changes recorded yet.</p></div>}</div>}

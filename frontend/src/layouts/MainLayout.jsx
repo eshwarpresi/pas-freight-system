@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, Menu, X, 
   Box, Command,
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
-  Ship, FileCheck, Truck, ClipboardList
+  Ship, FileCheck, Truck, ClipboardList, FileText
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -77,12 +77,12 @@ export default function MainLayout({ user }) {
 
   const unreadCount = notifications.filter(n => !n.isRead).length
 
-  // ✅ UPDATED: Added all 5 dashboard links
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: 'All Shipments', shortcut: 'A' },
   ]
 
   const dashboardLinks = [
+    { path: '/ff-only', icon: FileText, label: 'FF Only', color: 'text-purple-500' },
     { path: '/freight', icon: Ship, label: 'Freight', color: 'text-indigo-500' },
     { path: '/cha', icon: FileCheck, label: 'CHA', color: 'text-emerald-500' },
     { path: '/transport', icon: Truck, label: 'Transport', color: 'text-sky-500' },
@@ -144,7 +144,6 @@ export default function MainLayout({ user }) {
         </div>
 
         <nav className="p-3 space-y-0.5">
-          {/* ✅ Main Overview */}
           <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">Overview</p>
           {navItems.map((item) => {
             const Icon = item.icon
@@ -159,7 +158,6 @@ export default function MainLayout({ user }) {
             )
           })}
 
-          {/* ✅ Dashboard Modules */}
           <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Modules</p>
           {dashboardLinks.map((item) => {
             const Icon = item.icon
@@ -175,7 +173,6 @@ export default function MainLayout({ user }) {
             )
           })}
 
-          {/* ✅ New Shipment */}
           <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Actions</p>
           <Link to="/create" onClick={() => setSidebarOpen(false)}
             className="group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]">
