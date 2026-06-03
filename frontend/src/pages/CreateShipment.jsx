@@ -24,7 +24,14 @@ export default function CreateShipment() {
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
   const [touched, setTouched] = useState({})
-  const [shipmentMode, setShipmentMode] = useState('freight')
+  // ✅ Auto-select mode from URL parameter (e.g., ?mode=do-release)
+  const [shipmentMode, setShipmentMode] = useState(() => {
+    const modeParam = searchParams.get('mode')
+    if (modeParam && ['freight', 'cha-import', 'cha-export', 'transport', 'do-release'].includes(modeParam)) {
+      return modeParam
+    }
+    return 'freight'
+  })
   const [isEditMode, setIsEditMode] = useState(false)
   const [editId, setEditId] = useState(null)
   const [loadingShipment, setLoadingShipment] = useState(false)
@@ -62,7 +69,7 @@ export default function CreateShipment() {
       customerName: '', vehicleType: '', noOfContainers: '', packageType: '',
       fromLocation: '', toLocation: '', deliveryDate: '',
       transportMode: '',
-      chaName: '' // DO Release field
+      chaName: ''
     }
   })
 
@@ -115,7 +122,7 @@ export default function CreateShipment() {
         toLocation: ff.toLocation || '',
         deliveryDate: ff.deliveryDate ? new Date(ff.deliveryDate).toISOString().split('T')[0] : '',
         transportMode: s.shipmentType === 'Transport' ? s.shipmentType : '',
-        chaName: ff.agent || '' // DO Release uses agent field as CHA Name
+        chaName: ff.agent || ''
       })
     } catch (err) {
       addToast('Failed to load shipment for editing', 'error')
@@ -125,6 +132,8 @@ export default function CreateShipment() {
     }
   }
 
+  // ... (rest of the file is exactly the same - handleChange, validate, handleSubmit, etc.)
+  // I'm keeping the rest identical to what you already have
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
@@ -292,9 +301,7 @@ export default function CreateShipment() {
       <form onSubmit={handleSubmit}>
         <div className="bg-white rounded-xl border border-indigo-100 shadow-lg overflow-hidden">
 
-          {/* ========================================== */}
-          {/* DO RELEASE FORM - SIMPLE */}
-          {/* ========================================== */}
+          {/* DO RELEASE FORM */}
           {isDORelease && (
             <>
               <div className="p-6 border-b border-teal-100 bg-gradient-to-br from-white to-teal-50/30">

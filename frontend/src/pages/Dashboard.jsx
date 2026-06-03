@@ -49,13 +49,15 @@ function loadStickyFilters() {
   return { search: '', statusFilter: '', shipmentTypeFilter: '', page: 1, perPage: 25 }
 }
 
-export default function Dashboard() {
+// ✅ CHANGED: Accept defaultType prop from route
+export default function Dashboard({ defaultType = '' }) {
   const { addToast } = useToast()
   const socket = useSocket()
   const sticky = loadStickyFilters()
   const [search, setSearch] = useState(sticky.search || '')
   const [statusFilter, setStatusFilter] = useState(sticky.statusFilter || '')
-  const [shipmentTypeFilter, setShipmentTypeFilter] = useState(sticky.shipmentTypeFilter || '')
+  // ✅ CHANGED: Use defaultType as initial value
+  const [shipmentTypeFilter, setShipmentTypeFilter] = useState(sticky.shipmentTypeFilter || defaultType)
   const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState([])
   const [page, setPage] = useState(sticky.page || 1)
@@ -68,6 +70,15 @@ export default function Dashboard() {
 
   const isTransportFilter = shipmentTypeFilter === 'TRANSPORT'
   const isDOReleaseFilter = shipmentTypeFilter === 'DO_RELEASE'
+  const isFreightFilter = shipmentTypeFilter === 'FULL_SHIPMENT'
+  const isCHAFilter = shipmentTypeFilter === 'CHA_ONLY'
+
+  // ✅ CHANGED: Apply defaultType from route on mount
+  useEffect(() => {
+    if (defaultType && shipmentTypeFilter !== defaultType) {
+      setShipmentTypeFilter(defaultType)
+    }
+  }, [defaultType])
 
   const { data: totalStats } = useQuery({
     queryKey: ['shipments-total-stats'],
@@ -250,6 +261,16 @@ export default function Dashboard() {
     { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent' },
   ]
 
+  // ✅ Dynamic title based on filter
+  const getTitle = () => {
+    if (showArchived) return 'Archive'
+    if (isDOReleaseFilter) return 'DO Release'
+    if (isTransportFilter) return 'Transport'
+    if (isCHAFilter) return 'CHA'
+    if (isFreightFilter) return 'Freight'
+    return 'Overview'
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {liveNotification && (
@@ -278,7 +299,7 @@ export default function Dashboard() {
             )}
             <OnlineUsers />
           </div>
-          <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">{showArchived ? 'Archive' : 'Overview'}</h1>
+          <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">{getTitle()}</h1>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
@@ -364,7 +385,6 @@ export default function Dashboard() {
                 <tr className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50">
                   <th className="w-10 pl-4 py-3"><input type="checkbox" checked={selected.length===shipments.length&&shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></th>
                   <th className="text-center px-2 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase w-12">SL No</th>
-                  {/* DO RELEASE COLUMNS */}
                   {isDOReleaseFilter ? (
                     <>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Ref No</th>
@@ -410,7 +430,6 @@ export default function Dashboard() {
                     <tr key={s.id} className="group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
                       <td className="pl-4 py-3"><input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></td>
                       <td className="px-2 py-3 text-center text-xs font-semibold text-[var(--text-muted)]">{slNo}</td>
-                      {/* DO RELEASE ROW DATA */}
                       {isDOReleaseFilter ? (
                         <>
                           <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
@@ -460,7 +479,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* MOBILE CARDS */}
         <div className="md:hidden space-y-3">
           {shipments.map((s, idx) => { 
             const slNo = (page - 1) * perPage + idx + 1; 

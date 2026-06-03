@@ -5,6 +5,10 @@ import api from './lib/api'
 import { io } from 'socket.io-client'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const FreightDashboard = lazy(() => import('./pages/FreightDashboard'))
+const CHADashboard = lazy(() => import('./pages/CHADashboard'))
+const TransportDashboard = lazy(() => import('./pages/TransportDashboard'))
+const DOReleaseDashboard = lazy(() => import('./pages/DOReleaseDashboard'))
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -20,32 +24,23 @@ function PageLoader() {
   )
 }
 
-// Protected route wrapper
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('pas_token')
   if (!token) return <Navigate to="/login" replace />
   return children
 }
 
-// Socket context
 const SocketContext = createContext(null)
 export const useSocket = () => useContext(SocketContext)
 
-// ==========================================
-// PARTICLE EFFECTS COMPONENT
-// ==========================================
 function ParticleEffects() {
   const canvasRef = useRef(null)
-  const [effect, setEffect] = useState('rain') // 'rain', 'snow', 'stars'
+  const [effect, setEffect] = useState('rain')
 
-  // Cycle effects every 30 seconds
   useEffect(() => {
     const effects = ['rain', 'snow', 'stars']
     let i = 0
-    const interval = setInterval(() => {
-      i = (i + 1) % effects.length
-      setEffect(effects[i])
-    }, 30000)
+    const interval = setInterval(() => { i = (i + 1) % effects.length; setEffect(effects[i]) }, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -55,30 +50,22 @@ function ParticleEffects() {
     const ctx = canvas.getContext('2d')
     let animationId
     let particles = []
-    
-    const resize = () => {
-      canvas.width = window.innerWidth
-      canvas.height = window.innerHeight
-    }
+
+    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight }
     resize()
     window.addEventListener('resize', resize)
 
-    // Create particles based on effect
     const createParticles = () => {
       particles = []
       const count = effect === 'stars' ? 150 : effect === 'snow' ? 80 : 100
-      
       for (let i = 0; i < count; i++) {
         particles.push({
-          x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
+          x: Math.random() * canvas.width, y: Math.random() * canvas.height,
           speed: effect === 'snow' ? 0.3 + Math.random() * 1.5 : effect === 'stars' ? 0 : 2 + Math.random() * 4,
           size: effect === 'stars' ? 0.5 + Math.random() * 1.5 : effect === 'snow' ? 2 + Math.random() * 4 : 0.5 + Math.random() * 1.5,
           opacity: effect === 'stars' ? 0.3 + Math.random() * 0.7 : 0.1 + Math.random() * 0.3,
-          wind: effect === 'snow' ? -0.5 + Math.random() * 1 : 0,
-          angle: Math.random() * Math.PI * 2,
-          twinkleSpeed: 0.01 + Math.random() * 0.03,
-          length: effect === 'rain' ? 10 + Math.random() * 15 : 0
+          wind: effect === 'snow' ? -0.5 + Math.random() * 1 : 0, angle: Math.random() * Math.PI * 2,
+          twinkleSpeed: 0.01 + Math.random() * 0.03, length: effect === 'rain' ? 10 + Math.random() * 15 : 0
         })
       }
     }
@@ -86,73 +73,33 @@ function ParticleEffects() {
 
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-
       particles.forEach(p => {
         ctx.beginPath()
-
         if (effect === 'rain') {
-          // Rain drops - thin lines
-          ctx.strokeStyle = `rgba(174, 194, 224, ${p.opacity})`
-          ctx.lineWidth = p.size
-          ctx.moveTo(p.x, p.y)
-          ctx.lineTo(p.x + p.wind, p.y + p.length)
-          ctx.stroke()
-
-          p.y += p.speed * 3
-          p.x += p.wind * 0.5
-          if (p.y > canvas.height) {
-            p.y = -10
-            p.x = Math.random() * canvas.width
-          }
+          ctx.strokeStyle = `rgba(174, 194, 224, ${p.opacity})`; ctx.lineWidth = p.size
+          ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.wind, p.y + p.length); ctx.stroke()
+          p.y += p.speed * 3; p.x += p.wind * 0.5
+          if (p.y > canvas.height) { p.y = -10; p.x = Math.random() * canvas.width }
         } else if (effect === 'snow') {
-          // Snowflakes - circles with wobble
-          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-          ctx.fill()
-
-          p.y += p.speed
-          p.x += p.wind + Math.sin(p.y * 0.01) * 0.5
-          if (p.y > canvas.height + 10) {
-            p.y = -10
-            p.x = Math.random() * canvas.width
-          }
-          if (p.x > canvas.width + 10) p.x = -10
-          if (p.x < -10) p.x = canvas.width + 10
+          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`; ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill()
+          p.y += p.speed; p.x += p.wind + Math.sin(p.y * 0.01) * 0.5
+          if (p.y > canvas.height + 10) { p.y = -10; p.x = Math.random() * canvas.width }
+          if (p.x > canvas.width + 10) p.x = -10; if (p.x < -10) p.x = canvas.width + 10
         } else if (effect === 'stars') {
-          // Twinkling stars
           const twinkle = 0.5 + Math.sin(p.angle) * 0.5
-          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity * twinkle})`
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-          ctx.fill()
-
-          // Add glow
-          ctx.beginPath()
-          ctx.fillStyle = `rgba(168, 185, 255, ${p.opacity * twinkle * 0.3})`
-          ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2)
-          ctx.fill()
-
+          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity * twinkle})`; ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill()
+          ctx.beginPath(); ctx.fillStyle = `rgba(168, 185, 255, ${p.opacity * twinkle * 0.3})`
+          ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2); ctx.fill()
           p.angle += p.twinkleSpeed
         }
       })
-
       animationId = requestAnimationFrame(animate)
     }
-
     animate()
-
-    return () => {
-      cancelAnimationFrame(animationId)
-      window.removeEventListener('resize', resize)
-    }
+    return () => { cancelAnimationFrame(animationId); window.removeEventListener('resize', resize) }
   }, [effect])
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 pointer-events-none z-0"
-      style={{ opacity: 1 }}
-    />
-  )
+  return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" style={{ opacity: 1 }} />
 }
 
 function App() {
@@ -163,42 +110,18 @@ function App() {
   useEffect(() => {
     const token = localStorage.getItem('pas_token')
     if (token) {
-      api.get('/auth/me')
-        .then(res => setUser(res.data.data))
-        .catch(() => localStorage.removeItem('pas_token'))
-        .finally(() => setLoading(false))
-    } else {
-      setLoading(false)
-    }
+      api.get('/auth/me').then(res => setUser(res.data.data)).catch(() => localStorage.removeItem('pas_token')).finally(() => setLoading(false))
+    } else { setLoading(false) }
   }, [])
 
   useEffect(() => {
     if (user) {
       const SOCKET_URL = import.meta.env.VITE_API_URL || 'https://pas-freight-api.onrender.com'
-      const newSocket = io(SOCKET_URL, {
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionDelay: 1000,
-        reconnectionAttempts: 10
-      })
-
-      newSocket.on('connect', () => {
-        console.log('🔌 Socket connected:', newSocket.id)
-        newSocket.emit('user:join', {
-          name: user.name || user.email,
-          email: user.email
-        })
-      })
-
-      newSocket.on('connect_error', (err) => {
-        console.log('Socket connection error:', err.message)
-      })
-
+      const newSocket = io(SOCKET_URL, { transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 })
+      newSocket.on('connect', () => { console.log('🔌 Socket connected:', newSocket.id); newSocket.emit('user:join', { name: user.name || user.email, email: user.email }) })
+      newSocket.on('connect_error', (err) => { console.log('Socket connection error:', err.message) })
       setSocket(newSocket)
-
-      return () => {
-        newSocket.disconnect()
-      }
+      return () => { newSocket.disconnect() }
     }
   }, [user])
 
@@ -212,12 +135,13 @@ function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage setUser={setUser} />} />
-              <Route path="/" element={
-                <ProtectedRoute>
-                  <Layout user={user} />
-                </ProtectedRoute>
-              }>
-                <Route index element={<Dashboard />} />
+              <Route path="/" element={<ProtectedRoute><Layout user={user} /></ProtectedRoute>}>
+                {/* ✅ 5 Separate Dashboards - each with unique stats & columns */}
+                <Route index element={<Dashboard defaultType="" />} />
+                <Route path="freight" element={<FreightDashboard />} />
+                <Route path="cha" element={<CHADashboard />} />
+                <Route path="transport" element={<TransportDashboard />} />
+                <Route path="do-release" element={<DOReleaseDashboard />} />
                 <Route path="shipment/:id" element={<ShipmentDetail />} />
                 <Route path="create" element={<CreateShipment />} />
               </Route>
