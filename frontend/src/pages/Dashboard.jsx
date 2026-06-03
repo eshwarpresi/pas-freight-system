@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
@@ -49,14 +49,13 @@ function loadStickyFilters() {
   return { search: '', statusFilter: '', shipmentTypeFilter: '', page: 1, perPage: 25 }
 }
 
-// ✅ CHANGED: Accept defaultType prop from route
 export default function Dashboard({ defaultType = '' }) {
   const { addToast } = useToast()
   const socket = useSocket()
+  const navigate = useNavigate()
   const sticky = loadStickyFilters()
   const [search, setSearch] = useState(sticky.search || '')
   const [statusFilter, setStatusFilter] = useState(sticky.statusFilter || '')
-  // ✅ CHANGED: Use defaultType as initial value
   const [shipmentTypeFilter, setShipmentTypeFilter] = useState(sticky.shipmentTypeFilter || defaultType)
   const [showArchived, setShowArchived] = useState(false)
   const [selected, setSelected] = useState([])
@@ -73,7 +72,6 @@ export default function Dashboard({ defaultType = '' }) {
   const isFreightFilter = shipmentTypeFilter === 'FULL_SHIPMENT'
   const isCHAFilter = shipmentTypeFilter === 'CHA_ONLY'
 
-  // ✅ CHANGED: Apply defaultType from route on mount
   useEffect(() => {
     if (defaultType && shipmentTypeFilter !== defaultType) {
       setShipmentTypeFilter(defaultType)
@@ -261,7 +259,6 @@ export default function Dashboard({ defaultType = '' }) {
     { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent' },
   ]
 
-  // ✅ Dynamic title based on filter
   const getTitle = () => {
     if (showArchived) return 'Archive'
     if (isDOReleaseFilter) return 'DO Release'
@@ -270,6 +267,9 @@ export default function Dashboard({ defaultType = '' }) {
     if (isFreightFilter) return 'Freight'
     return 'Overview'
   }
+
+  // ✅ Current route path for active tab
+  const currentPath = window.location.pathname
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -302,12 +302,13 @@ export default function Dashboard({ defaultType = '' }) {
           <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">{getTitle()}</h1>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* ✅ Navigation buttons to separate dashboards */}
           <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
-            <button onClick={()=>updateShipmentTypeFilter('')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${!shipmentTypeFilter?'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm':'text-[var(--text-secondary)]'}`}>All</button>
-            <button onClick={()=>updateShipmentTypeFilter('FULL_SHIPMENT')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${shipmentTypeFilter==='FULL_SHIPMENT'?'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm':'text-[var(--text-secondary)]'}`}>Freight</button>
-            <button onClick={()=>updateShipmentTypeFilter('CHA_ONLY')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='CHA_ONLY'?'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm':'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</button>
-            <button onClick={()=>updateShipmentTypeFilter('TRANSPORT')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='TRANSPORT'?'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm':'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</button>
-            <button onClick={()=>updateShipmentTypeFilter('DO_RELEASE')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${shipmentTypeFilter==='DO_RELEASE'?'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm':'text-[var(--text-secondary)]'}`}><ClipboardList size={12}/>DO Release</button>
+            <Link to="/" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>All</Link>
+            <Link to="/freight" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/freight' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Freight</Link>
+            <Link to="/cha" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/cha' ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</Link>
+            <Link to="/transport" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/transport' ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</Link>
+            <Link to="/do-release" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/do-release' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><ClipboardList size={12}/>DO Release</Link>
           </div>
           <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
             <button onClick={()=>toggleArchived(false)} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all ${!showArchived?'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm':'text-[var(--text-secondary)]'}`}>Active</button>
@@ -317,6 +318,7 @@ export default function Dashboard({ defaultType = '' }) {
         </div>
       </div>
 
+      {/* Rest of the component remains EXACTLY the same */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {statCards.map((stat,i)=>{
           const Icon=stat.icon;
