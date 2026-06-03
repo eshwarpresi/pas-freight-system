@@ -66,10 +66,12 @@ const exportShipments = async (req, res) => {
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
 
-// GET ALL — ✅ Added DO_RELEASE filter
+// GET ALL — ✅ Added DO_RELEASE filter with debug logging
 const getAllShipments = async (req, res) => {
   try {
     const { status, search, isArchived, shipmentType, page = 1, limit = 25 } = req.query;
+    console.log('🔍 REQUEST:', { shipmentType, search, isArchived, page, limit });
+    
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
     const where = { isArchived: isArchived === 'true' };
     if (status) where.currentStatus = status;
@@ -80,10 +82,19 @@ const getAllShipments = async (req, res) => {
       else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release'] } };
     }
     if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { freightForwarding: { mawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }, { freightForwarding: { customerName: { contains: search } } }];
+    
+    console.log('🔍 WHERE:', JSON.stringify(where));
+    
     const [shipments, total] = await Promise.all([
       prisma.shipment.findMany({ where, select: { id: true, refNo: true, currentStatus: true, shipmentStage: true, shipmentType: true, importExport: true, createdByName: true, createdAt: true, freightForwarding: { select: { consigneeName: true, hawb: true, mawb: true, agent: true, customerName: true, transportMode: true, weight: true, fromLocation: true, toLocation: true, deliveryDate: true } }, cha: { select: { boeNo: true, sbNo: true } } }, orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l }),
       prisma.shipment.count({ where })
     ]);
+    
+    console.log('🔍 RESULT total:', total, 'data length:', shipments.length);
+    if (shipments.length > 0) {
+      console.log('🔍 First shipment:', shipments[0].refNo, 'type:', shipments[0].shipmentType);
+    }
+    
     res.json({ status: 'success', data: shipments, pagination: { total, page: p, limit: l, totalPages: Math.ceil(total/l) } });
   } catch (error) { console.error('Error fetching:', error); res.status(500).json({ status: 'error', message: 'Failed to fetch' }); }
 };
