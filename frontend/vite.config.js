@@ -15,6 +15,12 @@ export default defineConfig({
       }
     }
   ],
+  optimizeDeps: {
+    include: ['jspdf', 'html2canvas'],
+    esbuild: {
+      loader: 'jsx',
+    },
+  },
   build: {
     minify: 'esbuild',
     sourcemap: false,
@@ -34,6 +40,9 @@ export default defineConfig({
           if (id.includes('node_modules/exceljs')) {
             return 'excel';
           }
+          if (id.includes('node_modules/jspdf') || id.includes('node_modules/html2canvas')) {
+            return 'pdf';
+          }
         }
       }
     },
@@ -42,6 +51,6 @@ export default defineConfig({
     assetsInlineLimit: 4096,
   },
   server: {
-    hmr: { overlay: true }
+    hmr: { overlay: false }
   },
 })
