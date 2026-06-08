@@ -66,7 +66,7 @@ const exportShipments = async (req, res) => {
   } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
 };
 
-// GET ALL — ✅ All shipment type filters
+// GET ALL — ✅ Added sellingRate, cbm, grossWeight for analytics
 const getAllShipments = async (req, res) => {
   try {
     const { status, search, isArchived, shipmentType, page = 1, limit = 25 } = req.query;
@@ -87,7 +87,25 @@ const getAllShipments = async (req, res) => {
     console.log('🔍 WHERE:', JSON.stringify(where));
     
     const [shipments, total] = await Promise.all([
-      prisma.shipment.findMany({ where, select: { id: true, refNo: true, currentStatus: true, shipmentStage: true, shipmentType: true, importExport: true, createdByName: true, createdAt: true, freightForwarding: { select: { consigneeName: true, hawb: true, mawb: true, agent: true, customerName: true, transportMode: true, weight: true, fromLocation: true, toLocation: true, deliveryDate: true } }, cha: { select: { boeNo: true, sbNo: true } } }, orderBy: { createdAt: 'desc' }, skip: (p-1)*l, take: l }),
+      prisma.shipment.findMany({ 
+        where, 
+        select: { 
+          id: true, refNo: true, currentStatus: true, shipmentStage: true, 
+          shipmentType: true, importExport: true, createdByName: true, createdAt: true, 
+          freightForwarding: { 
+            select: { 
+              consigneeName: true, hawb: true, mawb: true, agent: true, 
+              customerName: true, transportMode: true, weight: true, 
+              grossWeight: true, cbm: true, sellingRate: true, 
+              fromLocation: true, toLocation: true, deliveryDate: true 
+            } 
+          }, 
+          cha: { select: { boeNo: true, sbNo: true } } 
+        }, 
+        orderBy: { createdAt: 'desc' }, 
+        skip: (p-1)*l, 
+        take: l 
+      }),
       prisma.shipment.count({ where })
     ]);
     

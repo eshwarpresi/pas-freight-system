@@ -10,6 +10,7 @@ const CHADashboard = lazy(() => import('./pages/CHADashboard'))
 const TransportDashboard = lazy(() => import('./pages/TransportDashboard'))
 const DOReleaseDashboard = lazy(() => import('./pages/DOReleaseDashboard'))
 const FFOnlyDashboard = lazy(() => import('./pages/FFOnlyDashboard'))
+const Analytics = lazy(() => import('./pages/Analytics'))
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -137,13 +138,14 @@ function App() {
             <Routes>
               <Route path="/login" element={<LoginPage setUser={setUser} />} />
               <Route path="/" element={<ProtectedRoute><Layout user={user} /></ProtectedRoute>}>
-                {/* ✅ 6 Separate Dashboards */}
+                {/* ✅ 6 Separate Dashboards + Analytics */}
                 <Route index element={<Dashboard defaultType="" />} />
                 <Route path="freight" element={<FreightDashboard />} />
                 <Route path="cha" element={<CHADashboard />} />
                 <Route path="transport" element={<TransportDashboard />} />
                 <Route path="do-release" element={<DOReleaseDashboard />} />
                 <Route path="ff-only" element={<FFOnlyDashboard />} />
+                <Route path="analytics" element={<Analytics />} />
                 <Route path="shipment/:id" element={<ShipmentDetail />} />
                 <Route path="create" element={<CreateShipment />} />
               </Route>

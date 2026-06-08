@@ -4,7 +4,8 @@ import {
   LayoutDashboard, Package, Menu, X, 
   Box, Command,
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
-  Ship, FileCheck, Truck, ClipboardList, FileText
+  Ship, FileCheck, Truck, ClipboardList, FileText,
+  BarChart3
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -79,6 +80,7 @@ export default function MainLayout({ user }) {
 
   const navItems = [
     { path: '/', icon: LayoutDashboard, label: 'All Shipments', shortcut: 'A' },
+    { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
   ]
 
   const dashboardLinks = [
@@ -154,6 +156,7 @@ export default function MainLayout({ user }) {
                   isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
                 }`}>
                 <div className="flex items-center gap-3"><Icon size={17} /><span>{item.label}</span></div>
+                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
               </Link>
             )
           })}
