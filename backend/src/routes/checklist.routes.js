@@ -1,14 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const pdfParseLib = require('pdf-parse');
-const pdfParse = pdfParseLib.default || pdfParseLib;
 
-// Use memory storage - no disk writes needed
+// Use memory storage
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: function(req, file, cb) {
     if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
       cb(null, true);
@@ -18,20 +16,35 @@ const upload = multer({
   }
 });
 
-// POST /api/checklist/scan - Upload and scan PDF checklist
+// POST /api/checklist/scan
 router.post('/scan', upload.single('checklist'), async function(req, res) {
   try {
     if (!req.file) {
       return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
     }
 
-    // Extract text from PDF directly from memory buffer
-    var pdfData = await pdfParse(req.file.buffer);
-    var text = pdfData.text;
+    // Load pdfjs-dist dynamically
+    var pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+    
+    // Convert buffer to Uint8Array
+    var uint8Array = new Uint8Array(req.file.buffer);
+    
+    // Load the PDF document
+    var loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+    var pdfDocument = await loadingTask.promise;
+    
+    var text = '';
+    
+    // Extract text from all pages
+    for (var pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      var page = await pdfDocument.getPage(pageNum);
+      var content = await page.getTextContent();
+      var pageText = content.items.map(function(item) { return item.str; }).join(' ');
+      text += pageText + '\n';
+    }
     
     console.log('📄 PDF Text Extracted (' + text.length + ' chars):', text.substring(0, 200) + '...');
 
-    // Parse extracted text for checklist fields
     var parsed = parseChecklistText(text);
 
     res.json({
@@ -49,46 +62,17 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
   }
 });
 
-// Parse checklist text and extract fields
 function parseChecklistText(text) {
   var result = {
-    referenceNumber: '',
-    shipmentMode: '',
-    importerName: '',
-    exporterName: '',
-    supplierName: '',
-    location: '',
-    jobOrderNo: '',
-    jobOrderDate: '',
-    boeSbNo: '',
-    boeSbDate: '',
-    mawbMblNo: '',
-    mawbMblDate: '',
-    hawbHblNo: '',
-    hawbHblDate: '',
-    noOfPackages: '',
-    grossWeight: '',
-    igmNo: '',
-    igmDate: '',
-    portOfDischarge: '',
-    portOfDestination: '',
-    cargoArrivalNotice: '',
-    cargoArrivalDate: '',
-    deliveryOrderDate: '',
-    occDate: '',
-    gatePassDate: '',
-    remarks: '',
-    invoiceNo: '',
-    invoiceDate: '',
-    agentDebitNote: '',
-    billingCurrency: '',
-    billNo: '',
-    billDate: '',
-    billTo: '',
-    billToDate: '',
-    docketNo: '',
-    docketDate: '',
-    additionalRemarks: ''
+    referenceNumber: '', shipmentMode: '', importerName: '', exporterName: '',
+    supplierName: '', location: '', jobOrderNo: '', jobOrderDate: '',
+    boeSbNo: '', boeSbDate: '', mawbMblNo: '', mawbMblDate: '',
+    hawbHblNo: '', hawbHblDate: '', noOfPackages: '', grossWeight: '',
+    igmNo: '', igmDate: '', portOfDischarge: '', portOfDestination: '',
+    cargoArrivalNotice: '', cargoArrivalDate: '', deliveryOrderDate: '',
+    occDate: '', gatePassDate: '', remarks: '', invoiceNo: '', invoiceDate: '',
+    agentDebitNote: '', billingCurrency: '', billNo: '', billDate: '',
+    billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
   var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
@@ -153,28 +137,6 @@ function parseChecklistText(text) {
   if (!result.exporterName) {
     result.exporterName = findAfter(['shipper:', 'exporter:', 'seller:', 'from:'], lines);
   }
-
-  var datePattern = /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{2,4}/i;
-  
-  function tryFindDate(label) {
-    for (var i = 0; i < lines.length; i++) {
-      if (lines[i].toLowerCase().indexOf(label) >= 0) {
-        var match = lines[i].match(datePattern);
-        if (match) return match[0];
-        if (i + 1 < lines.length) {
-          match = lines[i + 1].match(datePattern);
-          if (match) return match[0];
-        }
-      }
-    }
-    return '';
-  }
-
-  if (!result.jobOrderDate) result.jobOrderDate = tryFindDate('job order');
-  if (!result.boeSbDate) result.boeSbDate = tryFindDate('boe');
-  if (!result.mawbMblDate) result.mawbMblDate = tryFindDate('mawb');
-  if (!result.cargoArrivalDate) result.cargoArrivalDate = tryFindDate('arrival');
-  if (!result.invoiceDate) result.invoiceDate = tryFindDate('invoice');
 
   return result;
 }
