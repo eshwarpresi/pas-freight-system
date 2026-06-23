@@ -59,12 +59,9 @@ function parseChecklistText(text) {
 
   var cleanText = text.replace(/\s+/g, ' ').trim();
 
-  // B.E No - FIXED: Get the actual BE number, not "Printed"
-  var beMatch = cleanText.match(/B\.?E\s*No[,\s]*Date\s*:\s*(\d+)/i);
-  if (beMatch) result.boeSbNo = beMatch[1];
-  // Also try to find BE date
-  var beDateMatch = cleanText.match(/B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (beDateMatch) result.boeSbDate = beDateMatch[1];
+  // File No / Reference Number
+  var refMatch = cleanText.match(/File\s*No\s*:\s*([^\s,]+)/i);
+  if (refMatch) result.referenceNumber = refMatch[1];
 
   // Job No & Date
   var jobMatch = cleanText.match(/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)\s*[&]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
@@ -77,19 +74,25 @@ function parseChecklistText(text) {
   var modeMatch = cleanText.match(/Transport\s*Mode\s*:\s*(\w+)/i);
   if (modeMatch) result.shipmentMode = modeMatch[1];
 
-  // Importer Name - FIXED: Better regex to capture full company name
-  var importerMatch = cleanText.match(/Importer\s*Details\s*:[\s\w]*(?:PAN:[\s\w]*)?([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP|INTEGRATORS|SOLUTIONS|TECHNOLOGIES|ENTERPRISES)[A-Z\s]*?)(?=\s{2,}|No\.|\d{3}|CHENNAI|TAMIL)/i);
-  if (importerMatch && importerMatch[1]) {
-    result.importerName = importerMatch[1].trim().replace(/\s+/g, ' ');
-  }
-
-  // File No / Reference Number
-  var refMatch = cleanText.match(/File\s*No\s*:\s*([^\s,]+)/i);
-  if (refMatch) result.referenceNumber = refMatch[1];
-
   // Location - Port of Filing
   var locMatch = cleanText.match(/Port\s*Of\s*Filing\s*:\s*([^,]+)/i);
   if (locMatch) result.location = locMatch[1].trim();
+
+  // Importer Name - Matches company name before # in address
+  var impMatch = cleanText.match(/(?:PAS FREIGHT SERVICES\s+)?([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP|INTEGRATORS|SOLUTIONS|TECHNOLOGIES|ENTERPRISES|MARKETING|TRADING|INDUSTRIES)[A-Z\s]*?)\s+#/i);
+  if (impMatch && impMatch[1]) {
+    result.importerName = impMatch[1].trim().replace(/\s+/g, ' ');
+  }
+
+  // Agent / CHA Name
+  var chaMatch = cleanText.match(/(PAS FREIGHT SERVICES)/i);
+  if (chaMatch) result.agentDebitNote = chaMatch[1].trim();
+
+  // Supplier Name
+  var suppMatch = cleanText.match(/SUPPLIER\s*DETAILS[\s-]+(?:Inv\.?Sl\.?No\s*:\s*\d+\s*)?([A-Z][A-Z\s]{3,}(?:PTE|PVT|LTD|INC|CORP|LIMITED|TRADING|ENTERPRISE)[A-Z\s]*?)(?=\s+\d|\s{2,})/i);
+  if (suppMatch && suppMatch[1]) {
+    result.supplierName = suppMatch[1].trim().replace(/\s+/g, ' ');
+  }
 
   // MBL/MAWB
   var mblMatch = cleanText.match(/MBL\/\s*MAWB\s*:\s*(\d+)/i);
@@ -119,7 +122,7 @@ function parseChecklistText(text) {
   var pdMatch = cleanText.match(/Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i);
   if (pdMatch) result.portOfDestination = pdMatch[1];
 
-  // Country Origin
+  // Country Origin → Exporter
   var coMatch = cleanText.match(/Country\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i);
   if (coMatch && !result.exporterName) result.exporterName = coMatch[1];
 
@@ -131,21 +134,9 @@ function parseChecklistText(text) {
   var invDateMatch = cleanText.match(/Inv\.?\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   if (invDateMatch) result.invoiceDate = invDateMatch[1];
 
-  // Invoice Value / Currency
+  // Invoice Value / Billing Currency
   var invValMatch = cleanText.match(/Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i);
   if (invValMatch) result.billingCurrency = invValMatch[1];
-
-  // Supplier Details - FIXED: Cleaner extraction
-  var supplierMatch = cleanText.match(/SUPPLIER\s*DETAILS[\s\w]*?(?:Inv\.?Sl\.?No\s*:\s*\d+\s*)?([A-Z][A-Z\s]{5,}(?:PTE|PVT|LTD|INC|CORP|LIMITED)[A-Z\s]*?)(?=\s{2,}\d|\s{2,}[A-Z]{3})/i);
-  if (supplierMatch && supplierMatch[1]) {
-    result.supplierName = supplierMatch[1].trim().replace(/\s+/g, ' ');
-  }
-
-  // CHA Details / Agent - FIXED: Get CHA name properly
-  var chaMatch = cleanText.match(/CHA\s*Details\s*:[\s\d]*[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d{1}\s*(?:Br\.Slno\s*:\d+\s*)?(?:PAN:[A-Z0-9]+\s*)?([A-Z][A-Z\s]{5,}(?:SERVICES|FREIGHT|CARGO|LOGISTICS|SHIPPING)[A-Z\s]*?)(?=\s{2,}|RESURGENT)/i);
-  if (chaMatch && chaMatch[1]) {
-    result.agentDebitNote = chaMatch[1].trim().replace(/\s+/g, ' ');
-  }
 
   return result;
 }
