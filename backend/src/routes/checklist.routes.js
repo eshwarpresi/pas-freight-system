@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 
-// Use memory storage
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
@@ -16,49 +15,33 @@ const upload = multer({
   }
 });
 
-// POST /api/checklist/scan
 router.post('/scan', upload.single('checklist'), async function(req, res) {
   try {
     if (!req.file) {
       return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
     }
 
-    // Load pdfjs-dist
-    var pdfjsLib = require('pdfjs-dist');
-    
-    // Convert buffer to Uint8Array
+    // Dynamic import for ESM module
+    var pdfjsLib = await import('pdfjs-dist');
     var uint8Array = new Uint8Array(req.file.buffer);
-    
-    // Load the PDF document
     var loadingTask = pdfjsLib.getDocument({ data: uint8Array });
     var pdfDocument = await loadingTask.promise;
-    
     var text = '';
-    
-    // Extract text from all pages
+
     for (var pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
       var page = await pdfDocument.getPage(pageNum);
       var content = await page.getTextContent();
       var pageText = content.items.map(function(item) { return item.str; }).join(' ');
       text += pageText + '\n';
     }
-    
-    console.log('📄 PDF Text Extracted (' + text.length + ' chars):', text.substring(0, 200) + '...');
 
+    console.log('📄 PDF Text Extracted (' + text.length + ' chars)');
     var parsed = parseChecklistText(text);
 
-    res.json({
-      status: 'success',
-      data: parsed,
-      rawText: text.substring(0, 2000)
-    });
-
+    res.json({ status: 'success', data: parsed, rawText: text.substring(0, 2000) });
   } catch (error) {
     console.error('PDF scan error:', error);
-    res.status(500).json({ 
-      status: 'error', 
-      message: 'Failed to scan PDF: ' + error.message 
-    });
+    res.status(500).json({ status: 'error', message: 'Failed to scan PDF: ' + error.message });
   }
 });
 
