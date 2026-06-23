@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
 const pdfParse = require('pdf-parse');
 
-// Configure multer for PDF upload
+// Use memory storage - no disk writes needed
+const storage = multer.memoryStorage();
 const upload = multer({
-  dest: 'uploads/',
+  storage: storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
   fileFilter: function(req, file, cb) {
     if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
@@ -20,39 +19,28 @@ const upload = multer({
 
 // POST /api/checklist/scan - Upload and scan PDF checklist
 router.post('/scan', upload.single('checklist'), async function(req, res) {
-  var filePath = '';
   try {
     if (!req.file) {
       return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
     }
 
-    filePath = req.file.path;
-    var dataBuffer = fs.readFileSync(filePath);
-    
-    // Extract text from PDF
-    var pdfData = await pdfParse(dataBuffer);
+    // Extract text from PDF directly from memory buffer
+    var pdfData = await pdfParse(req.file.buffer);
     var text = pdfData.text;
     
-    console.log('📄 PDF Text Extracted:', text.substring(0, 500) + '...');
+    console.log('📄 PDF Text Extracted (' + text.length + ' chars):', text.substring(0, 200) + '...');
 
     // Parse extracted text for checklist fields
     var parsed = parseChecklistText(text);
-    
-    // Clean up uploaded file
-    fs.unlinkSync(filePath);
 
     res.json({
       status: 'success',
       data: parsed,
-      rawText: text.substring(0, 2000) // Send first 2000 chars for debugging
+      rawText: text.substring(0, 2000)
     });
 
   } catch (error) {
     console.error('PDF scan error:', error);
-    // Clean up file if exists
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
     res.status(500).json({ 
       status: 'error', 
       message: 'Failed to scan PDF: ' + error.message 
@@ -103,9 +91,7 @@ function parseChecklistText(text) {
   };
 
   var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
-  var fullText = text.toLowerCase();
 
-  // Helper: find value after a keyword
   function findAfter(keywords, lines) {
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].toLowerCase().replace(/[\s:]+/g, ' ').trim();
@@ -114,13 +100,10 @@ function parseChecklistText(text) {
         var idx = line.indexOf(kw);
         if (idx >= 0) {
           var val = lines[i].substring(idx + kw.length).replace(/^[\s:.-]+/, '').trim();
-          // If value is empty, try next line
           if (!val && i + 1 < lines.length) {
             val = lines[i + 1].trim();
-            // If next line is just a label, skip it
             if (val.length > 50 || /^[a-z\s]+$/i.test(val)) val = '';
           }
-          // Clean up value
           val = val.replace(/^[:.\-\s]+/, '').trim();
           if (val && val.length < 100) return val;
         }
@@ -129,7 +112,6 @@ function parseChecklistText(text) {
     return '';
   }
 
-  // Extract each field
   result.referenceNumber = findAfter(['reference number', 'reference no', 'ref no', 'ref:', 'reference #'], lines);
   result.shipmentMode = findAfter(['shipment mode', 'mode of shipment', 'transport mode', 'mode:'], lines);
   result.importerName = findAfter(['importer name', 'importer:', 'consignee name', 'consignee:', 'buyer:'], lines);
@@ -167,15 +149,12 @@ function parseChecklistText(text) {
   result.docketDate = findAfter(['docket date'], lines);
   result.remarks = findAfter(['remarks', 'notes:', 'comments:'], lines);
 
-  // If no separate exporter found, try to find it near the importer
   if (!result.exporterName) {
     result.exporterName = findAfter(['shipper:', 'exporter:', 'seller:', 'from:'], lines);
   }
 
-  // Try to detect dates in common formats
   var datePattern = /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{2,4}/i;
   
-  // If dates are empty but there's a number field, try to find dates nearby
   function tryFindDate(label) {
     for (var i = 0; i < lines.length; i++) {
       if (lines[i].toLowerCase().indexOf(label) >= 0) {
@@ -190,7 +169,6 @@ function parseChecklistText(text) {
     return '';
   }
 
-  // Fill empty dates by looking specifically for date patterns
   if (!result.jobOrderDate) result.jobOrderDate = tryFindDate('job order');
   if (!result.boeSbDate) result.boeSbDate = tryFindDate('boe');
   if (!result.mawbMblDate) result.mawbMblDate = tryFindDate('mawb');
