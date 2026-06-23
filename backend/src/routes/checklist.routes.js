@@ -75,39 +75,39 @@ function parseChecklistText(text) {
   m = t.match(/Port\s*Of\s*Filing\s*:\s*([^,]+)/i);
   if (m) result.location = m[1].trim();
 
-  // B.E Date (Printed On date since no actual BE number in this PDF)
+  // B.E Date
   m = t.match(/B\.?E\s*No[,\s]*Date\s*:\s*Printed\s*On\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   if (m) result.boeSbDate = m[1];
 
-  // Importer Name - company before # in address
-  m = t.match(/([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP|INTEGRATORS|SOLUTIONS|TECHNOLOGIES|ENTERPRISES|MARKETING|TRADING|INDUSTRIES)[A-Z\s]*?)\s+#/i);
-  if (m) result.importerName = m[1].trim().replace(/\s+/g, ' ');
-
-  // Agent / CHA Name
+  // Agent / CHA Name - always PAS FREIGHT SERVICES in these checklists
   m = t.match(/(PAS FREIGHT SERVICES)/i);
   if (m) result.agentDebitNote = m[1].trim();
 
-  // Supplier Name - after Inv.SlNo
+  // Importer Name - company before # symbol, EXCLUDING PAS FREIGHT SERVICES
+  m = t.match(/PAS FREIGHT SERVICES\s+([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP|INTEGRATORS|SOLUTIONS|TECHNOLOGIES|ENTERPRISES|MARKETING|TRADING|INDUSTRIES)[A-Z\s]*?)\s+#/i);
+  if (m && m[1]) {
+    result.importerName = m[1].trim().replace(/\s+/g, ' ');
+  }
+
+  // Supplier Name - company name after Inv.SlNo before address numbers
   var si = t.indexOf('SUPPLIER DETAILS');
   if (si > -1) {
     var as = t.substring(si);
-    m = as.match(/Inv\.?Sl\.?No\s*:\s*\d+\s+([A-Z][A-Z\s]+(?:PTE|PVT|LTD|INC|CORP|LIMITED|SERVICES)[A-Z\s]*?)\s+\d+/i);
-    if (m) result.supplierName = m[1].trim().replace(/\s+/g, ' ');
+    m = as.match(/Inv\.?Sl\.?No\s*:\s*\d+\s+([A-Z][A-Z\s]+(?:PTE|PVT|LTD|INC|CORP|LIMITED|SERVICES)[A-Z\s]*?)\s+\d+\s+[A-Z]/i);
+    if (m && m[1]) {
+      result.supplierName = m[1].trim().replace(/\s+/g, ' ');
+    }
   }
 
-  // MBL/MAWB Number
+  // MBL/MAWB
   m = t.match(/MBL\/\s*MAWB\s*:\s*(\d+)/i);
   if (m) result.mawbMblNo = m[1];
-
-  // MBL/MAWB Date
   m = t.match(/MBL\/\s*MAWB\s*:[\s\d]+\s*(?:HBL\/\s*HAWB\s*:[\s\w]+\s*)?Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   if (m) result.mawbMblDate = m[1];
 
-  // HBL/HAWB Number
+  // HBL/HAWB
   m = t.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
   if (m) result.hawbHblNo = m[1];
-
-  // HBL/HAWB Date
   m = t.match(/HBL\/\s*HAWB\s*:[\s\w]+\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   if (m) result.hawbHblDate = m[1];
 
@@ -123,13 +123,13 @@ function parseChecklistText(text) {
   m = t.match(/Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i);
   if (m) result.portOfDischarge = m[1];
 
-  // Port Destination (Port Shipment)
+  // Port Destination
   m = t.match(/Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i);
   if (m) result.portOfDestination = m[1];
 
   // Country Origin → Exporter
   m = t.match(/Country\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i);
-  if (m && !result.exporterName) result.exporterName = m[1];
+  if (m) result.exporterName = m[1];
 
   // Invoice No
   m = t.match(/Inv\.?\s*No\s*:\s*(\d+)/i);
@@ -143,19 +143,19 @@ function parseChecklistText(text) {
   m = t.match(/Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i);
   if (m) result.billingCurrency = m[1];
 
-  // Marks & Nos → Remarks
-  m = t.match(/Marks\s*[&]?\s*Nos\s*:\s*([^\s-]+)/i);
-  if (m) result.remarks = m[1];
+  // Marks & Nos → Remarks (full value including /)
+  m = t.match(/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+-[A-Z0-9]+\/[A-Z\s]+)/i);
+  if (m) result.remarks = m[1].trim();
 
-  // GSTIN → Additional Remarks
+  // GSTIN
   m = t.match(/GSTIN\s*:\s*([A-Z0-9]+)/i);
   if (m) result.additionalRemarks = 'GSTIN: ' + m[1];
 
-  // Freight Charge → Bill Number field
+  // Freight → Bill Number
   m = t.match(/Freight\s*:\s*([\d.]+\s*[A-Z]{3})/i);
   if (m) result.billNo = m[1];
 
-  // Exchange Rate → Bill Date field
+  // Exchange Rate → Bill Date
   m = t.match(/Exchange\s*Rate\s*:\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i);
   if (m) result.billDate = m[1];
 
