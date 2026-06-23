@@ -23,8 +23,8 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
       return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
     }
 
-    // Load pdfjs-dist dynamically
-    var pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+    // Load pdfjs-dist
+    var pdfjsLib = require('pdfjs-dist');
     
     // Convert buffer to Uint8Array
     var uint8Array = new Uint8Array(req.file.buffer);
