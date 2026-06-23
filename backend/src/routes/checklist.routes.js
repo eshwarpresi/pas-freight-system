@@ -78,7 +78,7 @@ function parseChecklistText(text) {
   var locMatch = cleanText.match(/Port\s*Of\s*Filing\s*:\s*([^,]+)/i);
   if (locMatch) result.location = locMatch[1].trim();
 
-  // Importer Name - Matches company name before # in address
+  // Importer Name
   var impMatch = cleanText.match(/(?:PAS FREIGHT SERVICES\s+)?([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP|INTEGRATORS|SOLUTIONS|TECHNOLOGIES|ENTERPRISES|MARKETING|TRADING|INDUSTRIES)[A-Z\s]*?)\s+#/i);
   if (impMatch && impMatch[1]) {
     result.importerName = impMatch[1].trim().replace(/\s+/g, ' ');
@@ -88,11 +88,11 @@ function parseChecklistText(text) {
   var chaMatch = cleanText.match(/(PAS FREIGHT SERVICES)/i);
   if (chaMatch) result.agentDebitNote = chaMatch[1].trim();
 
-  // Supplier Name - Extract after SUPPLIER DETAILS
+  // Supplier Name - Extract just company name after Inv.SlNo
   var suppIdx = cleanText.indexOf('SUPPLIER DETAILS');
   if (suppIdx > -1) {
-    var afterSupp = cleanText.substring(suppIdx + 16);
-    var suppMatch = afterSupp.match(/([A-Z][A-Z\s]{3,}(?:PTE|PVT|LTD|INC|CORP|LIMITED|TRADING|ENTERPRISE|SERVICES)[A-Z\s]*?)(?=\s+\d|\s{2,})/i);
+    var afterSupp = cleanText.substring(suppIdx);
+    var suppMatch = afterSupp.match(/Inv\.?Sl\.?No\s*:\s*\d+\s+([A-Z][A-Z\s]+(?:PTE|PVT|LTD|INC|CORP|LIMITED)[A-Z\s]*?)\s+\d+/i);
     if (suppMatch && suppMatch[1]) {
       result.supplierName = suppMatch[1].trim().replace(/\s+/g, ' ');
     }
