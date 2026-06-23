@@ -1,50 +1,3 @@
-const express = require('express');
-const router = express.Router();
-const multer = require('multer');
-
-const storage = multer.memoryStorage();
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: function(req, file, cb) {
-    if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only PDF files are allowed'));
-    }
-  }
-});
-
-router.post('/scan', upload.single('checklist'), async function(req, res) {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
-    }
-
-    // Dynamic import for ESM module
-    var pdfjsLib = await import('pdfjs-dist');
-    var uint8Array = new Uint8Array(req.file.buffer);
-    var loadingTask = pdfjsLib.getDocument({ data: uint8Array });
-    var pdfDocument = await loadingTask.promise;
-    var text = '';
-
-    for (var pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-      var page = await pdfDocument.getPage(pageNum);
-      var content = await page.getTextContent();
-      var pageText = content.items.map(function(item) { return item.str; }).join(' ');
-      text += pageText + '\n';
-    }
-
-    console.log('📄 PDF Text Extracted (' + text.length + ' chars)');
-    var parsed = parseChecklistText(text);
-
-    res.json({ status: 'success', data: parsed, rawText: text.substring(0, 2000) });
-  } catch (error) {
-    console.error('PDF scan error:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to scan PDF: ' + error.message });
-  }
-});
-
 function parseChecklistText(text) {
   var result = {
     referenceNumber: '', shipmentMode: '', importerName: '', exporterName: '',
@@ -58,70 +11,115 @@ function parseChecklistText(text) {
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
-  var lines = text.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
-
-  function findAfter(keywords, lines) {
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].toLowerCase().replace(/[\s:]+/g, ' ').trim();
-      for (var k = 0; k < keywords.length; k++) {
-        var kw = keywords[k].toLowerCase();
-        var idx = line.indexOf(kw);
-        if (idx >= 0) {
-          var val = lines[i].substring(idx + kw.length).replace(/^[\s:.-]+/, '').trim();
-          if (!val && i + 1 < lines.length) {
-            val = lines[i + 1].trim();
-            if (val.length > 50 || /^[a-z\s]+$/i.test(val)) val = '';
-          }
-          val = val.replace(/^[:.\-\s]+/, '').trim();
-          if (val && val.length < 100) return val;
-        }
-      }
+  // Clean up text - collapse multiple spaces
+  var cleanText = text.replace(/\s+/g, ' ').trim();
+  
+  // Helper to extract value after a label
+  function extract(label) {
+    var regex = new RegExp(label + '[\\s:]+([^\\n]+?)(?=\\s{2,}|$)', 'i');
+    var match = cleanText.match(regex);
+    if (match && match[1]) {
+      return match[1].trim();
     }
     return '';
   }
 
-  result.referenceNumber = findAfter(['reference number', 'reference no', 'ref no', 'ref:', 'reference #'], lines);
-  result.shipmentMode = findAfter(['shipment mode', 'mode of shipment', 'transport mode', 'mode:'], lines);
-  result.importerName = findAfter(['importer name', 'importer:', 'consignee name', 'consignee:', 'buyer:'], lines);
-  result.exporterName = findAfter(['exporter name', 'exporter:', 'shipper name', 'shipper:'], lines);
-  result.supplierName = findAfter(['supplier name', 'supplier:', 'seller:', 'vendor:'], lines);
-  result.location = findAfter(['location', 'place of receipt', 'port of loading', 'from:'], lines);
-  result.jobOrderNo = findAfter(['job order no', 'job no', 'job #', 'order no'], lines);
-  result.jobOrderDate = findAfter(['job order date', 'job date'], lines);
-  result.boeSbNo = findAfter(['boe no', 'sb no', 'boe/sb no', 'boe #', 'sb #', 'bill of entry'], lines);
-  result.boeSbDate = findAfter(['boe date', 'sb date', 'boe/sb date'], lines);
-  result.mawbMblNo = findAfter(['mawb no', 'mbl no', 'mawb/mbl no', 'master awb', 'master bill'], lines);
-  result.mawbMblDate = findAfter(['mawb date', 'mbl date'], lines);
-  result.hawbHblNo = findAfter(['hawb no', 'hbl no', 'hawb/hbl no', 'house awb', 'house bill'], lines);
-  result.hawbHblDate = findAfter(['hawb date', 'hbl date'], lines);
-  result.noOfPackages = findAfter(['no of packages', 'packages:', 'qty:', 'quantity:'], lines);
-  result.grossWeight = findAfter(['gross weight', 'gr wt', 'total weight', 'weight:'], lines);
-  result.igmNo = findAfter(['igm no', 'igm number', 'igm #'], lines);
-  result.igmDate = findAfter(['igm date', 'igm dt'], lines);
-  result.portOfDischarge = findAfter(['port of discharge', 'discharge port', 'pod:'], lines);
-  result.portOfDestination = findAfter(['port of destination', 'destination port', 'final destination', 'podest:'], lines);
-  result.cargoArrivalNotice = findAfter(['cargo arrival notice', 'arrival notice', 'can:'], lines);
-  result.cargoArrivalDate = findAfter(['cargo arrival date', 'arrival date'], lines);
-  result.deliveryOrderDate = findAfter(['delivery order date', 'do date', 'do issued', 'delivery order issued'], lines);
-  result.occDate = findAfter(['occ date', 'occ:', 'out of charge date'], lines);
-  result.gatePassDate = findAfter(['gate pass date', 'gate pass:', 'gate out date'], lines);
-  result.invoiceNo = findAfter(['invoice no', 'invoice #', 'inv no', 'invoice number'], lines);
-  result.invoiceDate = findAfter(['invoice date', 'inv date'], lines);
-  result.agentDebitNote = findAfter(['agent debit note', 'debit note', 'agent note'], lines);
-  result.billingCurrency = findAfter(['billing currency', 'currency:', 'currency code'], lines);
-  result.billNo = findAfter(['bill no', 'bill number', 'bill #'], lines);
-  result.billDate = findAfter(['bill date'], lines);
-  result.billTo = findAfter(['bill to', 'billed to:', 'customer:'], lines);
-  result.billToDate = findAfter(['bill to date'], lines);
-  result.docketNo = findAfter(['docket no', 'docket number', 'docket #'], lines);
-  result.docketDate = findAfter(['docket date'], lines);
-  result.remarks = findAfter(['remarks', 'notes:', 'comments:'], lines);
-
-  if (!result.exporterName) {
-    result.exporterName = findAfter(['shipper:', 'exporter:', 'seller:', 'from:'], lines);
+  // Helper to extract value between two labels
+  function extractBetween(startLabel, endLabel) {
+    var startIdx = cleanText.toLowerCase().indexOf(startLabel.toLowerCase());
+    if (startIdx === -1) return '';
+    var afterStart = cleanText.substring(startIdx + startLabel.length).replace(/^[\s:]+/, '').trim();
+    if (endLabel) {
+      var endIdx = afterStart.toLowerCase().indexOf(endLabel.toLowerCase());
+      if (endIdx > 0) return afterStart.substring(0, endIdx).trim();
+    }
+    // Return first 100 chars if no end label
+    return afterStart.substring(0, 100).trim();
   }
+
+  // === EXTRACTIONS BASED ON YOUR PDF FORMAT ===
+
+  // B.E No
+  var beMatch = cleanText.match(/B\.?E\s*No[,\s]*Date\s*:\s*([^\s]+)/i);
+  if (beMatch) result.boeSbNo = beMatch[1];
+
+  // Job No & Date
+  var jobMatch = cleanText.match(/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)\s*[&]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (jobMatch) {
+    result.jobOrderNo = jobMatch[1];
+    result.jobOrderDate = jobMatch[2];
+  }
+
+  // Transport Mode
+  var modeMatch = cleanText.match(/Transport\s*Mode\s*:\s*(\w+)/i);
+  if (modeMatch) result.shipmentMode = modeMatch[1];
+
+  // Importer Details
+  var importerMatch = cleanText.match(/Importer\s*Details\s*:[\s\d]*([A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d{1})/i);
+  if (importerMatch) {
+    // The importer name comes after the code
+    var afterCode = cleanText.substring(cleanText.indexOf(importerMatch[1]) + importerMatch[1].length);
+    // Get company name - it's usually in ALL CAPS after PAN
+    var nameMatch = afterCode.match(/([A-Z]{3,}[A-Z\s]{5,}(?:PRIVATE|PVT|LIMITED|LTD|INC|CORP)[A-Z\s]*)/i);
+    if (nameMatch) result.importerName = nameMatch[1].trim();
+  }
+
+  // MBL/MAWB
+  var mblMatch = cleanText.match(/MBL\/\s*MAWB\s*:\s*(\d+)/i);
+  if (mblMatch) result.mawbMblNo = mblMatch[1];
+  var mblDateMatch = cleanText.match(/MBL\/\s*MAWB\s*:[\s\d]+\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (mblDateMatch) result.mawbMblDate = mblDateMatch[1];
+
+  // HBL/HAWB
+  var hblMatch = cleanText.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
+  if (hblMatch) result.hawbHblNo = hblMatch[1];
+  var hblDateMatch = cleanText.match(/HBL\/\s*HAWB\s*:[\s\w]+\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (hblDateMatch) result.hawbHblDate = hblDateMatch[1];
+
+  // No. of Pkgs
+  var pkgMatch = cleanText.match(/No\.?\s*of\s*Pkgs\s*:\s*(\d+)\s*PKG/i);
+  if (pkgMatch) result.noOfPackages = pkgMatch[1];
+
+  // Gross Weight
+  var wtMatch = cleanText.match(/Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i);
+  if (wtMatch) result.grossWeight = wtMatch[1];
+
+  // Port Origin
+  var poMatch = cleanText.match(/Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i);
+  if (poMatch) result.portOfDischarge = poMatch[1];
+
+  // Port Shipment
+  var psMatch = cleanText.match(/Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i);
+  if (psMatch) result.portOfDestination = psMatch[1];
+
+  // Invoice Details
+  var invNoMatch = cleanText.match(/Inv\.?\s*No\s*:\s*(\d+)/i);
+  if (invNoMatch) result.invoiceNo = invNoMatch[1];
+  var invDateMatch = cleanText.match(/Inv\.?\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (invDateMatch) result.invoiceDate = invDateMatch[1];
+  var invValMatch = cleanText.match(/Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i);
+  if (invValMatch) result.billingCurrency = invValMatch[1];
+
+  // Supplier Details
+  var supplierMatch = cleanText.match(/SUPPLIER\s*DETAILS[\s-]+(?:Inv\.?Sl\.?No\s*:\s*\d+\s*)?([A-Z][A-Z\s]{5,}(?:PTE|PVT|LTD|INC|CORP|LIMITED)[A-Z\s]*)/i);
+  if (supplierMatch) result.supplierName = supplierMatch[1].trim();
+
+  // Location / Port of Filing
+  var locMatch = cleanText.match(/Port\s*Of\s*Filing\s*:\s*([^,]+)/i);
+  if (locMatch) result.location = locMatch[1].trim();
+
+  // File No / Reference
+  var refMatch = cleanText.match(/File\s*No\s*:\s*([^\s]+)/i);
+  if (refMatch) result.referenceNumber = refMatch[1];
+
+  // If any field still empty, try generic extraction
+  if (!result.jobOrderNo) result.jobOrderNo = extract('Job\\s*No');
+  if (!result.mawbMblNo) result.mawbMblNo = extract('MBL\\s*[/]?\\s*MAWB');
+  if (!result.hawbHblNo) result.hawbHblNo = extract('HBL\\s*[/]?\\s*HAWB');
+  if (!result.noOfPackages) result.noOfPackages = extract('No\\.?\\s*of\\s*Pkgs');
+  if (!result.grossWeight) result.grossWeight = extract('Gross\\s*Weight');
+  if (!result.invoiceNo) result.invoiceNo = extract('Inv\\.?\\s*No');
+  if (!result.shipmentMode) result.shipmentMode = extract('Transport\\s*Mode');
 
   return result;
 }
-
-module.exports = router;
