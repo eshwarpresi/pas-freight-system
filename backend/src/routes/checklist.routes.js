@@ -88,10 +88,14 @@ function parseChecklistText(text) {
   var chaMatch = cleanText.match(/(PAS FREIGHT SERVICES)/i);
   if (chaMatch) result.agentDebitNote = chaMatch[1].trim();
 
-  // Supplier Name
-  var suppMatch = cleanText.match(/SUPPLIER\s*DETAILS[\s-]+(?:Inv\.?Sl\.?No\s*:\s*\d+\s*)?([A-Z][A-Z\s]{3,}(?:PTE|PVT|LTD|INC|CORP|LIMITED|TRADING|ENTERPRISE)[A-Z\s]*?)(?=\s+\d|\s{2,})/i);
-  if (suppMatch && suppMatch[1]) {
-    result.supplierName = suppMatch[1].trim().replace(/\s+/g, ' ');
+  // Supplier Name - Extract after SUPPLIER DETAILS
+  var suppIdx = cleanText.indexOf('SUPPLIER DETAILS');
+  if (suppIdx > -1) {
+    var afterSupp = cleanText.substring(suppIdx + 16);
+    var suppMatch = afterSupp.match(/([A-Z][A-Z\s]{3,}(?:PTE|PVT|LTD|INC|CORP|LIMITED|TRADING|ENTERPRISE|SERVICES)[A-Z\s]*?)(?=\s+\d|\s{2,})/i);
+    if (suppMatch && suppMatch[1]) {
+      result.supplierName = suppMatch[1].trim().replace(/\s+/g, ' ');
+    }
   }
 
   // MBL/MAWB
