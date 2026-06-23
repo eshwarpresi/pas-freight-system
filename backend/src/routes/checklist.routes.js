@@ -59,9 +59,12 @@ function parseChecklistText(text) {
 
   var cleanText = text.replace(/\s+/g, ' ').trim();
 
-  // B.E No
-  var beMatch = cleanText.match(/B\.?E\s*No[,\s]*Date\s*:\s*([^\s]+)/i);
+  // B.E No - FIXED: Get the actual BE number, not "Printed"
+  var beMatch = cleanText.match(/B\.?E\s*No[,\s]*Date\s*:\s*(\d+)/i);
   if (beMatch) result.boeSbNo = beMatch[1];
+  // Also try to find BE date
+  var beDateMatch = cleanText.match(/B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (beDateMatch) result.boeSbDate = beDateMatch[1];
 
   // Job No & Date
   var jobMatch = cleanText.match(/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)\s*[&]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
@@ -74,8 +77,8 @@ function parseChecklistText(text) {
   var modeMatch = cleanText.match(/Transport\s*Mode\s*:\s*(\w+)/i);
   if (modeMatch) result.shipmentMode = modeMatch[1];
 
-  // Importer Name
-  var importerMatch = cleanText.match(/Importer\s*Details\s*:[\s\d]*[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d{1}\s*(?:Br\.Slno\s*:\d+\s*)?(?:PAN:[A-Z0-9]+\s*)?([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP)[A-Z\s]*)/i);
+  // Importer Name - FIXED: Better regex to capture full company name
+  var importerMatch = cleanText.match(/Importer\s*Details\s*:[\s\w]*(?:PAN:[\s\w]*)?([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP|INTEGRATORS|SOLUTIONS|TECHNOLOGIES|ENTERPRISES)[A-Z\s]*?)(?=\s{2,}|No\.|\d{3}|CHENNAI|TAMIL)/i);
   if (importerMatch && importerMatch[1]) {
     result.importerName = importerMatch[1].trim().replace(/\s+/g, ' ');
   }
@@ -132,18 +135,16 @@ function parseChecklistText(text) {
   var invValMatch = cleanText.match(/Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i);
   if (invValMatch) result.billingCurrency = invValMatch[1];
 
-  // Supplier Details
-  var supplierMatch = cleanText.match(/SUPPLIER\s*DETAILS[\s-]+(?:Inv\.?Sl\.?No\s*:\s*\d+\s*)?([A-Z][A-Z\s]{5,}(?:PTE|PVT|LTD|INC|CORP|LIMITED)[A-Z\s]*)/i);
+  // Supplier Details - FIXED: Cleaner extraction
+  var supplierMatch = cleanText.match(/SUPPLIER\s*DETAILS[\s\w]*?(?:Inv\.?Sl\.?No\s*:\s*\d+\s*)?([A-Z][A-Z\s]{5,}(?:PTE|PVT|LTD|INC|CORP|LIMITED)[A-Z\s]*?)(?=\s{2,}\d|\s{2,}[A-Z]{3})/i);
   if (supplierMatch && supplierMatch[1]) {
     result.supplierName = supplierMatch[1].trim().replace(/\s+/g, ' ');
   }
 
-  // CHA Details
-  var chaMatch = cleanText.match(/CHA\s*Details\s*:[\s\d]*([A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d{1})/i);
-  if (chaMatch && !result.exporterName) {
-    var afterCha = cleanText.substring(cleanText.indexOf(chaMatch[1]) + chaMatch[1].length);
-    var chaNameMatch = afterCha.match(/([A-Z][A-Z\s]{5,}(?:SERVICES|FREIGHT|CARGO|LOGISTICS|SHIPPING)[A-Z\s]*)/i);
-    if (chaNameMatch) result.agentDebitNote = chaNameMatch[1].trim().replace(/\s+/g, ' ');
+  // CHA Details / Agent - FIXED: Get CHA name properly
+  var chaMatch = cleanText.match(/CHA\s*Details\s*:[\s\d]*[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d{1}\s*(?:Br\.Slno\s*:\d+\s*)?(?:PAN:[A-Z0-9]+\s*)?([A-Z][A-Z\s]{5,}(?:SERVICES|FREIGHT|CARGO|LOGISTICS|SHIPPING)[A-Z\s]*?)(?=\s{2,}|RESURGENT)/i);
+  if (chaMatch && chaMatch[1]) {
+    result.agentDebitNote = chaMatch[1].trim().replace(/\s+/g, ' ');
   }
 
   return result;
