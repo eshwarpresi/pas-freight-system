@@ -5,7 +5,7 @@ import {
   Box, Command,
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
-  BarChart3
+  BarChart3, FileUp
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -89,6 +89,11 @@ export default function MainLayout({ user }) {
     { path: '/cha', icon: FileCheck, label: 'CHA', color: 'text-emerald-500' },
     { path: '/transport', icon: Truck, label: 'Transport', color: 'text-sky-500' },
     { path: '/do-release', icon: ClipboardList, label: 'DO Release', color: 'text-teal-500' },
+  ]
+
+  const actionLinks = [
+    { path: '/create', icon: Package, label: 'New Shipment', color: 'text-amber-500' },
+    { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner', color: 'text-indigo-500' },
   ]
 
   const handleLogout = async () => {
@@ -177,10 +182,16 @@ export default function MainLayout({ user }) {
           })}
 
           <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Actions</p>
-          <Link to="/create" onClick={() => setSidebarOpen(false)}
-            className="group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]">
-            <Package size={17} className="text-amber-500" /><span>New Shipment</span>
-          </Link>
+          {actionLinks.map((item) => {
+            const Icon = item.icon
+            const isActive = location.pathname === item.path
+            return (
+              <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
+                className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]`}>
+                <Icon size={17} className={item.color} /><span>{item.label}</span>
+              </Link>
+            )
+          })}
         </nav>
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-[var(--border-color)]">

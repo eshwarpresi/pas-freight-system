@@ -289,8 +289,6 @@ export default function Analytics() {
         ) : null
       )
     ),
-
-    // CUSTOMERS + INSIGHTS
     cE('div', { className: 'grid grid-cols-1 lg:grid-cols-2 gap-4' },
       cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
         cE('h3', { className: 'text-sm font-bold mb-4 flex items-center gap-2', style: sp }, cE(Building2, { size: 16, className: 'text-indigo-500' }), 'Top 10 Customers'),
@@ -340,8 +338,6 @@ export default function Analytics() {
         )
       )
     ),
-
-    // TEAM LEADERBOARD
     cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
       cE('div', { className: 'flex items-center justify-between mb-4' },
         cE('h3', { className: 'text-sm font-bold flex items-center gap-2', style: sp }, cE(Users, { size: 16, className: 'text-indigo-500' }), 'Team Performance Leaderboard'),
@@ -377,8 +373,6 @@ export default function Analytics() {
         )
       )
     ),
-
-    // BOTTOM STATS
     cE('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3' },
       a.typeBreakdown.map(function(item,i) {
         var Ico = item.icon || Package
@@ -395,8 +389,6 @@ export default function Analytics() {
         )
       ])
     ),
-
-    // FOOTER
     cE('div', { className: 'flex items-center justify-between text-[10px] py-2 border-t', style: { color: 'var(--text-muted)', borderColor: 'var(--border-color)' } },
       cE('span', null, 'PAS Freight Management System • Executive Dashboard'),
       cE('span', null, 'Updated: ' + now.toLocaleDateString() + ' at ' + now.toLocaleTimeString())

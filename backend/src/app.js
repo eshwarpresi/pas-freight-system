@@ -200,6 +200,7 @@ const chaRoutes = require('./routes/cha.routes');
 const accountsRoutes = require('./routes/accounts.routes');
 const archiveRoutes = require('./routes/archive.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const checklistRoutes = require('./routes/checklist.routes');
 
 // Apply auth + tracking middleware to ALL shipment routes
 app.use('/api/freight', authenticateToken, trackUserActivity, freightForwardingRoutes);
@@ -207,6 +208,7 @@ app.use('/api/cha', authenticateToken, trackUserActivity, chaRoutes);
 app.use('/api/accounts', authenticateToken, trackUserActivity, accountsRoutes);
 app.use('/api/archive', authenticateToken, trackUserActivity, archiveRoutes);
 app.use('/api/notifications', authenticateToken, notificationRoutes);
+app.use('/api/checklist', authenticateToken, checklistRoutes);
 
 // ========== ERROR HANDLERS ==========
 app.use((req, res) => {
