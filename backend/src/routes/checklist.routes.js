@@ -57,107 +57,131 @@ function parseChecklistText(text) {
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
-  var t = text.replace(/\s+/g, ' ').trim();
+  // Keep original spacing for better matching
+  var t = text;
 
-  // Reference Number (File No)
-  var m = t.match(/File\s*No\s*:\s*([^\s,]+)/i);
-  if (m) result.referenceNumber = m[1];
-
-  // Job No & Date
-  m = t.match(/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)\s*[&]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) { result.jobOrderNo = m[1]; result.jobOrderDate = m[2]; }
-
-  // Transport Mode
-  m = t.match(/Transport\s*Mode\s*:\s*(\w+)/i);
-  if (m) result.shipmentMode = m[1];
-
-  // Location (Port of Filing)
-  m = t.match(/Port\s*Of\s*Filing\s*:\s*([^,]+)/i);
-  if (m) result.location = m[1].trim();
-
-  // B.E Date
-  m = t.match(/B\.?E\s*No[,\s]*Date\s*:\s*Printed\s*On\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) result.boeSbDate = m[1];
-
-  // Agent / CHA Name - always PAS FREIGHT SERVICES in these checklists
-  m = t.match(/(PAS FREIGHT SERVICES)/i);
-  if (m) result.agentDebitNote = m[1].trim();
-
-  // Importer Name - company before # symbol, EXCLUDING PAS FREIGHT SERVICES
-  m = t.match(/PAS FREIGHT SERVICES\s+([A-Z][A-Z\s]{5,}(?:PRIVATE|PVT|LTD|LIMITED|INC|CORP|INTEGRATORS|SOLUTIONS|TECHNOLOGIES|ENTERPRISES|MARKETING|TRADING|INDUSTRIES)[A-Z\s]*?)\s+#/i);
-  if (m && m[1]) {
-    result.importerName = m[1].trim().replace(/\s+/g, ' ');
+  // Helper: find value after exact label
+  function after(label) {
+    var idx = t.indexOf(label);
+    if (idx === -1) return '';
+    var sub = t.substring(idx + label.length);
+    var match = sub.match(/^\s*:?\s*([^\n]+)/);
+    if (match) return match[1].replace(/\s+/g, ' ').trim();
+    return '';
   }
 
-  // Supplier Name - company name after Inv.SlNo before address numbers
-  var si = t.indexOf('SUPPLIER DETAILS');
-  if (si > -1) {
-    var as = t.substring(si);
-    m = as.match(/Inv\.?Sl\.?No\s*:\s*\d+\s+([A-Z][A-Z\s]+(?:PTE|PVT|LTD|INC|CORP|LIMITED|SERVICES)[A-Z\s]*?)\s+\d+\s+[A-Z]/i);
-    if (m && m[1]) {
-      result.supplierName = m[1].trim().replace(/\s+/g, ' ');
+  // === EXACT EXTRACTIONS FROM RAW TEXT ===
+
+  // File No
+  result.referenceNumber = after('File No');
+
+  // Job No & Date: "1264 & 18/06/2026"
+  var jd = after('Job No & Date');
+  var jdMatch = jd.match(/(\d+)\s*[&]\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  if (jdMatch) { result.jobOrderNo = jdMatch[1]; result.jobOrderDate = jdMatch[2]; }
+
+  // Transport Mode
+  result.shipmentMode = after('Transport Mode');
+
+  // Port Of Filing
+  var loc = after('Port Of Filing');
+  result.location = loc.split(',')[0].trim();
+
+  // B.E No,Date: Printed On : 19/06/2026
+  var be = after('B.E No,Date');
+  var beMatch = be.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  if (beMatch) result.boeSbDate = beMatch[1];
+
+  // CHA/Agent
+  result.agentDebitNote = 'PAS FREIGHT SERVICES';
+
+  // Importer Name - between PAS FREIGHT SERVICES and # symbol
+  var imp = t.match(/PAS FREIGHT SERVICES\s+([A-Z][A-Z\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[A-Z\s]*?)\s+#/i);
+  if (imp) result.importerName = imp[1].replace(/\s+/g, ' ').trim();
+
+  // MBL/MAWB Number
+  var mbl = after('MBL/MAWB');
+  var mblMatch = mbl.match(/(\d+)/);
+  if (mblMatch) result.mawbMblNo = mblMatch[1];
+
+  // HBL/HAWB Number
+  var hbl = after('HBL/HAWB');
+  var hblMatch = hbl.match(/([A-Z0-9]+)/);
+  if (hblMatch) result.hawbHblNo = hblMatch[1];
+
+  // AWB Dates - find both dates near MBL/MAWB HBL/HAWB section
+  var awbIdx = t.indexOf('MBL/MAWB');
+  if (awbIdx > -1) {
+    var awbSection = t.substring(awbIdx, awbIdx + 200);
+    var dates = awbSection.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
+    if (dates && dates.length >= 2) {
+      result.mawbMblDate = dates[0];
+      result.hawbHblDate = dates[1];
     }
   }
 
-  // MBL/MAWB
-  m = t.match(/MBL\/\s*MAWB\s*:\s*(\d+)/i);
-  if (m) result.mawbMblNo = m[1];
-  m = t.match(/MBL\/\s*MAWB\s*:[\s\d]+\s*(?:HBL\/\s*HAWB\s*:[\s\w]+\s*)?Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) result.mawbMblDate = m[1];
-
-  // HBL/HAWB
-  m = t.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
-  if (m) result.hawbHblNo = m[1];
-  m = t.match(/HBL\/\s*HAWB\s*:[\s\w]+\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) result.hawbHblDate = m[1];
-
-  // No of Packages
-  m = t.match(/No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i);
-  if (m) result.noOfPackages = m[1];
+  // No. of Pkgs
+  var pkg = after('No. of Pkgs');
+  var pkgMatch = pkg.match(/(\d+)/);
+  if (pkgMatch) result.noOfPackages = pkgMatch[1];
 
   // Gross Weight
-  m = t.match(/Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i);
-  if (m) result.grossWeight = m[1];
+  var wt = after('Gross Weight');
+  var wtMatch = wt.match(/([\d.]+\s*KGS)/i);
+  if (wtMatch) result.grossWeight = wtMatch[1];
 
   // Port Origin
-  m = t.match(/Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i);
-  if (m) result.portOfDischarge = m[1];
+  var po = after('Port Origin');
+  var poMatch = po.match(/([A-Z]+-[A-Z]+)/);
+  if (poMatch) result.portOfDischarge = poMatch[1];
 
-  // Port Destination
-  m = t.match(/Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i);
-  if (m) result.portOfDestination = m[1];
+  // Port Shipment
+  var ps = after('Port Shipment');
+  var psMatch = ps.match(/([A-Z]+-[A-Z]+)/);
+  if (psMatch) result.portOfDestination = psMatch[1];
 
-  // Country Origin → Exporter
-  m = t.match(/Country\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i);
-  if (m) result.exporterName = m[1];
+  // Country Origin
+  var co = after('Country Origin');
+  var coMatch = co.match(/([A-Z]+-[A-Z]+)/);
+  if (coMatch) result.exporterName = coMatch[1];
 
   // Invoice No
-  m = t.match(/Inv\.?\s*No\s*:\s*(\d+)/i);
-  if (m) result.invoiceNo = m[1];
+  var inv = after('Inv.No');
+  var invMatch = inv.match(/(\d+)/);
+  if (invMatch) result.invoiceNo = invMatch[1];
 
   // Invoice Date
-  m = t.match(/Inv\.?\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) result.invoiceDate = m[1];
+  var invd = after('Inv.Date');
+  var invdMatch = invd.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  if (invdMatch) result.invoiceDate = invdMatch[1];
 
-  // Invoice Value → Billing Currency
-  m = t.match(/Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i);
-  if (m) result.billingCurrency = m[1];
+  // Invoice Value
+  var invv = after('Inv.Value');
+  var invvMatch = invv.match(/([\d.]+\s*[A-Z]{3})/);
+  if (invvMatch) result.billingCurrency = invvMatch[1];
 
-  // Marks & Nos → Remarks (full value including /)
-  m = t.match(/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+-[A-Z0-9]+\/[A-Z\s]+)/i);
-  if (m) result.remarks = m[1].trim();
+  // Supplier - after "Inv.SlNo : 1"
+  var supp = t.match(/Inv\.SlNo\s*:\s*1\s+([A-Z][A-Z\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED)[A-Z\s]*?)\s+\d/);
+  if (supp) result.supplierName = supp[1].replace(/\s+/g, ' ').trim();
+
+  // Marks & Nos
+  var marks = after('Marks & Nos');
+  var marksMatch = marks.match(/([A-Z0-9]+-[A-Z0-9]+\/[A-Z\s]+)/i);
+  if (marksMatch) result.remarks = marksMatch[1].trim();
 
   // GSTIN
-  m = t.match(/GSTIN\s*:\s*([A-Z0-9]+)/i);
-  if (m) result.additionalRemarks = 'GSTIN: ' + m[1];
+  var gst = t.match(/GSTIN\s*:\s*([A-Z0-9]+)/);
+  if (gst) result.additionalRemarks = 'GSTIN: ' + gst[1];
 
-  // Freight → Bill Number
-  m = t.match(/Freight\s*:\s*([\d.]+\s*[A-Z]{3})/i);
-  if (m) result.billNo = m[1];
+  // Freight
+  var fr = after('Freight');
+  var frMatch = fr.match(/([\d.]+\s*[A-Z]{3})/);
+  if (frMatch) result.billNo = frMatch[1];
 
-  // Exchange Rate → Bill Date
-  m = t.match(/Exchange\s*Rate\s*:\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i);
-  if (m) result.billDate = m[1];
+  // Exchange Rate
+  var er = after('Exchange Rate');
+  var erMatch = er.match(/([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/);
+  if (erMatch) result.billDate = erMatch[1];
 
   return result;
 }
