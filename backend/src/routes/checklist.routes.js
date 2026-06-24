@@ -63,7 +63,6 @@ function parseByColumns(items) {
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
-  // Group by Y position into rows
   var rows = {};
   items.forEach(function(item) {
     var yKey = Math.round(item.y / 5) * 5;
@@ -71,37 +70,26 @@ function parseByColumns(items) {
     rows[yKey].push(item);
   });
 
-  // Convert to sorted array
   var rowArray = Object.keys(rows).sort(function(a, b) { return b - a; }).map(function(k) {
     return rows[k].sort(function(a, b) { return a.x - b.x; });
   });
 
-  // Build full text for each row
   function rowText(row) {
     return row.map(function(i) { return i.text; }).join(' ').trim();
   }
 
-  // COLUMN-BASED EXTRACTION:
-  // Words at x < 250 are LABELS
-  // Words at x > 250 are VALUES
-  
-  // Join ALL text first for pattern matching
-  var allText = rowArray.map(rowText).join('\n');
-  
-  // Join with spaces for regex matching
   var flatText = rowArray.map(rowText).join(' ');
+  var m;
 
-  // === SIMPLE PATTERN MATCHING ON THE FLAT TEXT ===
-
-  // Reference Number
-  var m = flatText.match(/File\s*No\s*:\s*([A-Z0-9]+\/[\d]+)/i);
+  // Reference Number - allows hyphens and slashes
+  m = flatText.match(/File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i);
   if (m) result.referenceNumber = m[1];
 
   // Job No & Date
   m = flatText.match(/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)\s*[&]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
   if (m) { result.jobOrderNo = m[1]; result.jobOrderDate = m[2]; }
 
-  // Transport Mode - just get the single letter/number after "Transport Mode :"
+  // Transport Mode - single char
   m = flatText.match(/Transport\s*Mode\s*:\s*(\S)/i);
   if (m) result.shipmentMode = m[1];
 
@@ -119,8 +107,8 @@ function parseByColumns(items) {
   // Agent
   result.agentDebitNote = 'PAS FREIGHT SERVICES';
 
-  // Importer Name - after PAS FREIGHT SERVICES, before #
-  m = flatText.match(/PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS))\s+#/i);
+  // Importer Name - after PAS FREIGHT SERVICES, before # symbol
+  m = flatText.match(/PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[\w\s]*?)\s+#/i);
   if (m) result.importerName = m[1].replace(/\s+/g, ' ').trim();
 
   // MBL/MAWB
@@ -131,17 +119,15 @@ function parseByColumns(items) {
   m = flatText.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
   if (m) result.hawbHblNo = m[1];
 
-  // AWB Dates
-  var dateMatches = [];
-  var dateRegex = /\d{1,2}\/\d{1,2}\/\d{2,4}/g;
-  var dm;
-  while ((dm = dateRegex.exec(flatText)) !== null) {
-    dateMatches.push(dm[0]);
-  }
-  // After MBL/MAWB section, the next 2 dates are the AWB dates
-  if (dateMatches.length >= 4) {
-    result.mawbMblDate = dateMatches[2];
-    result.hawbHblDate = dateMatches[3];
+  // AWB Dates - find dates specifically near the AWB section
+  var hawbIdx = flatText.indexOf('HBL/HAWB');
+  if (hawbIdx > -1) {
+    var afterHawb = flatText.substring(hawbIdx);
+    var hawbDates = afterHawb.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
+    if (hawbDates && hawbDates.length >= 2) {
+      result.mawbMblDate = hawbDates[0];
+      result.hawbHblDate = hawbDates[1];
+    }
   }
 
   // No of Pkgs
@@ -179,8 +165,8 @@ function parseByColumns(items) {
   m = flatText.match(/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+-[A-Z0-9]+\/[A-Z]+)/i);
   if (m) result.remarks = m[1].trim();
 
-  // GSTIN
-  m = flatText.match(/GSTIN\s*:\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
+  // GSTIN - 15-digit Indian GST format
+  m = flatText.match(/GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
   if (m) result.additionalRemarks = 'GSTIN: ' + m[1];
 
   // Freight
