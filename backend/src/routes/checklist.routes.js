@@ -44,8 +44,7 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
 
     var parsed = parseChecklistUniversal(allItems);
     
-    // Build raw text for debugging
-    var rawText = items.slice().sort(function(a, b) { return b.y - a.y || a.x - b.x; })
+    var rawText = allItems.slice().sort(function(a, b) { return b.y - a.y || a.x - b.x; })
       .map(function(i) { return i.text; }).join(' ');
     
     res.json({ status: 'success', data: parsed, rawText: rawText.substring(0, 3000) });
@@ -73,7 +72,6 @@ function parseChecklistUniversal(items) {
   
   var noSpace = rawText.replace(/\s+/g, '');
 
-  // Helper: try multiple regex patterns
   function tryPatterns(patterns, text) {
     for (var i = 0; i < patterns.length; i++) {
       var m = text.match(patterns[i]);
@@ -82,7 +80,6 @@ function parseChecklistUniversal(items) {
     return '';
   }
 
-  // Helper: find date near a label
   function findDateNear(label, text) {
     var idx = text.toLowerCase().indexOf(label.toLowerCase());
     if (idx >= 0) {
@@ -93,7 +90,6 @@ function parseChecklistUniversal(items) {
     return '';
   }
 
-  // ===== REFERENCE NUMBER =====
   result.referenceNumber = tryPatterns([
     /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
     /Reference\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
@@ -101,24 +97,19 @@ function parseChecklistUniversal(items) {
     /ONLINE[-\s]*(\d+)/i,
   ], rawText);
 
-  // ===== JOB ORDER =====
   result.jobOrderNo = tryPatterns([
     /Job\s*(?:Order)?\s*No\s*[&]?\s*(?:Date)?\s*:?\s*(\d+)/i,
     /Job\s*#?\s*:?\s*(\d+)/i,
     /JOB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
   ], rawText);
   
-  // Job Date - find the date closest to Job No
   var jobIdx = rawText.toLowerCase().indexOf('job');
   if (jobIdx >= 0) {
     var afterJob = rawText.substring(jobIdx, jobIdx + 200);
     var dates = afterJob.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
-    if (dates && dates.length >= 1) {
-      result.jobOrderDate = dates[0];
-    }
+    if (dates && dates.length >= 1) result.jobOrderDate = dates[0];
   }
 
-  // ===== BOE/SB =====
   result.boeSbNo = tryPatterns([
     /BOE\s*(?:No|Number)?\s*:?\s*(\d+)/i,
     /SB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
@@ -129,38 +120,31 @@ function parseChecklistUniversal(items) {
     /BOE\s*(?:Date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
     /SB\s*(?:Date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
     /Printed\s*On\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
-    /BOE\s*(?:No|Number)?\s*:?\s*\d+\s*(?:Date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
   ], rawText);
 
-  // ===== TRANSPORT MODE =====
   result.shipmentMode = tryPatterns([
     /Transport\s*Mode\s*:?\s*(\S)/i,
     /Shipment\s*Mode\s*:?\s*(\S)/i,
     /Mode\s*(?:of\s*Transport)?\s*:?\s*(\S)/i,
   ], rawText);
 
-  // ===== LOCATION =====
   result.location = tryPatterns([
     /Port\s*Of\s*Filing\s*:?\s*([^,]+(?:,[^,]+)?)/i,
     /Filing\s*Port\s*:?\s*([^,]+(?:,[^,]+)?)/i,
-    /ICD\s*(?:Location)?\s*:?\s*([^,]+(?:,[^,]+)?)/i,
     /Location\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z]+)/i,
   ], rawText);
   result.portOfDischarge = result.location || tryPatterns([
-    /Port\s*Of\s*Discharge\s*:?\s*([^,]+(?:,[^,]+)?)/i,
+    /Port\s*Of\s*Discharge\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z]+)/i,
     /Discharge\s*(?:Port)?\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z]+)/i,
   ], rawText);
 
-  // ===== IMPORTER =====
   result.importerName = tryPatterns([
     /Importer\s*(?:Name|Details)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS))/i,
     /Consignee\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP))/i,
     /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+(?:PRIVATE|LIMITED|INTEGRATORS)[\w\s]*?)(?:\s+#|\s{2,})/i,
-    /Importer\s*:?\s*([A-Z][\w\s]{5,}(?:PRIVATE|LIMITED|LTD|INC|CORP))/i,
   ], rawText);
   if (result.importerName) result.importerName = result.importerName.replace(/\s+/g, ' ').trim();
 
-  // ===== EXPORTER =====
   result.exporterName = tryPatterns([
     /Exporter\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
     /Shipper\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
@@ -168,7 +152,6 @@ function parseChecklistUniversal(items) {
   ], rawText);
   if (result.exporterName) result.exporterName = result.exporterName.replace(/\s+/g, ' ').trim();
 
-  // ===== SUPPLIER =====
   result.supplierName = tryPatterns([
     /Supplier\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
     /Inv\.?\s*Sl\.?\s*No\s*:?\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED))/i,
@@ -177,32 +160,27 @@ function parseChecklistUniversal(items) {
   if (!result.exporterName && result.supplierName) result.exporterName = result.supplierName;
   if (!result.supplierName && result.exporterName) result.supplierName = result.exporterName;
 
-  // ===== MAWB/MBL =====
   result.mawbMblNo = tryPatterns([
     /MAWB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
     /MBL\s*(?:No|Number)?\s*:?\s*(\d+)/i,
     /Master\s*(?:AWB|BL)\s*(?:No)?\s*:?\s*(\d+)/i,
   ], rawText);
-  result.mawbMblDate = findDateNear('MAWB', rawText) || findDateNear('MBL', rawText) || findDateNear('Master', rawText);
+  result.mawbMblDate = findDateNear('MAWB', rawText) || findDateNear('MBL', rawText);
 
-  // ===== HAWB/HBL =====
   result.hawbHblNo = tryPatterns([
     /HAWB\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+)/i,
     /HBL\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+)/i,
     /House\s*(?:AWB|BL)\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
   ], rawText);
-  result.hawbHblDate = findDateNear('HAWB', rawText) || findDateNear('HBL', rawText) || findDateNear('House', rawText);
+  result.hawbHblDate = findDateNear('HAWB', rawText) || findDateNear('HBL', rawText);
 
-  // ===== PACKAGES =====
   result.noOfPackages = tryPatterns([
     /No\.?\s*of\s*Pkgs\s*:?\s*(\d+)/i,
     /Packages\s*:?\s*(\d+)/i,
     /Qty\s*:?\s*(\d+)/i,
-    /Total\s*Packages\s*:?\s*(\d+)/i,
     /Pkgs?\s*:?\s*(\d+)/i,
   ], rawText);
 
-  // ===== GROSS WEIGHT =====
   result.grossWeight = tryPatterns([
     /Gross\s*Weight\s*:?\s*([\d.]+\s*KGS)/i,
     /Total\s*Weight\s*:?\s*([\d.]+\s*KGS)/i,
@@ -210,16 +188,12 @@ function parseChecklistUniversal(items) {
     /Gr\.?\s*Wt\.?\s*:?\s*([\d.]+\s*KGS)/i,
   ], rawText);
 
-  // ===== PORT OF DESTINATION =====
   result.portOfDestination = tryPatterns([
     /Port\s*Shipment\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
     /Destination\s*(?:Port)?\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
     /Port\s*Of\s*Destination\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
-    /Final\s*Destination\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
-    /Port\s*Origin\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
   ], rawText);
 
-  // ===== INVOICE =====
   result.invoiceNo = tryPatterns([
     /Inv\.?\s*No\s*:?\s*(\d+)/i,
     /Invoice\s*(?:No|Number)?\s*:?\s*(\d+)/i,
@@ -233,39 +207,30 @@ function parseChecklistUniversal(items) {
     /Inv\.?\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
     /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
     /Amount\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-    /Total\s*(?:Invoice\s*)?Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
   ], rawText);
 
-  // ===== FREIGHT =====
   result.billNo = tryPatterns([
     /Freight\s*(?:Charges?)?\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
   ], rawText);
 
-  // ===== EXCHANGE RATE =====
   result.billDate = tryPatterns([
     /Exchange\s*Rate\s*:?\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i,
-    /Exchange\s*Rate\s*:?\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*[A-Z]{3})/i,
   ], rawText);
 
-  // ===== CHA / AGENT =====
   if (rawText.indexOf('PAS FREIGHT SERVICES') >= 0) {
     result.agentDebitNote = 'PAS FREIGHT SERVICES';
   }
 
-  // ===== MARKS & NOS =====
   result.remarks = tryPatterns([
     /Marks\s*[&]?\s*Nos\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/]+)/i,
-    /Marks?\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/]+)/i,
   ], rawText);
 
-  // ===== GSTIN =====
   var gstMatch = noSpace.match(/GSTIN:?(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
   if (!gstMatch) gstMatch = noSpace.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
   if (gstMatch) result.additionalRemarks = 'GSTIN: ' + gstMatch[1];
 
-  // ===== GENERIC DATES =====
-  if (!result.deliveryOrderDate) result.deliveryOrderDate = findDateNear('Delivery Order', rawText) || findDateNear('DO Date', rawText);
-  if (!result.occDate) result.occDate = findDateNear('OCC', rawText) || findDateNear('Out of Charge', rawText);
+  if (!result.deliveryOrderDate) result.deliveryOrderDate = findDateNear('Delivery Order', rawText);
+  if (!result.occDate) result.occDate = findDateNear('OCC', rawText);
   if (!result.gatePassDate) result.gatePassDate = findDateNear('Gate Pass', rawText);
   if (!result.igmDate) result.igmDate = findDateNear('IGM', rawText);
 
