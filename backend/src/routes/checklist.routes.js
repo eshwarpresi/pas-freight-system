@@ -44,10 +44,11 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
 
     var parsed = parseChecklistUniversal(allItems);
     
-    var rawText = allItems.slice().sort(function(a, b) { return b.y - a.y || a.x - b.x; })
+    // Sort TOP to BOTTOM (a.y - b.y), then LEFT to RIGHT
+    var rawText = allItems.slice().sort(function(a, b) { return a.y - b.y || a.x - b.x; })
       .map(function(i) { return i.text; }).join(' ');
     
-    res.json({ status: 'success', data: parsed, rawText: rawText.substring(0, 5000) });
+    res.json({ status: 'success', data: parsed, rawText: rawText });
   } catch (error) {
     console.error('PDF scan error:', error);
     res.status(500).json({ status: 'error', message: 'Failed to scan PDF: ' + error.message });
@@ -67,7 +68,8 @@ function parseChecklistUniversal(items) {
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
-  var sortedItems = items.slice().sort(function(a, b) { return b.y - a.y || a.x - b.x; });
+  // Sort TOP to BOTTOM (a.y - b.y), then LEFT to RIGHT
+  var sortedItems = items.slice().sort(function(a, b) { return a.y - b.y || a.x - b.x; });
   var rawText = sortedItems.map(function(i) { return i.text; }).join(' ');
   var noSpace = rawText.replace(/\s+/g, '');
 
@@ -79,185 +81,149 @@ function parseChecklistUniversal(items) {
     return '';
   }
 
-  function findDateNear(label, text) {
-    var idx = text.toLowerCase().indexOf(label.toLowerCase());
-    if (idx >= 0) {
-      var chunk = text.substring(idx, idx + 150);
-      var m = chunk.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/);
-      if (m) return m[1];
-    }
-    return '';
-  }
-
-  // ===== REFERENCE NUMBER =====
+  // ===== REFERENCE NUMBER (File No) =====
   result.referenceNumber = tryPatterns([
     /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
-    /Reference\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
-    /Ref\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
     /ONLINE[-\s]*(\d+)/i,
   ], rawText);
 
-  // ===== JOB ORDER =====
-  result.jobOrderNo = tryPatterns([
-    /Job\s*(?:Order)?\s*No\s*[&]?\s*(?:Date)?\s*:?\s*(\d+)/i,
-    /Job\s*#?\s*:?\s*(\d+)/i,
-    /JOB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
-  ], rawText);
-  
-  var jobIdx = rawText.toLowerCase().indexOf('job');
-  if (jobIdx >= 0) {
-    var afterJob = rawText.substring(jobIdx, jobIdx + 200);
-    var dates = afterJob.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
-    if (dates && dates.length >= 1) result.jobOrderDate = dates[0];
-  }
-
-  // ===== BOE/SB =====
+  // ===== B.E No & Date =====
   result.boeSbNo = tryPatterns([
-    /BOE\s*(?:No|Number)?\s*:?\s*(\d+)/i,
-    /SB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
-    /B\.?E\s*No\s*:?\s*(\d+)/i,
+    /B\.?E\s*No[,\s]*Date\s*:\s*(\d+)/i,
   ], rawText);
-  
   result.boeSbDate = tryPatterns([
-    /BOE\s*(?:Date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
-    /SB\s*(?:Date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
-    /Printed\s*On\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    /B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /Printed\s*On\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
 
-  // ===== TRANSPORT MODE =====
-  result.shipmentMode = tryPatterns([
-    /Transport\s*Mode\s*:?\s*(\S)/i,
-    /Shipment\s*Mode\s*:?\s*(\S)/i,
-    /Mode\s*(?:of\s*Transport)?\s*:?\s*(\S)/i,
+  // ===== Job No & Date =====
+  result.jobOrderNo = tryPatterns([
+    /Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i,
+  ], rawText);
+  result.jobOrderDate = tryPatterns([
+    /Job\s*No\s*[&]?\s*Date\s*:\s*\d+\s*[&]?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
 
-  // ===== LOCATION =====
+  // ===== Port Of Filing =====
   result.location = tryPatterns([
-    /Port\s*Of\s*Filing\s*:?\s*([^,]+(?:,[^,]+)?)/i,
-    /Filing\s*Port\s*:?\s*([^,]+(?:,[^,]+)?)/i,
-    /Location\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z]+)/i,
+    /Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i,
     /(INKQZ6\s*,?\s*ICD)/i,
+    /(INBLR4\s*,?\s*ACC)/i,
   ], rawText);
-  result.portOfDischarge = result.location || tryPatterns([
-    /Port\s*Of\s*Discharge\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z]+)/i,
+  result.portOfDischarge = result.location;
+
+  // ===== Transport Mode =====
+  result.shipmentMode = tryPatterns([
+    /Transport\s*Mode\s*:\s*(\S)/i,
   ], rawText);
 
-  // ===== IMPORTER - with exact matches for known companies =====
+  // ===== CHA / Agent =====
+  result.agentDebitNote = 'PAS FREIGHT SERVICES';
+
+  // ===== IMPORTER - after PAS FREIGHT SERVICES, before # or address =====
   result.importerName = tryPatterns([
-    /Importer\s*(?:Name|Details)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS))/i,
-    /Consignee\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP))/i,
-    /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+(?:PRIVATE|LIMITED|INTEGRATORS)[\w\s]*?)(?:\s+#|\s{2,})/i,
+    /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[\w\s]*?)(?:\s+#|\s{2,})/i,
+    /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?\(INDIA\)\s*(?:PRIVATE|LIMITED|LTD))/i,
+    /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]{10,}(?:PRIVATE|LIMITED|LTD))/i,
     /(ONLINE\s+INSTRUMENTS\s*\(INDIA\)\s*LIMITED)/i,
+    /(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i,
     /([A-Z][\w\s]+\(INDIA\)\s*LIMITED)/i,
-    /([A-Z][\w\s]+(?:PRIVATE|LIMITED|LTD)\s*\(INDIA\))/i,
-    /([A-Z][\w\s]{10,}(?:PRIVATE|LIMITED|LTD|INC|CORP))/i,
   ], rawText);
   if (result.importerName) result.importerName = result.importerName.replace(/\s+/g, ' ').trim();
 
-  // ===== EXPORTER =====
-  result.exporterName = tryPatterns([
-    /Exporter\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
-    /Shipper\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
-    /Seller\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
-    /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
-    /([A-Z][\w\s]+TECHNOLOGIES?\s*CO\.?,?\s*LTD)/i,
-    /([A-Z][\w\s]{10,}\s*CO\.?,?\s*LTD)/i,
-  ], rawText);
-  if (result.exporterName) result.exporterName = result.exporterName.replace(/\s+/g, ' ').trim();
-
-  // ===== SUPPLIER =====
-  result.supplierName = tryPatterns([
-    /Supplier\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
-    /Inv\.?\s*Sl\.?\s*No\s*:?\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED))/i,
-  ], rawText);
-  if (result.supplierName) result.supplierName = result.supplierName.replace(/\s+/g, ' ').trim();
-  if (!result.exporterName && result.supplierName) result.exporterName = result.supplierName;
-  if (!result.supplierName && result.exporterName) result.supplierName = result.exporterName;
-
-  // ===== MAWB/MBL =====
-  result.mawbMblNo = tryPatterns([
-    /MAWB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
-    /MBL\s*(?:No|Number)?\s*:?\s*(\d+)/i,
-    /Master\s*(?:AWB|BL)\s*(?:No)?\s*:?\s*(\d+)/i,
-  ], rawText);
-  result.mawbMblDate = findDateNear('MAWB', rawText) || findDateNear('MBL', rawText);
-
-  // ===== HAWB/HBL =====
-  result.hawbHblNo = tryPatterns([
-    /HAWB\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+)/i,
-    /HBL\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+)/i,
-    /House\s*(?:AWB|BL)\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
-  ], rawText);
-  result.hawbHblDate = findDateNear('HAWB', rawText) || findDateNear('HBL', rawText);
-
-  // ===== PACKAGES =====
-  result.noOfPackages = tryPatterns([
-    /No\.?\s*of\s*Pkgs\s*:?\s*(\d+)/i,
-    /Packages\s*:?\s*(\d+)/i,
-    /Qty\s*:?\s*(\d+)/i,
-    /Pkgs?\s*:?\s*(\d+)/i,
-  ], rawText);
-
-  // ===== GROSS WEIGHT =====
-  result.grossWeight = tryPatterns([
-    /Gross\s*Weight\s*:?\s*([\d.]+\s*KGS)/i,
-    /Total\s*Weight\s*:?\s*([\d.]+\s*KGS)/i,
-    /Weight\s*:?\s*([\d.]+\s*KGS)/i,
-    /Gr\.?\s*Wt\.?\s*:?\s*([\d.]+\s*KGS)/i,
-  ], rawText);
-
-  // ===== PORT OF DESTINATION =====
-  result.portOfDestination = tryPatterns([
-    /Port\s*Shipment\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
-    /Destination\s*(?:Port)?\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
-    /Port\s*Of\s*Destination\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
-  ], rawText);
-
-  // ===== INVOICE =====
-  result.invoiceNo = tryPatterns([
-    /Inv\.?\s*No\s*:?\s*(\d+)/i,
-    /Invoice\s*(?:No|Number)?\s*:?\s*(\d+)/i,
-  ], rawText);
-  result.invoiceDate = tryPatterns([
-    /Inv\.?\s*Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
-    /Invoice\s*Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
-  ], rawText);
-  result.billingCurrency = tryPatterns([
-    /Inv\.?\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-    /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-    /Amount\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-  ], rawText);
-
-  // ===== FREIGHT =====
-  result.billNo = tryPatterns([
-    /Freight\s*(?:Charges?)?\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-  ], rawText);
-
-  // ===== EXCHANGE RATE =====
-  result.billDate = tryPatterns([
-    /Exchange\s*Rate\s*:?\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i,
-  ], rawText);
-
-  // ===== CHA / AGENT =====
-  if (rawText.indexOf('PAS FREIGHT SERVICES') >= 0 || rawText.indexOf('PASFREIGHT') >= 0) {
-    result.agentDebitNote = 'PAS FREIGHT SERVICES';
-  }
-
-  // ===== MARKS & NOS =====
-  result.remarks = tryPatterns([
-    /Marks\s*[&]?\s*Nos\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/]+)/i,
-  ], rawText);
-
   // ===== GSTIN =====
-  var gstMatch = noSpace.match(/GSTIN:?(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
-  if (!gstMatch) gstMatch = noSpace.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
+  var gstMatch = noSpace.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
   if (gstMatch) result.additionalRemarks = 'GSTIN: ' + gstMatch[1];
 
-  // ===== GENERIC DATES =====
-  if (!result.deliveryOrderDate) result.deliveryOrderDate = findDateNear('Delivery Order', rawText);
-  if (!result.occDate) result.occDate = findDateNear('OCC', rawText);
-  if (!result.gatePassDate) result.gatePassDate = findDateNear('Gate Pass', rawText);
-  if (!result.igmDate) result.igmDate = findDateNear('IGM', rawText);
+  // ===== IGM No & Date =====
+  result.igmNo = tryPatterns([
+    /IGM\s*NO\s*:\s*(\d+)/i,
+  ], rawText);
+  result.igmDate = tryPatterns([
+    /IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
+
+  // ===== Gateway Port =====
+  result.cargoArrivalNotice = tryPatterns([
+    /Gateway\s*IGM\s*:\s*(\d+)/i,
+  ], rawText);
+  result.cargoArrivalDate = tryPatterns([
+    /Gateway\s*Port\s*:\s*([A-Za-z]+\([A-Z]+\)-[A-Z0-9]+)/i,
+  ], rawText);
+
+  // ===== Port Origin & Port Shipment =====
+  var portOrigin = tryPatterns([/Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i], rawText);
+  result.portOfDestination = tryPatterns([/Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i], rawText);
+
+  // ===== Country Origin → Exporter =====
+  result.exporterName = tryPatterns([
+    /Country\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i,
+  ], rawText);
+
+  // ===== MBL/MAWB & Date =====
+  result.mawbMblNo = tryPatterns([
+    /MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i,
+  ], rawText);
+  result.mawbMblDate = tryPatterns([
+    /MBL\/\s*MAWB\s*:\s*[A-Z0-9]+\s*(?:HBL\/\s*HAWB\s*:\s*[A-Z0-9]+\s*)?Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
+
+  // ===== HBL/HAWB & Date =====
+  result.hawbHblNo = tryPatterns([
+    /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
+  ], rawText);
+  result.hawbHblDate = tryPatterns([
+    /HBL\/\s*HAWB\s*:\s*[A-Z0-9]+\s*Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
+
+  // ===== No of Pkgs =====
+  result.noOfPackages = tryPatterns([
+    /No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i,
+  ], rawText);
+
+  // ===== Gross Weight =====
+  result.grossWeight = tryPatterns([
+    /Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i,
+  ], rawText);
+
+  // ===== Marks & Nos =====
+  result.remarks = tryPatterns([
+    /Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+[-\/\s]+[A-Z0-9]+)/i,
+  ], rawText);
+
+  // ===== SUPPLIER (from Inv.SlNo) & EXPORTER =====
+  result.supplierName = tryPatterns([
+    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED|CO\.?,?\s*LTD))/i,
+    /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
+    /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
+  ], rawText);
+  if (result.supplierName) result.supplierName = result.supplierName.replace(/\s+/g, ' ').trim();
+  if (result.supplierName) result.exporterName = result.supplierName;
+
+  // ===== Invoice No =====
+  result.invoiceNo = tryPatterns([
+    /Inv\.?\s*No\s*:\s*([A-Z0-9]+[-\/]?\d*)/i,
+  ], rawText);
+
+  // ===== Invoice Date =====
+  result.invoiceDate = tryPatterns([
+    /Inv\.?\s*Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
+
+  // ===== Invoice Value =====
+  result.billingCurrency = tryPatterns([
+    /Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i,
+  ], rawText);
+
+  // ===== Freight =====
+  result.billNo = tryPatterns([
+    /Freight\s*:\s*([\d.]+\s*[A-Z]{3})/i,
+  ], rawText);
+
+  // ===== Exchange Rate =====
+  result.billDate = tryPatterns([
+    /Exchange\s*Rate\s*:\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i,
+  ], rawText);
 
   return result;
 }
