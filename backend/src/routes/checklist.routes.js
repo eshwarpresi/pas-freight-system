@@ -78,7 +78,9 @@ function parseByColumns(items) {
     return row.map(function(i) { return i.text; }).join(' ').trim();
   }
 
+  // Build flat text AND line-by-line text
   var flatText = rowArray.map(rowText).join(' ');
+  var lineTexts = rowArray.map(rowText);
   var m;
 
   // Reference Number
@@ -104,7 +106,7 @@ function parseByColumns(items) {
   // Agent
   result.agentDebitNote = 'PAS FREIGHT SERVICES';
 
-  // Importer Name - multiple fallback patterns
+  // Importer Name
   m = flatText.match(/PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[\w\s]*?)\s+#/i);
   if (!m) m = flatText.match(/([\w\s]+(?:PRIVATE|LIMITED|INTEGRATORS))\s+#19/i);
   if (!m) m = flatText.match(/(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i);
@@ -118,10 +120,20 @@ function parseByColumns(items) {
   m = flatText.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
   if (m) result.hawbHblNo = m[1];
 
-  // AWB Dates - find Date: patterns after AWB section
-  var awbSection = flatText.substring(flatText.indexOf('MBL/MAWB'));
-  m = awbSection.match(/Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4}).*?Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/);
-  if (m) { result.mawbMblDate = m[1]; result.hawbHblDate = m[2]; }
+  // AWB Dates - search line by line near MBL/MAWB
+  for (var i = 0; i < lineTexts.length; i++) {
+    if (lineTexts[i].indexOf('MBL/MAWB') >= 0 || lineTexts[i].indexOf('HBL/HAWB') >= 0) {
+      for (var j = i; j < Math.min(i + 10, lineTexts.length); j++) {
+        var dates = lineTexts[j].match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
+        if (dates && dates.length >= 2) {
+          result.mawbMblDate = dates[0];
+          result.hawbHblDate = dates[1];
+          break;
+        }
+      }
+      break;
+    }
+  }
 
   // No of Pkgs
   m = flatText.match(/No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i);
@@ -155,10 +167,11 @@ function parseByColumns(items) {
   m = flatText.match(/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+-[A-Z0-9]+\/[A-Z]+)/i);
   if (m) result.remarks = m[1].trim();
 
-  // GSTIN - with or without colon, or just 15-digit pattern
-  m = flatText.match(/GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
-  if (!m) m = flatText.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
-  if (m) result.additionalRemarks = 'GSTIN: ' + m[1];
+  // GSTIN - search line by line for 15-digit pattern
+  for (var i = 0; i < lineTexts.length; i++) {
+    m = lineTexts[i].match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
+    if (m) { result.additionalRemarks = 'GSTIN: ' + m[1]; break; }
+  }
 
   // Freight
   m = flatText.match(/Freight\s*:\s*([\d.]+\s*USD)/i);
