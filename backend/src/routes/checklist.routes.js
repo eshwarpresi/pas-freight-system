@@ -109,9 +109,31 @@ function parseByColumns(items) {
   m = rawText.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
   if (m) result.hawbHblNo = m[1];
 
-  // AWB Dates - match the exact sequence from raw text
+  // AWB Dates - try multiple patterns
+  // Pattern 1: Exact sequence MBL...HBL...Date...Date
   m = rawText.match(/MBL\/\s*MAWB\s*:\s*\d+\s*HBL\/\s*HAWB\s*:\s*[A-Z0-9]+\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) { result.mawbMblDate = m[1]; result.hawbHblDate = m[2]; }
+  // Pattern 2: Just two dates near AWB section
+  if (!m) {
+    var awbIdx = rawText.indexOf('MBL/MAWB');
+    if (awbIdx > -1) {
+      var section = rawText.substring(awbIdx);
+      m = section.match(/Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+    }
+  }
+  // Pattern 3: Just grab first 2 dates after MBL/MAWB
+  if (!m) {
+    var awbIdx2 = rawText.indexOf('MBL/MAWB');
+    if (awbIdx2 > -1) {
+      var allDates = rawText.substring(awbIdx2).match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
+      if (allDates && allDates.length >= 2) {
+        result.mawbMblDate = allDates[0];
+        result.hawbHblDate = allDates[1];
+      }
+    }
+  } else {
+    result.mawbMblDate = m[1];
+    result.hawbHblDate = m[2];
+  }
 
   // No of Pkgs
   m = rawText.match(/No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i);
@@ -145,10 +167,14 @@ function parseByColumns(items) {
   m = rawText.match(/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+-[A-Z0-9]+\/[A-Z]+)/i);
   if (m) result.remarks = m[1].trim();
 
-  // GSTIN - search in space-removed text
+  // GSTIN - multiple fallback patterns
   m = noSpace.match(/GSTIN:?(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
   if (!m) m = noSpace.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
-  if (m) result.additionalRemarks = 'GSTIN: ' + m[1];
+  if (!m) {
+    // Try with spaces in raw text
+    m = rawText.match(/GSTIN\s*:?\s*(\d{2}\s*[A-Z]{5}\s*\d{4}\s*[A-Z]\s*\d{3}\s*[A-Z]{3}\s*\d)/i);
+  }
+  if (m) result.additionalRemarks = 'GSTIN: ' + m[1].replace(/\s+/g, '');
 
   // Freight
   m = rawText.match(/Freight\s*:\s*([\d.]+\s*USD)/i);
