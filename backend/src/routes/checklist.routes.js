@@ -57,10 +57,8 @@ function parseChecklistText(text) {
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
-  // Keep original spacing for better matching
   var t = text;
 
-  // Helper: find value after exact label
   function after(label) {
     var idx = t.indexOf(label);
     if (idx === -1) return '';
@@ -70,12 +68,10 @@ function parseChecklistText(text) {
     return '';
   }
 
-  // === EXACT EXTRACTIONS FROM RAW TEXT ===
-
   // File No
   result.referenceNumber = after('File No');
 
-  // Job No & Date: "1264 & 18/06/2026"
+  // Job No & Date
   var jd = after('Job No & Date');
   var jdMatch = jd.match(/(\d+)\s*[&]\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   if (jdMatch) { result.jobOrderNo = jdMatch[1]; result.jobOrderDate = jdMatch[2]; }
@@ -83,33 +79,36 @@ function parseChecklistText(text) {
   // Transport Mode
   result.shipmentMode = after('Transport Mode');
 
-  // Port Of Filing
+  // Location = Port Of Filing (where customs clearance happens)
   var loc = after('Port Of Filing');
   result.location = loc.split(',')[0].trim();
 
-  // B.E No,Date: Printed On : 19/06/2026
+  // Port of Discharge = Port Of Filing (Indian customs port)
+  result.portOfDischarge = loc;
+
+  // B.E Date
   var be = after('B.E No,Date');
   var beMatch = be.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
   if (beMatch) result.boeSbDate = beMatch[1];
 
-  // CHA/Agent
+  // Agent
   result.agentDebitNote = 'PAS FREIGHT SERVICES';
 
-  // Importer Name - between PAS FREIGHT SERVICES and # symbol
+  // Importer Name
   var imp = t.match(/PAS FREIGHT SERVICES\s+([A-Z][A-Z\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[A-Z\s]*?)\s+#/i);
   if (imp) result.importerName = imp[1].replace(/\s+/g, ' ').trim();
 
-  // MBL/MAWB Number
+  // MBL/MAWB
   var mbl = after('MBL/MAWB');
   var mblMatch = mbl.match(/(\d+)/);
   if (mblMatch) result.mawbMblNo = mblMatch[1];
 
-  // HBL/HAWB Number
+  // HBL/HAWB
   var hbl = after('HBL/HAWB');
   var hblMatch = hbl.match(/([A-Z0-9]+)/);
   if (hblMatch) result.hawbHblNo = hblMatch[1];
 
-  // AWB Dates - find both dates near MBL/MAWB HBL/HAWB section
+  // AWB Dates
   var awbIdx = t.indexOf('MBL/MAWB');
   if (awbIdx > -1) {
     var awbSection = t.substring(awbIdx, awbIdx + 200);
@@ -130,20 +129,22 @@ function parseChecklistText(text) {
   var wtMatch = wt.match(/([\d.]+\s*KGS)/i);
   if (wtMatch) result.grossWeight = wtMatch[1];
 
-  // Port Origin
-  var po = after('Port Origin');
-  var poMatch = po.match(/([A-Z]+-[A-Z]+)/);
-  if (poMatch) result.portOfDischarge = poMatch[1];
-
-  // Port Shipment
+  // Port of Destination = Port Shipment (SINGAPORE-SIN)
   var ps = after('Port Shipment');
   var psMatch = ps.match(/([A-Z]+-[A-Z]+)/);
   if (psMatch) result.portOfDestination = psMatch[1];
 
-  // Country Origin
+  // Country Origin - just for reference
   var co = after('Country Origin');
   var coMatch = co.match(/([A-Z]+-[A-Z]+)/);
-  if (coMatch) result.exporterName = coMatch[1];
+  
+  // Supplier Name (this is the exporter/shipper)
+  var supp = t.match(/Inv\.SlNo\s*:\s*1\s+([A-Z][A-Z\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED)[A-Z\s]*?)\s+\d/);
+  if (supp) {
+    result.supplierName = supp[1].replace(/\s+/g, ' ').trim();
+    // Exporter = Supplier (the company shipping the goods)
+    result.exporterName = result.supplierName;
+  }
 
   // Invoice No
   var inv = after('Inv.No');
@@ -159,10 +160,6 @@ function parseChecklistText(text) {
   var invv = after('Inv.Value');
   var invvMatch = invv.match(/([\d.]+\s*[A-Z]{3})/);
   if (invvMatch) result.billingCurrency = invvMatch[1];
-
-  // Supplier - after "Inv.SlNo : 1"
-  var supp = t.match(/Inv\.SlNo\s*:\s*1\s+([A-Z][A-Z\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED)[A-Z\s]*?)\s+\d/);
-  if (supp) result.supplierName = supp[1].replace(/\s+/g, ' ').trim();
 
   // Marks & Nos
   var marks = after('Marks & Nos');
