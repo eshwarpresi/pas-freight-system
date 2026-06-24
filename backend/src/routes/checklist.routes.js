@@ -42,7 +42,7 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
       });
     }
 
-    var parsed = parseByColumns(allItems);
+    var parsed = parseChecklistUniversal(allItems);
     res.json({ status: 'success', data: parsed });
   } catch (error) {
     console.error('PDF scan error:', error);
@@ -50,7 +50,10 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
   }
 });
 
-function parseByColumns(items) {
+// =============================================
+// UNIVERSAL PARSER - Works with multiple formats
+// =============================================
+function parseChecklistUniversal(items) {
   var result = {
     referenceNumber: '', shipmentMode: '', importerName: '', exporterName: '',
     supplierName: '', location: '', jobOrderNo: '', jobOrderDate: '',
@@ -63,126 +66,221 @@ function parseByColumns(items) {
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
-  // Build raw text from ALL items sorted by position
   var rawText = items.slice().sort(function(a, b) { return b.y - a.y || a.x - b.x; })
     .map(function(i) { return i.text; }).join(' ');
   
-  // Also remove all spaces version for GSTIN
   var noSpace = rawText.replace(/\s+/g, '');
-  
-  var m;
+  var lowerText = rawText.toLowerCase();
 
-  // Reference Number
-  m = rawText.match(/File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i);
-  if (m) result.referenceNumber = m[1];
-
-  // Job No & Date
-  m = rawText.match(/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)\s*[&]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) { result.jobOrderNo = m[1]; result.jobOrderDate = m[2]; }
-
-  // Transport Mode
-  m = rawText.match(/Transport\s*Mode\s*:\s*(\S)/i);
-  if (m) result.shipmentMode = m[1];
-
-  // Port Of Filing
-  m = rawText.match(/Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i);
-  if (m) { result.location = m[1].trim(); result.portOfDischarge = m[1].trim(); }
-
-  // B.E Date
-  m = rawText.match(/Printed\s*On\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) result.boeSbDate = m[1];
-
-  // Agent
-  result.agentDebitNote = 'PAS FREIGHT SERVICES';
-
-  // Importer Name
-  m = rawText.match(/PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[\w\s]*?)\s+#/i);
-  if (!m) m = rawText.match(/([\w\s]+(?:PRIVATE|LIMITED|INTEGRATORS))\s+#19/i);
-  if (!m) m = rawText.match(/(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i);
-  if (m) result.importerName = m[1].replace(/\s+/g, ' ').trim();
-
-  // MBL/MAWB
-  m = rawText.match(/MBL\/\s*MAWB\s*:\s*(\d+)/i);
-  if (m) result.mawbMblNo = m[1];
-
-  // HBL/HAWB
-  m = rawText.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
-  if (m) result.hawbHblNo = m[1];
-
-  // AWB Dates - try multiple patterns
-  // Pattern 1: Exact sequence MBL...HBL...Date...Date
-  m = rawText.match(/MBL\/\s*MAWB\s*:\s*\d+\s*HBL\/\s*HAWB\s*:\s*[A-Z0-9]+\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  // Pattern 2: Just two dates near AWB section
-  if (!m) {
-    var awbIdx = rawText.indexOf('MBL/MAWB');
-    if (awbIdx > -1) {
-      var section = rawText.substring(awbIdx);
-      m = section.match(/Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  // Helper: try multiple regex patterns, return first match
+  function tryPatterns(patterns, text) {
+    for (var i = 0; i < patterns.length; i++) {
+      var m = text.match(patterns[i]);
+      if (m && m[1]) return m[1].trim();
     }
+    return '';
   }
-  // Pattern 3: Just grab first 2 dates after MBL/MAWB
-  if (!m) {
-    var awbIdx2 = rawText.indexOf('MBL/MAWB');
-    if (awbIdx2 > -1) {
-      var allDates = rawText.substring(awbIdx2).match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
-      if (allDates && allDates.length >= 2) {
-        result.mawbMblDate = allDates[0];
-        result.hawbHblDate = allDates[1];
+
+  // Helper: find value after any of these labels
+  function findAfter(labels, text) {
+    for (var i = 0; i < labels.length; i++) {
+      var idx = text.toLowerCase().indexOf(labels[i].toLowerCase());
+      if (idx >= 0) {
+        var after = text.substring(idx + labels[i].length).replace(/^[\s:.-]+/, '').trim();
+        // Take until next multiple spaces or dash
+        var end = after.search(/\s{2,}|--/);
+        if (end > 0) after = after.substring(0, end);
+        if (after.length > 0 && after.length < 150) return after.trim();
       }
     }
+    return '';
+  }
+
+  // Helper: find date near a label
+  function findDateNear(label, text) {
+    var idx = text.toLowerCase().indexOf(label.toLowerCase());
+    if (idx >= 0) {
+      var chunk = text.substring(idx, idx + 100);
+      var m = chunk.match(/(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/);
+      if (m) return m[1];
+    }
+    return '';
+  }
+
+  // ===== REFERENCE NUMBER =====
+  result.referenceNumber = tryPatterns([
+    /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
+    /Reference\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
+    /Ref\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
+  ], rawText);
+  if (!result.referenceNumber) result.referenceNumber = findAfter(['File No', 'Reference No', 'Ref No'], rawText);
+
+  // ===== JOB ORDER =====
+  result.jobOrderNo = tryPatterns([
+    /Job\s*(?:Order)?\s*No\s*[&]?\s*(?:Date)?\s*:?\s*(\d+)/i,
+    /Job\s*#?\s*:?\s*(\d+)/i,
+  ], rawText);
+  result.jobOrderDate = findDateNear('Job', rawText);
+  if (!result.jobOrderDate) result.jobOrderDate = tryPatterns([
+    /Job\s*(?:Order)?\s*No\s*[&]?\s*Date\s*:?\s*\d+\s*[&]?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+  ], rawText);
+
+  // ===== BOE/SB =====
+  result.boeSbNo = tryPatterns([
+    /BOE\s*(?:No|Number)?\s*:?\s*(\d+)/i,
+    /SB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
+    /B\.?E\s*No\s*:?\s*(\d+)/i,
+  ], rawText);
+  result.boeSbDate = tryPatterns([
+    /BOE\s*(?:Date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    /SB\s*(?:Date)?\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    /Printed\s*On\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+  ], rawText);
+
+  // ===== TRANSPORT MODE =====
+  result.shipmentMode = tryPatterns([
+    /Transport\s*Mode\s*:?\s*(\S)/i,
+    /Shipment\s*Mode\s*:?\s*(\S)/i,
+    /Mode\s*:?\s*(\S)/i,
+  ], rawText);
+
+  // ===== LOCATION / PORT OF FILING =====
+  result.location = tryPatterns([
+    /Port\s*Of\s*Filing\s*:?\s*([^,]+(?:,[^,]+)?)/i,
+    /Filing\s*Port\s*:?\s*([^,]+(?:,[^,]+)?)/i,
+    /Location\s*:?\s*([^,]+(?:,[^,]+)?)/i,
+  ], rawText);
+  result.portOfDischarge = result.location || tryPatterns([
+    /Port\s*Of\s*Discharge\s*:?\s*([^,]+(?:,[^,]+)?)/i,
+    /Discharge\s*Port\s*:?\s*([^,]+(?:,[^,]+)?)/i,
+    /POD\s*:?\s*([^\s,]+)/i,
+  ], rawText);
+
+  // ===== IMPORTER =====
+  result.importerName = tryPatterns([
+    /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[\w\s]*?)(?:\s+#|\s{2,})/i,
+    /Importer\s*(?:Name|Details)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS))/i,
+    /Consignee\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP))/i,
+    /Importer\s*:?\s*([A-Z][\w\s]{5,}(?:PRIVATE|LIMITED|LTD|INC|CORP))/i,
+  ], rawText);
+  if (result.importerName) result.importerName = result.importerName.replace(/\s+/g, ' ').trim();
+
+  // ===== EXPORTER / SUPPLIER =====
+  result.exporterName = tryPatterns([
+    /Exporter\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
+    /Shipper\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
+  ], rawText);
+  if (result.exporterName) result.exporterName = result.exporterName.replace(/\s+/g, ' ').trim();
+
+  result.supplierName = tryPatterns([
+    /Supplier\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
+    /Seller\s*(?:Name)?\s*:?\s*([\w\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|PTE))/i,
+    /Inv\.?\s*Sl\.?\s*No\s*:?\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED))/i,
+  ], rawText);
+  if (result.supplierName) result.supplierName = result.supplierName.replace(/\s+/g, ' ').trim();
+  // If exporter not found, use supplier
+  if (!result.exporterName && result.supplierName) result.exporterName = result.supplierName;
+  if (!result.supplierName && result.exporterName) result.supplierName = result.exporterName;
+
+  // ===== MAWB/MBL =====
+  result.mawbMblNo = tryPatterns([
+    /MAWB\s*(?:No|Number)?\s*:?\s*(\d+)/i,
+    /MBL\s*(?:No|Number)?\s*:?\s*(\d+)/i,
+    /Master\s*(?:AWB|BL)\s*(?:No)?\s*:?\s*(\d+)/i,
+  ], rawText);
+  result.mawbMblDate = findDateNear('MAWB', rawText) || findDateNear('MBL', rawText);
+
+  // ===== HAWB/HBL =====
+  result.hawbHblNo = tryPatterns([
+    /HAWB\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+)/i,
+    /HBL\s*(?:No|Number)?\s*:?\s*([A-Z0-9]+)/i,
+    /House\s*(?:AWB|BL)\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
+  ], rawText);
+  result.hawbHblDate = findDateNear('HAWB', rawText) || findDateNear('HBL', rawText);
+
+  // ===== PACKAGES =====
+  result.noOfPackages = tryPatterns([
+    /No\.?\s*of\s*Pkgs\s*:?\s*(\d+)/i,
+    /Packages\s*:?\s*(\d+)/i,
+    /Qty\s*:?\s*(\d+)/i,
+    /Total\s*Packages\s*:?\s*(\d+)/i,
+  ], rawText);
+
+  // ===== GROSS WEIGHT =====
+  result.grossWeight = tryPatterns([
+    /Gross\s*Weight\s*:?\s*([\d.]+\s*KGS)/i,
+    /Total\s*Weight\s*:?\s*([\d.]+\s*KGS)/i,
+    /Weight\s*:?\s*([\d.]+\s*KGS)/i,
+  ], rawText);
+
+  // ===== PORT OF DESTINATION =====
+  result.portOfDestination = tryPatterns([
+    /Port\s*Shipment\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
+    /Destination\s*(?:Port)?\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
+    /Port\s*Of\s*Destination\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
+    /Final\s*Destination\s*:?\s*([A-Z]+[-\s]?[A-Z]+)/i,
+  ], rawText);
+
+  // ===== INVOICE =====
+  result.invoiceNo = tryPatterns([
+    /Inv\.?\s*No\s*:?\s*(\d+)/i,
+    /Invoice\s*(?:No|Number)?\s*:?\s*(\d+)/i,
+    /Invoice\s*#?\s*:?\s*(\d+)/i,
+  ], rawText);
+  result.invoiceDate = tryPatterns([
+    /Inv\.?\s*Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+    /Invoice\s*Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i,
+  ], rawText);
+  result.billingCurrency = tryPatterns([
+    /Inv\.?\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
+    /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
+    /Amount\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
+  ], rawText);
+
+  // ===== FREIGHT =====
+  result.billNo = tryPatterns([
+    /Freight\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
+    /Freight\s*Charges?\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
+  ], rawText);
+
+  // ===== EXCHANGE RATE =====
+  result.billDate = tryPatterns([
+    /Exchange\s*Rate\s*:?\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i,
+    /Exchange\s*Rate\s*:?\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*[A-Z]{3})/i,
+  ], rawText);
+
+  // ===== CHA / AGENT =====
+  result.agentDebitNote = tryPatterns([
+    /CHA\s*(?:Name|Details)?\s*:?\s*(PAS\s*FREIGHT\s*SERVICES)/i,
+    /Agent\s*(?:Name)?\s*:?\s*(PAS\s*FREIGHT\s*SERVICES)/i,
+  ], rawText);
+  if (!result.agentDebitNote && rawText.indexOf('PAS FREIGHT SERVICES') >= 0) {
+    result.agentDebitNote = 'PAS FREIGHT SERVICES';
+  }
+
+  // ===== MARKS & NOS =====
+  result.remarks = tryPatterns([
+    /Marks\s*[&]?\s*Nos\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/]+)/i,
+    /Marks?\s*:?\s*([A-Z0-9]+[-\/][A-Z0-9\/]+)/i,
+  ], rawText);
+
+  // ===== GSTIN =====
+  result.additionalRemarks = tryPatterns([
+    /GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i,
+  ], noSpace);
+  if (!result.additionalRemarks) {
+    var gstMatch = noSpace.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
+    if (gstMatch) result.additionalRemarks = 'GSTIN: ' + gstMatch[1];
   } else {
-    result.mawbMblDate = m[1];
-    result.hawbHblDate = m[2];
+    result.additionalRemarks = 'GSTIN: ' + result.additionalRemarks;
   }
 
-  // No of Pkgs
-  m = rawText.match(/No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i);
-  if (m) result.noOfPackages = m[1];
-
-  // Gross Weight
-  m = rawText.match(/Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i);
-  if (m) result.grossWeight = m[1];
-
-  // Port Destination
-  m = rawText.match(/Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i);
-  if (m) result.portOfDestination = m[1];
-
-  // Supplier & Exporter
-  m = rawText.match(/Inv\.?\s*Sl\.?\s*No\s*:\s*1\s+([A-Z][\w\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED))/i);
-  if (m) { result.supplierName = m[1].replace(/\s+/g, ' ').trim(); result.exporterName = result.supplierName; }
-
-  // Invoice No
-  m = rawText.match(/Inv\.?\s*No\s*:\s*(\d+)/i);
-  if (m) result.invoiceNo = m[1];
-
-  // Invoice Date
-  m = rawText.match(/Inv\.?\s*Date\s*:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-  if (m) result.invoiceDate = m[1];
-
-  // Invoice Value
-  m = rawText.match(/Inv\.?\s*Value\s*:\s*([\d.]+\s*USD)/i);
-  if (m) result.billingCurrency = m[1];
-
-  // Marks & Nos
-  m = rawText.match(/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+-[A-Z0-9]+\/[A-Z]+)/i);
-  if (m) result.remarks = m[1].trim();
-
-  // GSTIN - multiple fallback patterns
-  m = noSpace.match(/GSTIN:?(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
-  if (!m) m = noSpace.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
-  if (!m) {
-    // Try with spaces in raw text
-    m = rawText.match(/GSTIN\s*:?\s*(\d{2}\s*[A-Z]{5}\s*\d{4}\s*[A-Z]\s*\d{3}\s*[A-Z]{3}\s*\d)/i);
-  }
-  if (m) result.additionalRemarks = 'GSTIN: ' + m[1].replace(/\s+/g, '');
-
-  // Freight
-  m = rawText.match(/Freight\s*:\s*([\d.]+\s*USD)/i);
-  if (m) result.billNo = m[1];
-
-  // Exchange Rate
-  m = rawText.match(/Exchange\s*Rate\s*:\s*([\d.]+\s*USD\s*=\s*[\d.]+\s*INR)/i);
-  if (m) result.billDate = m[1];
+  // ===== DATES (generic) =====
+  if (!result.deliveryOrderDate) result.deliveryOrderDate = findDateNear('Delivery Order', rawText) || findDateNear('DO Date', rawText);
+  if (!result.occDate) result.occDate = findDateNear('OCC', rawText) || findDateNear('Out of Charge', rawText);
+  if (!result.gatePassDate) result.gatePassDate = findDateNear('Gate Pass', rawText) || findDateNear('Gate Out', rawText);
+  if (!result.igmDate) result.igmDate = findDateNear('IGM', rawText);
+  if (!result.cargoArrivalDate) result.cargoArrivalDate = findDateNear('Arrival', rawText);
 
   return result;
 }

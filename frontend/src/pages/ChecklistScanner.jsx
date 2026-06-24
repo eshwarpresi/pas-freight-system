@@ -48,45 +48,46 @@ export default function ChecklistScanner() {
 
   function handleDownload() {
     setDownloading(true)
-    var style = document.createElement('style')
-    style.id = 'pdf-print-style'
-    style.textContent = '@media print{@page{size:A4;margin:8mm 10mm}body{visibility:hidden!important;background:#fff!important}#checklist-print,#checklist-print *{visibility:visible!important}#checklist-print{position:absolute;left:0;top:0;width:100%;background:#fff!important;font-family:"Segoe UI",Arial,Helvetica,sans-serif!important;color:#1a1a2e!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.co-name{font-size:16pt!important;font-weight:900!important;color:#1a1a2e!important;letter-spacing:2pt!important}.co-addr{font-size:8pt!important;color:#444!important;line-height:1.6!important}.co-gst{font-size:8pt!important;font-weight:700!important;color:#1a1a2e!important}.st-label{font-size:7pt!important;font-weight:700!important;text-transform:uppercase!important;color:#1a1a2e!important}.st-select{width:100%!important;padding:4pt!important;border:1.5pt solid #1a1a2e!important;font-size:9pt!important;font-weight:700!important;text-align:center!important;background:#fff!important}.st-badge{padding:3pt 8pt!important;background:#1a1a2e!important;color:#fff!important;font-size:8pt!important;font-weight:700!important}.main-table{width:100%!important;border-collapse:collapse!important;margin-top:8pt!important}.main-table td{padding:5pt 8pt!important;border:1pt solid #ccc!important;font-size:9pt!important;vertical-align:middle!important}.main-table .lbl{background:#1a1a2e!important;color:#fff!important;font-weight:700!important;font-size:8pt!important;width:18%!important;white-space:nowrap!important}.main-table .val{width:15%!important}.main-table input{border:none!important;background:transparent!important;width:100%!important;font-size:9pt!important;color:#1a1a2e!important;font-weight:600!important;outline:none!important;padding:2pt 0!important;font-family:"Segoe UI",Arial,sans-serif!important}.main-table input::placeholder{color:#bbb!important}.sig-box{border:1.5pt solid #1a1a2e!important;padding:10pt 12pt!important;font-size:9pt!important}.sig-line{border-bottom:1pt solid #1a1a2e!important;width:60%!important;margin-top:20pt!important}.footer-text{text-align:center!important;font-size:7pt!important;color:#999!important;margin-top:10pt!important}}'
-    document.head.appendChild(style)
+    var s = document.createElement('style')
+    s.id = 'pdf-print-style'
+    s.textContent = '@media print{@page{size:A4;margin:6mm 8mm}body{visibility:hidden!important;background:#fff!important}#checklist-print,#checklist-print *{visibility:visible!important}#checklist-print{position:absolute;left:0;top:0;width:100%;background:#fff!important;font-family:"Segoe UI",Arial,Helvetica,sans-serif!important;color:#111!important}.watermark-img{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;opacity:0.04!important;z-index:0!important;pointer-events:none!important;width:160mm!important;height:230mm!important;object-fit:contain!important}.co-name{font-size:14pt!important;font-weight:900!important;color:#111!important}.co-addr{font-size:7pt!important;color:#444!important}.co-gst{font-size:7pt!important;font-weight:700!important;color:#111!important}.st-label{font-size:6pt!important;font-weight:700!important;text-transform:uppercase!important}.st-select{width:100%!important;padding:3pt!important;border:1pt solid #111!important;font-size:8pt!important;font-weight:700!important;text-align:center!important;background:#fff!important}.st-badge{padding:2pt 8pt!important;background:#111!important;color:#fff!important;font-size:7pt!important;font-weight:700!important}.title-bar{background:#111!important;color:#fff!important;text-align:center!important;padding:3mm!important;margin-bottom:3mm!important;font-size:10pt!important;font-weight:900!important;letter-spacing:3pt!important}.fr{display:flex!important;border-bottom:0.5pt solid #ddd!important;padding:3pt 0!important;align-items:center!important;min-height:24pt!important}.fl{font-size:7pt!important;font-weight:700!important;color:#555!important;text-transform:uppercase!important;width:30%!important;flex-shrink:0!important}.fv{font-size:9pt!important;font-weight:600!important;color:#111!important;flex:1!important;word-wrap:break-word!important}.fi{border:none!important;background:transparent!important;width:100%!important;font-size:9pt!important;font-weight:600!important;color:#111!important;outline:none!important;padding:2pt 0!important;font-family:inherit!important}.fdl{font-size:6pt!important;font-weight:700!important;color:#555!important;text-transform:uppercase!important;width:8%!important;text-align:right!important;padding-right:3pt!important}.fdv{font-size:8pt!important;font-weight:600!important;color:#444!important;width:18%!important}.fdi{border:none!important;background:transparent!important;width:100%!important;font-size:8pt!important;font-weight:600!important;color:#444!important;outline:none!important;padding:2pt 0!important;font-family:inherit!important}.ft{text-align:center!important;font-size:6pt!important;color:#999!important;margin-top:6mm!important}}'
+    document.head.appendChild(s)
     window.print()
     setTimeout(function() { var el = document.getElementById('pdf-print-style'); if(el) el.remove(); setDownloading(false) }, 500)
   }
 
   function handleReset() { setFile(null); setFormData(null); setRawText(''); setShipmentType(''); if (fileInputRef.current) fileInputRef.current.value = '' }
 
-  function R(label1, key1, label2, key2, label3, key3) {
-    return React.createElement('tr', null,
-      React.createElement('td', { className: 'lbl' }, label1),
-      React.createElement('td', { className: 'val' }, React.createElement('input', { type: 'text', value: (formData[key1] || ''), onChange: function(e) { updateField(key1, e.target.value) }, placeholder: '' })),
-      React.createElement('td', { className: 'lbl' }, label2),
-      React.createElement('td', { className: 'val' }, React.createElement('input', { type: 'text', value: (formData[key2] || ''), onChange: function(e) { updateField(key2, e.target.value) }, placeholder: '' })),
-      React.createElement('td', { className: 'lbl' }, label3),
-      React.createElement('td', { className: 'val' }, React.createElement('input', { type: 'text', value: (formData[key3] || ''), onChange: function(e) { updateField(key3, e.target.value) }, placeholder: '' }))
+  var F = function(key) { return (formData[key] || '') }
+  var U = function(key) { return function(e) { updateField(key, e.target.value) } }
+
+  var FR = function(label, key) {
+    return React.createElement('div', { className: 'fr' },
+      React.createElement('div', { className: 'fl' }, label),
+      React.createElement('div', { className: 'fv' },
+        React.createElement('input', { type: 'text', value: F(key), onChange: U(key), className: 'fi' })
+      )
     )
   }
 
-  function W(label1, key1, c1, label2, key2) {
-    return React.createElement('tr', null,
-      React.createElement('td', { className: 'lbl' }, label1),
-      React.createElement('td', { colSpan: c1 || 5 }, React.createElement('input', { type: 'text', value: (formData[key1] || ''), onChange: function(e) { updateField(key1, e.target.value) }, placeholder: '' })),
-      label2 ? React.createElement('td', { className: 'lbl' }, label2) : null,
-      label2 ? React.createElement('td', { className: 'val' }, React.createElement('input', { type: 'text', value: (formData[key2] || ''), onChange: function(e) { updateField(key2, e.target.value) }, placeholder: '' })) : null
+  var FRD = function(label, key, dateKey) {
+    return React.createElement('div', { className: 'fr' },
+      React.createElement('div', { className: 'fl' }, label),
+      React.createElement('div', { className: 'fv' },
+        React.createElement('input', { type: 'text', value: F(key), onChange: U(key), className: 'fi' })
+      ),
+      React.createElement('div', { className: 'fdl' }, 'DATE'),
+      React.createElement('div', { className: 'fdv' },
+        React.createElement('input', { type: 'text', value: F(dateKey), onChange: U(dateKey), className: 'fdi' })
+      )
     )
   }
 
   return React.createElement('div', { className: 'space-y-6' },
-    // SCREEN UI
     React.createElement('div', { className: 'flex items-center justify-between gap-4 print:hidden' },
       React.createElement('div', { className: 'flex items-center gap-3' },
         React.createElement('div', { className: 'w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-lg' }, React.createElement(FileUp, { size: 18, className: 'text-white' })),
-        React.createElement('div', null,
-          React.createElement('h1', { className: 'text-2xl font-bold', style: { color: 'var(--text-primary)' } }, 'Scan & Fill Checklist'),
-          React.createElement('p', { className: 'text-xs', style: { color: 'var(--text-muted)' } }, 'Upload PDF → Auto-extract → Print')
-        )
+        React.createElement('div', null, React.createElement('h1', { className: 'text-2xl font-bold', style: { color: 'var(--text-primary)' } }, 'Scan & Fill Checklist'))
       ),
       React.createElement('div', { className: 'flex items-center gap-2' },
         React.createElement('label', { className: 'px-3 py-2 glass border rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-2', style: { borderColor: 'var(--border-color)' } }, React.createElement(Image, { size: 14 }), logo ? 'Logo ✓' : 'Add Logo', React.createElement('input', { type: 'file', accept: 'image/*', onChange: handleLogoUpload, style: { display: 'none' } })),
@@ -108,85 +109,75 @@ export default function ChecklistScanner() {
           scanning ? React.createElement(RefreshCw, { size: 18, className: 'animate-spin' }) : React.createElement(Search, { size: 18 }), scanning ? 'Scanning...' : 'Scan Checklist')
       ) : React.createElement(React.Fragment, null,
         React.createElement(Upload, { size: 56, className: 'text-indigo-400 mb-4' }),
-        React.createElement('p', { className: 'text-lg font-bold', style: { color: 'var(--text-primary)' } }, 'Drop PDF Checklist Here'),
-        React.createElement('p', { className: 'text-sm mt-2', style: { color: 'var(--text-muted)' } }, 'or click to browse')
+        React.createElement('p', { className: 'text-lg font-bold', style: { color: 'var(--text-primary)' } }, 'Drop PDF Checklist Here')
       )
     ) : null,
 
-    // ========== PRINT LAYOUT ==========
-    formData ? React.createElement('div', { id: 'checklist-print', style: { background: '#fff', maxWidth: '190mm', margin: '0 auto', fontFamily: '"Segoe UI", Arial, Helvetica, sans-serif', color: '#1a1a2e', padding: '0' } },
+    formData ? React.createElement('div', { id: 'checklist-print', style: { background: '#fff', maxWidth: '190mm', margin: '0 auto', fontFamily: '"Segoe UI", Arial, sans-serif', color: '#111', padding: '0', position: 'relative' } },
       
-      // HEADER
-      React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', marginBottom: '6mm' } },
-        React.createElement('tbody', null,
-          React.createElement('tr', null,
-            React.createElement('td', { style: { width: '22%', border: '2px solid #1a1a2e', padding: '3mm', textAlign: 'center', verticalAlign: 'middle' } },
-              logo ? React.createElement('img', { src: logo, alt: 'Logo', style: { maxWidth: '100%', maxHeight: '20mm', objectFit: 'contain' } })
-                : React.createElement('div', { className: 'co-name', style: { fontSize: '18pt' } }, 'PAS')
-            ),
-            React.createElement('td', { style: { border: '2px solid #1a1a2e', padding: '3mm', textAlign: 'center', verticalAlign: 'middle' } },
-              React.createElement('div', { className: 'co-name' }, 'PAS FREIGHT SERVICES PVT LTD'),
-              React.createElement('div', { className: 'co-addr' }, 'Site No 171, 1st Floor, 7th Block, Arkavathy Layout, Jakkur, Bengaluru - 560064'),
-              React.createElement('div', { className: 'co-gst' }, 'GST No: 29AALCP2369R1ZD')
-            ),
-            React.createElement('td', { style: { width: '18%', border: '2px solid #1a1a2e', padding: '2mm', textAlign: 'center', verticalAlign: 'middle' } },
-              React.createElement('div', { className: 'st-label', style: { marginBottom: '3mm' } }, 'Shipment Type'),
-              React.createElement('select', { value: shipmentType, onChange: function(e) { setShipmentType(e.target.value) }, className: 'st-select' },
-                React.createElement('option', { value: '' }, '-- Select --'),
-                React.createElement('option', { value: 'Air' }, 'AIR'),
-                React.createElement('option', { value: 'Sea FCL' }, 'SEA FCL'),
-                React.createElement('option', { value: 'Sea LCL' }, 'SEA LCL'),
-                React.createElement('option', { value: 'Local Transport' }, 'LOCAL TRANSPORT')
+      logo ? React.createElement('img', { src: logo, className: 'watermark-img', style: { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', opacity: '0.04', zIndex: '0', pointerEvents: 'none', width: '160mm', height: '230mm', objectFit: 'contain' } }) : null,
+
+      React.createElement('div', { style: { position: 'relative', zIndex: '1' } },
+      
+        React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', marginBottom: '4mm' } },
+          React.createElement('tbody', null,
+            React.createElement('tr', null,
+              React.createElement('td', { style: { width: '20%', border: '2px solid #111', padding: '3mm', textAlign: 'center', verticalAlign: 'middle' } },
+                logo ? React.createElement('img', { src: logo, alt: 'Logo', style: { maxWidth: '100%', maxHeight: '18mm', objectFit: 'contain' } })
+                  : React.createElement('div', { className: 'co-name', style: { fontSize: '18pt' } }, 'PAS')
               ),
-              shipmentType ? React.createElement('div', { className: 'st-badge', style: { marginTop: '3mm' } }, shipmentType) : null
+              React.createElement('td', { style: { border: '2px solid #111', padding: '3mm', textAlign: 'center', verticalAlign: 'middle' } },
+                React.createElement('div', { className: 'co-name' }, 'PAS FREIGHT SERVICES PVT LTD'),
+                React.createElement('div', { className: 'co-addr' }, 'Site No 171, 1st Floor, 7th Block, Arkavathy Layout, Jakkur, Bengaluru - 560064'),
+                React.createElement('div', { className: 'co-gst' }, 'GST No: 29AALCP2369R1ZD')
+              ),
+              React.createElement('td', { style: { width: '16%', border: '2px solid #111', padding: '2mm', textAlign: 'center', verticalAlign: 'middle' } },
+                React.createElement('div', { className: 'st-label', style: { marginBottom: '2mm' } }, 'Shipment Type'),
+                React.createElement('select', { value: shipmentType, onChange: function(e) { setShipmentType(e.target.value) }, className: 'st-select' },
+                  React.createElement('option', { value: '' }, '-- Select --'),
+                  React.createElement('option', { value: 'Air' }, 'AIR'),
+                  React.createElement('option', { value: 'Sea FCL' }, 'SEA FCL'),
+                  React.createElement('option', { value: 'Sea LCL' }, 'SEA LCL'),
+                  React.createElement('option', { value: 'Local Transport' }, 'LOCAL TRANSPORT')
+                ),
+                shipmentType ? React.createElement('div', { className: 'st-badge', style: { marginTop: '2mm' } }, shipmentType) : null
+              )
             )
           )
-        )
-      ),
+        ),
 
-      // TITLE
-      React.createElement('div', { style: { background: '#1a1a2e', color: '#fff', textAlign: 'center', padding: '4mm 0', marginBottom: '4mm' } },
-        React.createElement('span', { style: { fontSize: '12pt', fontWeight: '900', letterSpacing: '4pt', textTransform: 'uppercase' } }, 'Checklist Report'),
-        React.createElement('div', { style: { fontSize: '7pt', opacity: '0.8', marginTop: '1mm' } }, 'Date: ' + new Date().toLocaleDateString() + '  |  Ref: ' + (formData.referenceNumber || 'N/A'))
-      ),
+        React.createElement('div', { className: 'title-bar' },
+          'CHECKLIST REPORT  |  ',
+          React.createElement('span', { style: { fontSize: '6pt', fontWeight: '400', letterSpacing: '0' } }, 'Date: ' + new Date().toLocaleDateString() + '  |  Ref: ' + F('referenceNumber'))
+        ),
 
-      // DATA TABLE
-      React.createElement('table', { className: 'main-table' },
-        React.createElement('tbody', null,
-          R('Reference No', 'referenceNumber', 'Mode', 'shipmentMode', 'Location', 'location'),
-          R('Job Order No', 'jobOrderNo', 'Job Date', 'jobOrderDate', 'BOE/SB No', 'boeSbNo'),
-          R('BOE/SB Date', 'boeSbDate', 'Packages', 'noOfPackages', 'Gross Weight', 'grossWeight'),
-          W('Importer', 'importerName', 5),
-          W('Exporter', 'exporterName', 3, 'Supplier', 'supplierName'),
-          R('MAWB/MBL No', 'mawbMblNo', 'MAWB Date', 'mawbMblDate', 'HAWB/HBL No', 'hawbHblNo'),
-          R('HAWB/HBL Date', 'hawbHblDate', 'Port of Discharge', 'portOfDischarge', 'Dest Port', 'portOfDestination'),
-          R('Filing Port', 'location', 'Invoice No', 'invoiceNo', 'Invoice Date', 'invoiceDate'),
-          R('Invoice Value', 'billingCurrency', 'Freight', 'billNo', 'Exch Rate', 'billDate'),
-          R('CHA/Agent', 'agentDebitNote', 'DO Date', 'deliveryOrderDate', 'OCC Date', 'occDate'),
-          W('Marks & Nos', 'remarks', 3, 'Gate Pass', 'gatePassDate'),
-          W('GSTIN / Additional Info', 'additionalRemarks', 5)
-        )
-      ),
+        FR('Reference Number', 'referenceNumber'),
+        FRD('Job Order No', 'jobOrderNo', 'jobOrderDate'),
+        FRD('BOE/SB Number', 'boeSbNo', 'boeSbDate'),
+        FR('Shipment Mode', 'shipmentMode'),
+        FR('Location / Filing Port', 'location'),
+        FR('Importer Name', 'importerName'),
+        FR('Exporter Name', 'exporterName'),
+        FR('Supplier Name', 'supplierName'),
+        FRD('MAWB / MBL Number', 'mawbMblNo', 'mawbMblDate'),
+        FRD('HAWB / HBL Number', 'hawbHblNo', 'hawbHblDate'),
+        FR('Number of Packages', 'noOfPackages'),
+        FR('Gross Weight', 'grossWeight'),
+        FR('Port of Discharge', 'portOfDischarge'),
+        FR('Port of Destination', 'portOfDestination'),
+        FRD('Invoice Number', 'invoiceNo', 'invoiceDate'),
+        FR('Invoice Value / Currency', 'billingCurrency'),
+        FR('Freight Charges', 'billNo'),
+        FR('Exchange Rate', 'billDate'),
+        FR('CHA / Agent', 'agentDebitNote'),
+        FR('Delivery Order Date', 'deliveryOrderDate'),
+        FR('OCC Date', 'occDate'),
+        FR('Gate Pass Date', 'gatePassDate'),
+        FR('Marks & Nos', 'remarks'),
+        FR('GSTIN / Additional Info', 'additionalRemarks'),
 
-      // SIGNATURES
-      React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', marginTop: '6mm' } },
-        React.createElement('tbody', null,
-          React.createElement('tr', null,
-            React.createElement('td', { className: 'sig-box', style: { width: '50%' } },
-              React.createElement('div', { style: { fontWeight: '700', marginBottom: '8mm' } }, 'Prepared By:'),
-              React.createElement('div', { className: 'sig-line' }),
-              React.createElement('div', { style: { fontSize: '7pt', color: '#888', marginTop: '2pt' } }, 'Signature & Date')
-            ),
-            React.createElement('td', { className: 'sig-box', style: { width: '50%' } },
-              React.createElement('div', { style: { fontWeight: '700', marginBottom: '8mm', textAlign: 'right' } }, 'Authorized Signatory:'),
-              React.createElement('div', { className: 'sig-line', style: { marginLeft: '40%' } }),
-              React.createElement('div', { style: { fontSize: '7pt', color: '#888', marginTop: '2pt', textAlign: 'right' } }, 'Signature & Stamp')
-            )
-          )
-        )
+        React.createElement('div', { className: 'ft' }, 'PAS Freight Services Pvt Ltd  •  ' + new Date().toLocaleDateString() + '  •  Generated by PAS Checklist Scanner')
       ),
-
-      React.createElement('div', { className: 'footer-text' }, 'PAS Freight Services Pvt Ltd  •  ' + new Date().toLocaleDateString() + '  •  Generated by PAS Checklist Scanner'),
 
       React.createElement('div', { className: 'text-center mt-4 print:hidden' },
         React.createElement('button', { onClick: function() { setShowRaw(!showRaw) }, style: { fontSize: '12px', color: '#999', textDecoration: 'underline', cursor: 'pointer', background: 'none', border: 'none' } }, showRaw ? 'Hide raw text' : 'Show raw text')
