@@ -92,7 +92,7 @@ function parseChecklistWithPositions(items) {
     return line.items.map(function(i) { return i.text; }).join(' ').trim();
   }
 
-  // Find value after label - stops at next field or dashes
+  // Find value after label - only remove long dashes
   function findValue(label, lines, startIdx) {
     var labelLower = label.toLowerCase();
     for (var i = startIdx || 0; i < lines.length; i++) {
@@ -102,14 +102,12 @@ function parseChecklistWithPositions(items) {
         var labelIdx = fullText.toLowerCase().indexOf(labelLower);
         var after = fullText.substring(labelIdx + label.length).replace(/^[\s:]+/, '').trim();
         
-        if (after.length < 2 && i + 1 < lines.length) {
+        if (after.length < 1 && i + 1 < lines.length) {
           after = lineText(lines[i + 1]);
         }
         
-        // Stop at next label or dashes
-        after = after.replace(/\s{2,}.*$/, '').trim();
-        after = after.replace(/-{3,}.*$/, '').trim();
-        after = after.replace(/\s+:\s+.*$/, '').trim();
+        // Only remove long dashes, keep all other text
+        after = after.replace(/-{4,}.*$/, '').trim();
         
         return after;
       }
@@ -137,14 +135,13 @@ function parseChecklistWithPositions(items) {
 
   result.agentDebitNote = 'PAS FREIGHT SERVICES';
 
-  // Importer Name - find the line with company name before #
+  // Importer Name
   for (var i = 0; i < lines.length; i++) {
     var lt = lineText(lines[i]);
     if ((lt.indexOf('PRIVATE') >= 0 || lt.indexOf('LIMITED') >= 0) && lt.indexOf('#') >= 0) {
       var impMatch = lt.match(/([A-Z][A-Z\s]+(?:PRIVATE|LIMITED|PVT|LTD|INC|CORP|INTEGRATORS)[A-Z\s]*)/i);
       if (impMatch) {
         result.importerName = impMatch[1].replace(/\s+/g, ' ').trim();
-        // Remove PAS FREIGHT SERVICES prefix if present
         result.importerName = result.importerName.replace(/^PAS FREIGHT SERVICES\s+/i, '');
         break;
       }
@@ -188,19 +185,16 @@ function parseChecklistWithPositions(items) {
   var psMatch = ps.match(/([A-Z]+-[A-Z]+)/);
   if (psMatch) result.portOfDestination = psMatch[1];
 
-  // Supplier & Exporter - find line after SUPPLIER DETAILS with company name
-  var foundSupp = false;
+  // Supplier & Exporter
   for (var i = 0; i < lines.length; i++) {
     var lt = lineText(lines[i]);
     if (lt.indexOf('SUPPLIER DETAILS') >= 0) {
-      // Look at next lines for company name before address numbers
       for (var j = i; j < Math.min(i + 5, lines.length); j++) {
         var sl = lineText(lines[j]);
         var suppMatch = sl.match(/([A-Z][A-Z\s]+(?:PTE|LTD|PVT|INC|CORP|LIMITED)[A-Z\s]*?)\s+\d+\s+[A-Z]/);
         if (suppMatch) {
           result.supplierName = suppMatch[1].replace(/\s+/g, ' ').trim();
           result.exporterName = result.supplierName;
-          foundSupp = true;
           break;
         }
       }
@@ -224,7 +218,7 @@ function parseChecklistWithPositions(items) {
   var marksMatch = marks.match(/([A-Z0-9]+-[A-Z0-9]+\/[A-Z\s]+?(?:REPLACEMENT|REPAIR|RETURN))/i) || marks.match(/([A-Z0-9]+-[A-Z0-9]+\/[A-Z]+)/i);
   if (marksMatch) result.remarks = marksMatch[1].trim();
 
-  // GSTIN - find numeric GSTIN pattern
+  // GSTIN
   for (var i = 0; i < lines.length; i++) {
     var lt = lineText(lines[i]);
     var gstMatch = lt.match(/([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9]{3}[A-Z]{3}[0-9])/);
