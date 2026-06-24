@@ -78,7 +78,6 @@ function parseByColumns(items) {
     return row.map(function(i) { return i.text; }).join(' ').trim();
   }
 
-  // Build flat text AND line-by-line text
   var flatText = rowArray.map(rowText).join(' ');
   var lineTexts = rowArray.map(rowText);
   var m;
@@ -120,12 +119,12 @@ function parseByColumns(items) {
   m = flatText.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
   if (m) result.hawbHblNo = m[1];
 
-  // AWB Dates - search line by line near MBL/MAWB
+  // AWB Dates - search near MBL/MAWB for line with exactly 2 dates
   for (var i = 0; i < lineTexts.length; i++) {
-    if (lineTexts[i].indexOf('MBL/MAWB') >= 0 || lineTexts[i].indexOf('HBL/HAWB') >= 0) {
-      for (var j = i; j < Math.min(i + 10, lineTexts.length); j++) {
+    if (lineTexts[i].indexOf('MBL/MAWB') >= 0) {
+      for (var j = i; j < Math.min(i + 4, lineTexts.length); j++) {
         var dates = lineTexts[j].match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/g);
-        if (dates && dates.length >= 2) {
+        if (dates && dates.length === 2) {
           result.mawbMblDate = dates[0];
           result.hawbHblDate = dates[1];
           break;
@@ -167,10 +166,12 @@ function parseByColumns(items) {
   m = flatText.match(/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+-[A-Z0-9]+\/[A-Z]+)/i);
   if (m) result.remarks = m[1].trim();
 
-  // GSTIN - search line by line for 15-digit pattern
+  // GSTIN - remove all spaces from each line before searching
   for (var i = 0; i < lineTexts.length; i++) {
-    m = lineTexts[i].match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
-    if (m) { result.additionalRemarks = 'GSTIN: ' + m[1]; break; }
+    var compactLine = lineTexts[i].replace(/\s+/g, '');
+    var gstMatch = compactLine.match(/GSTIN:?(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
+    if (!gstMatch) gstMatch = compactLine.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
+    if (gstMatch) { result.additionalRemarks = 'GSTIN: ' + gstMatch[1]; break; }
   }
 
   // Freight
