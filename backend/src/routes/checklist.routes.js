@@ -82,10 +82,8 @@ function parseChecklistUniversal(items) {
     return '';
   }
 
-  // Helper: clean trailing junk words from extracted company names
   function cleanCompanyName(name) {
     if (!name) return '';
-    // Remove trailing "Inv", "Inv.", "SUPPLIER", "CHA" etc that leak from adjacent text
     return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN)\s*$/i, '').trim();
   }
 
@@ -133,7 +131,7 @@ function parseChecklistUniversal(items) {
     /(ARION\s+TECHNOLOGY\s+LTD)/i,
     /Importer\s+Details?\s*:?\s*\d*\s+([A-Z][\w\s]+(?:LIMITED|LTD|PRIVATE|PVT)[\w\s]*)/i,
   ], rawText);
-  if (result.importerName) result.importerName = cleanCompanyName(result.importerName);
+  result.importerName = cleanCompanyName(result.importerName);
 
   // ── GSTIN ──
   var gstMatch = rawText.match(/GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
@@ -151,10 +149,7 @@ function parseChecklistUniversal(items) {
   }
 
   // ── IGM ──
-  result.igmNo = tryPatterns([
-    /IGM\s*NO\s*:\s*(\d+)/i,
-    /IGM\s*No\s*:?\s*(\d+)/i,
-  ], rawText);
+  result.igmNo = tryPatterns([/IGM\s*NO\s*:\s*(\d+)/i, /IGM\s*No\s*:?\s*(\d+)/i], rawText);
   result.igmDate = tryPatterns([
     /IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /IGM\s*No\s*:?\s*\d+[\s\/]*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
@@ -180,77 +175,54 @@ function parseChecklistUniversal(items) {
     /Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i,
   ], rawText);
 
-  // ── MAWB/MBL + HAWB/HBL (parse together from the AWB block) ──
-  // Find the AWB block: "MBL/MAWB : XXXXX   HBL/HAWB : YYYYY"
+  // ── MAWB/MBL + HAWB/HBL ──
   var awbStart = rawText.indexOf('MBL/MAWB');
   if (awbStart < 0) awbStart = rawText.indexOf('MAWB');
   
   if (awbStart >= 0) {
     var awbChunk = rawText.substring(awbStart, awbStart + 800);
 
-    // Extract MAWB/MBL number
+    // MAWB/MBL number
     var mawbMatch = awbChunk.match(/MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i);
     if (!mawbMatch) mawbMatch = awbChunk.match(/MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
     if (mawbMatch && mawbMatch[1]) result.mawbMblNo = mawbMatch[1].trim();
 
-    // Extract HAWB/HBL number (can be all-numeric like 0711013960)
+    // HAWB/HBL number - can be ALL NUMERIC like 0711013960
     var hawbMatch = awbChunk.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
     if (!hawbMatch) hawbMatch = awbChunk.match(/HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
     if (hawbMatch && hawbMatch[1]) {
       var hawbVal = hawbMatch[1].trim();
-      // Reject if it's "Date", "NOS", a date string, or too short
-      if (hawbVal.toLowerCase() !== 'date' && hawbVal.toLowerCase() !== 'nos' &&
-          !/^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(hawbVal) && hawbVal.length >= 3) {
+      var lowerVal = hawbVal.toLowerCase();
+      // Only reject obvious junk words
+      if (lowerVal !== 'date' && lowerVal !== 'nos' && lowerVal !== 'printed' &&
+          lowerVal !== 'on' && lowerVal !== 'gross' && lowerVal !== 'marks' &&
+          hawbVal.length >= 3) {
         result.hawbHblNo = hawbVal;
       }
     }
 
-    // Extract dates from the AWB block
-    // Pattern: "Date : DD/MM/YYYY" or "Date : DD-MM-YYYY"
-    var dateMatches = awbChunk.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g);
-    if (dateMatches) {
-      var dates = dateMatches.map(function(d) { return d.replace(/Date\s*:\s*/, '').trim(); });
-      
-      // Find which date belongs to MAWB and which to HAWB
-      // Look at context: date right after "HBL/HAWB" belongs to HAWB
-      var hawbDateIdx = -1;
-      var hawbPos = awbChunk.indexOf('HBL/HAWB');
-      if (hawbPos < 0) hawbPos = awbChunk.indexOf('HAWB');
-      
-      if (hawbPos >= 0 && dates.length >= 2) {
-        // Find the date closest to HAWB position
-        for (var d = 0; d < dates.length; d++) {
-          var datePos = awbChunk.indexOf(dates[d], hawbPos);
-          if (datePos > hawbPos && datePos < hawbPos + 150) {
-            hawbDateIdx = d;
-            break;
-          }
-        }
-      }
+    // MAWB date from "Date : DD/MM/YYYY"
+    var mawbDateMatch = awbChunk.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+    if (mawbDateMatch && mawbDateMatch[1]) {
+      result.mawbMblDate = mawbDateMatch[1].trim();
+    }
 
-      // First valid date is MAWB date
-      if (dates.length >= 1 && dates[0].length > 4) {
-        result.mawbMblDate = dates[0];
-      }
-      
-      // HAWB date
-      if (hawbDateIdx >= 0 && dates[hawbDateIdx]) {
-        result.hawbHblDate = dates[hawbDateIdx];
-      } else if (dates.length >= 2 && dates[1].length > 4 && !result.hawbHblDate) {
-        result.hawbHblDate = dates[1];
+    // HAWB date - find date near HBL/HAWB position
+    var hawbPos = awbChunk.indexOf('HBL/HAWB');
+    if (hawbPos < 0) hawbPos = awbChunk.indexOf('HAWB');
+    if (hawbPos >= 0) {
+      var hawbSection = awbChunk.substring(hawbPos, hawbPos + 200);
+      // Match: HAWB number followed by a date
+      var hawbDateMatch = hawbSection.match(/[A-Z0-9]+\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+      if (hawbDateMatch && hawbDateMatch[1]) {
+        result.hawbHblDate = hawbDateMatch[1];
       }
     }
   }
 
   // ── PACKAGES & WEIGHT ──
-  result.noOfPackages = tryPatterns([
-    /No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i,
-    /Pkgs\s*:\s*(\d+)/i,
-  ], rawText);
-  result.grossWeight = tryPatterns([
-    /Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i,
-    /Weight\s*:\s*([\d.]+\s*KGS)/i,
-  ], rawText);
+  result.noOfPackages = tryPatterns([/No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i, /Pkgs\s*:\s*(\d+)/i], rawText);
+  result.grossWeight = tryPatterns([/Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i, /Weight\s*:\s*([\d.]+\s*KGS)/i], rawText);
 
   // ── MARKS & NOS ──
   result.remarks = tryPatterns([
@@ -286,10 +258,7 @@ function parseChecklistUniversal(items) {
   ], rawText);
 
   // ── FREIGHT CHARGES ──
-  result.billNo = tryPatterns([
-    /Freight\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-    /Freight\s*Charges?\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-  ], rawText);
+  result.billNo = tryPatterns([/Freight\s*:?\s*([\d.]+\s*[A-Z]{3})/i, /Freight\s*Charges?\s*:?\s*([\d.]+\s*[A-Z]{3})/i], rawText);
 
   // ── EXCHANGE RATE ──
   result.billDate = tryPatterns([
@@ -321,19 +290,6 @@ function parseChecklistUniversal(items) {
   result.importerName = cleanCompanyName(result.importerName);
   result.exporterName = cleanCompanyName(result.exporterName);
   result.supplierName = cleanCompanyName(result.supplierName);
-
-  // Reject bogus HAWB values
-  if (result.hawbHblNo) {
-    var badHawb = result.hawbHblNo.toLowerCase();
-    if (badHawb === 'date' || badHawb === 'nos' || badHawb === 'printed' ||
-        /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(result.hawbHblNo) ||
-        result.hawbHblNo.length < 3) {
-      result.hawbHblNo = '';
-    }
-  }
-
-  // If HAWB date equals invoice date and HAWB number exists, it might be wrong
-  // but we'll keep it since sometimes they are the same date
 
   return result;
 }
