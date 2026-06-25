@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react'
+// frontend/src/pages/Analytics.jsx
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -7,391 +8,1135 @@ import {
   BarChart3, PieChartIcon, Layers, Globe, Building2,
   Box, RefreshCw, Truck, FileCheck, FileText, Ship,
   ClipboardList, Target, Activity, Award, Zap, Calendar,
-  ArrowUpRight, ArrowDownRight, Medal, Download
+  ArrowUpRight, ArrowDownRight, Medal, Download, DollarSign,
+  Route, ArrowRight, TrendingDown, Filter, Hash, Weight
 } from 'lucide-react'
 
-// Helper: Create element with className
-function cE(type, props, ...children) {
-  return React.createElement(type, props, ...children)
-}
-
-function ProgressBar(props) {
-  var pct = props.max > 0 ? Math.min((props.value / props.max) * 100, 100) : 0
-  var hpx = (props.height || 8) + 'px'
-  var col = props.color || '#6366f1'
-  return cE('div', { style: { height: hpx, background: 'rgba(229,231,235,0.5)' }, className: 'w-full rounded-full overflow-hidden' },
-    cE('div', { style: { width: pct + '%', background: 'linear-gradient(90deg, ' + col + ', ' + col + '88)' }, className: 'h-full rounded-full' })
+// ─────────────────────────────────────────────
+// PROGRESS BAR COMPONENT
+// ─────────────────────────────────────────────
+function ProgressBar({ value = 0, max = 100, color = '#6366f1', height = 8, showValue = false }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <div
+        className="w-full rounded-full overflow-hidden"
+        style={{ height: `${height}px`, background: 'rgba(229,231,235,0.3)' }}
+      >
+        <div
+          className="h-full rounded-full transition-all duration-700 ease-out"
+          style={{
+            width: `${pct}%`,
+            background: `linear-gradient(90deg, ${color}, ${color}88)`,
+          }}
+        />
+      </div>
+      {showValue && (
+        <span className="text-[10px] font-bold tabular-nums flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>
+          {value}
+        </span>
+      )}
+    </div>
   )
 }
 
-function DonutChart(props) {
-  var data = props.data || []
-  var size = props.size || 180
-  var total = data.reduce(function(s, d) { return s + d.value }, 0)
-  if (total === 0) return cE('p', { className: 'text-xs text-center py-12', style: { color: 'var(--text-muted)' } }, 'No data')
-  
-  var cumulative = 0
-  var strokes = data.map(function(d) { var p = d.value / total; var s = cumulative; cumulative += p; return { color: d.color, start: s, end: cumulative, pct: p } })
-  
-  return cE('div', { className: 'relative flex items-center justify-center' },
-    cE('svg', { width: size, height: size, viewBox: '0 0 100 100' },
-      strokes.map(function(d, i) {
-        if (d.pct === 0) return null
-        var sa = (d.start * 360 - 90) * Math.PI / 180, ea = (d.end * 360 - 90) * Math.PI / 180, r = 38, ir = 22
-        var x1 = 50 + r * Math.cos(sa), y1 = 50 + r * Math.sin(sa), x2 = 50 + r * Math.cos(ea), y2 = 50 + r * Math.sin(ea)
-        var x3 = 50 + ir * Math.cos(ea), y3 = 50 + ir * Math.sin(ea), x4 = 50 + ir * Math.cos(sa), y4 = 50 + ir * Math.sin(sa)
-        var la = (d.end - d.start) > 0.5 ? 1 : 0
-        return cE('path', { key: i, d: 'M'+x1+','+y1+' A'+r+','+r+' 0 '+la+' 1 '+x2+','+y2+' L'+x3+','+y3+' A'+ir+','+ir+' 0 '+la+' 0 '+x4+','+y4+' Z', fill: d.color, stroke: 'var(--bg-primary)', strokeWidth: '1.5' })
-      }),
-      cE('text', { x: '50', y: '46', textAnchor: 'middle', fontSize: '16', fontWeight: 'bold', fill: 'var(--text-primary)' }, total),
-      cE('text', { x: '50', y: '60', textAnchor: 'middle', fontSize: '9', fill: 'var(--text-muted)' }, 'Total')
+// ─────────────────────────────────────────────
+// DONUT CHART (SVG)
+// ─────────────────────────────────────────────
+function DonutChart({ data = [], size = 180, centerLabel = 'Total' }) {
+  const total = data.reduce((s, d) => s + d.value, 0)
+  if (total === 0) {
+    return (
+      <div className="flex items-center justify-center" style={{ height: size }}>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No data available</p>
+      </div>
     )
+  }
+
+  let cumulative = 0
+  const strokes = data.map(d => {
+    const pct = d.value / total
+    const start = cumulative
+    cumulative += pct
+    return { ...d, start, end: cumulative, pct }
+  })
+
+  const outerR = 40
+  const innerR = 22
+  const gap = 2 // degrees gap between segments
+
+  return (
+    <div className="relative flex items-center justify-center">
+      <svg width={size} height={size} viewBox="0 0 100 100">
+        {strokes.map((d, i) => {
+          if (d.pct === 0) return null
+          const sa = (d.start * 360 + gap / 2 - 90) * Math.PI / 180
+          const ea = (d.end * 360 - gap / 2 - 90) * Math.PI / 180
+          const largeArc = (d.end - d.start) > 0.5 ? 1 : 0
+
+          const x1 = 50 + outerR * Math.cos(sa)
+          const y1 = 50 + outerR * Math.sin(sa)
+          const x2 = 50 + outerR * Math.cos(ea)
+          const y2 = 50 + outerR * Math.sin(ea)
+          const x3 = 50 + innerR * Math.cos(ea)
+          const y3 = 50 + innerR * Math.sin(ea)
+          const x4 = 50 + innerR * Math.cos(sa)
+          const y4 = 50 + innerR * Math.sin(sa)
+
+          return (
+            <path
+              key={i}
+              d={`M${x1},${y1} A${outerR},${outerR} 0 ${largeArc} 1 ${x2},${y2} L${x3},${y3} A${innerR},${innerR} 0 ${largeArc} 0 ${x4},${y4} Z`}
+              fill={d.color}
+              stroke="var(--bg-primary)"
+              strokeWidth="1.5"
+              className="transition-all duration-300 hover:opacity-80"
+            >
+              <title>{d.name}: {d.value} ({(d.pct * 100).toFixed(1)}%)</title>
+            </path>
+          )
+        })}
+        <text x="50" y="46" textAnchor="middle" fontSize="18" fontWeight="bold" fill="var(--text-primary)">
+          {total}
+        </text>
+        <text x="50" y="60" textAnchor="middle" fontSize="9" fill="var(--text-muted)">
+          {centerLabel}
+        </text>
+      </svg>
+    </div>
   )
 }
 
-function BarChartSVG(props) {
-  var data = props.data || []
-  var height = props.height || 260
-  var color = props.color || '#6366f1'
-  var max = Math.max.apply(null, data.map(function(d) { return d.value })) || 1
-  var barGap = 8, barW = Math.min(44, Math.max(24, (900 / data.length) - barGap))
-  var totalW = Math.max(data.length * (barW + barGap) + 40, 400), topP = 30, botP = 35
-  
-  return cE('svg', { width: '100%', height: height, viewBox: '0 0 ' + totalW + ' ' + height, preserveAspectRatio: 'xMidYMid meet', style: { overflow: 'visible' } },
-    data.map(function(d, i) {
-      var barH = Math.max(6, (d.value / max) * (height - topP - botP))
-      var x = i * (barW + barGap) + 20, y = height - botP - barH
-      return cE('g', { key: i },
-        cE('defs', null, cE('linearGradient', { id: 'bg-'+i, x1: '0', y1: '0', x2: '0', y2: '1' },
-          cE('stop', { offset: '0%', stopColor: d.color || color, stopOpacity: '1' }),
-          cE('stop', { offset: '100%', stopColor: d.color || color, stopOpacity: '0.4' })
-        )),
-        cE('rect', { x: x, y: y, width: barW, height: barH, fill: 'url(#bg-'+i+')', rx: '4' }),
-        d.value > 0 ? cE('text', { x: x + barW/2, y: y - 8, textAnchor: 'middle', fontSize: '11', fontWeight: '700', fill: 'var(--text-primary)' }, d.value) : null,
-        cE('text', { x: x + barW/2, y: height - 10, textAnchor: 'middle', fontSize: '10', fill: 'var(--text-muted)' }, d.label ? d.label.substring(0, 4) : '')
-      )
-    })
+// ─────────────────────────────────────────────
+// BAR CHART (SVG)
+// ─────────────────────────────────────────────
+function BarChartSVG({ data = [], height = 260, color = '#6366f1', showValues = true }) {
+  if (!data.length) return <p className="text-xs text-center py-12" style={{ color: 'var(--text-muted)' }}>No data available</p>
+
+  const max = Math.max(...data.map(d => d.value)) || 1
+  const barGap = 10
+  const barW = Math.min(48, Math.max(28, 800 / data.length - barGap))
+  const totalW = Math.max(data.length * (barW + barGap) + 40, 300)
+  const topP = 30
+  const botP = 40
+
+  return (
+    <div className="overflow-x-auto pb-2">
+      <svg
+        width="100%"
+        height={height}
+        viewBox={`0 0 ${totalW} ${height}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ overflow: 'visible', minWidth: totalW }}
+      >
+        {/* Grid lines */}
+        {[0, 25, 50, 75, 100].map(pct => {
+          const y = height - botP - ((max * pct / 100) / max) * (height - topP - botP)
+          return (
+            <g key={pct}>
+              <line x1={10} y1={y} x2={totalW - 10} y2={y} stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="4,4" opacity="0.5" />
+              <text x={8} y={y + 3} textAnchor="end" fontSize="9" fill="var(--text-muted)">
+                {Math.round(max * pct / 100)}
+              </text>
+            </g>
+          )
+        })}
+
+        {data.map((d, i) => {
+          const barH = Math.max(4, (d.value / max) * (height - topP - botP))
+          const x = i * (barW + barGap) + 30
+          const y = height - botP - barH
+
+          return (
+            <g key={i} className="group">
+              {/* Bar */}
+              <rect
+                x={x}
+                y={y}
+                width={barW}
+                height={barH}
+                fill={d.color || color}
+                rx="4"
+                opacity="0.85"
+                className="transition-all duration-300 hover:opacity-100"
+              />
+              {/* Value label */}
+              {showValues && d.value > 0 && (
+                <text
+                  x={x + barW / 2}
+                  y={y - 6}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fontWeight="700"
+                  fill="var(--text-primary)"
+                >
+                  {d.value}
+                </text>
+              )}
+              {/* X-axis label */}
+              <text
+                x={x + barW / 2}
+                y={height - 12}
+                textAnchor="middle"
+                fontSize="10"
+                fill="var(--text-muted)"
+              >
+                {d.label?.substring(0, 4) || ''}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
   )
 }
 
-var COLORS = { freight: '#6366f1', ffOnly: '#8b5cf6', chaOnly: '#10b981', transport: '#3b82f6', doRelease: '#06b6d4', delivered: '#10b981', customs: '#f59e0b', booked: '#6366f1', enquiry: '#fbbf24', invoiced: '#f43f5e' }
+// ─────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────
+const COLORS = {
+  freight: '#6366f1',      // Indigo
+  ffOnly: '#8b5cf6',       // Violet
+  chaImport: '#10b981',    // Emerald
+  chaExport: '#059669',    // Dark Emerald
+  transport: '#3b82f6',    // Blue
+  doRelease: '#06b6d4',    // Cyan
+  delivered: '#10b981',
+  customs: '#f59e0b',
+  booked: '#6366f1',
+  enquiry: '#fbbf24',
+  invoiced: '#f43f5e',
+  cancelled: '#ef4444',
+}
 
-var SHIPMENT_ICONS = { 'Freight': Ship, 'FF Only': FileText, 'CHA': FileCheck, 'Transport': Truck, 'DO Release': ClipboardList }
+const SHIPMENT_TYPE_CONFIG = {
+  'Freight': { icon: Ship, color: COLORS.freight, label: 'Full Freight' },
+  'FF Only': { icon: FileText, color: COLORS.ffOnly, label: 'FF Only' },
+  'CHA Import': { icon: FileCheck, color: COLORS.chaImport, label: 'CHA Import' },
+  'CHA Export': { icon: FileCheck, color: COLORS.chaExport, label: 'CHA Export' },
+  'Transport': { icon: Truck, color: COLORS.transport, label: 'Transport' },
+  'DO Release': { icon: ClipboardList, color: COLORS.doRelease, label: 'DO Release' },
+}
 
+const STATUS_GROUPS = {
+  'Enquiry': { statuses: ['ENQUIRY'], icon: '🔍', color: COLORS.enquiry },
+  'Booked': { statuses: ['BOOKED', 'SCHEDULED', 'AWB_GENERATED', 'NOMINATED', 'CONFIRMED'], icon: '📋', color: COLORS.booked },
+  'In Customs': { statuses: ['CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'SB_FILED', 'OOC_DONE', 'GATE_PASS', 'LEO_DONE', 'CUSTOMS_HOLD'], icon: '🛃', color: COLORS.customs },
+  'In Transit': { statuses: ['IN_TRANSIT', 'SHIPPED', 'ON_BOARD', 'ARRIVED'], icon: '🚚', color: '#3b82f6' },
+  'Delivered': { statuses: ['DELIVERED', 'HAND_OVER', 'COMPLETED'], icon: '✅', color: COLORS.delivered },
+  'Invoiced': { statuses: ['INVOICE_GENERATED', 'INVOICE_SENT', 'PAYMENT_RECEIVED'], icon: '💰', color: COLORS.invoiced },
+  'Cancelled': { statuses: ['CANCELLED', 'ON_HOLD'], icon: '❌', color: COLORS.cancelled },
+}
+
+// ─────────────────────────────────────────────
+// MAIN ANALYTICS COMPONENT
+// ─────────────────────────────────────────────
 export default function Analytics() {
-  var sv = useState('12m'); var dateRange = sv[0]; var setDateRange = sv[1]
-  var rv = useState(false); var refreshing = rv[0]; var setRefreshing = rv[1]
-  var ev = useState(false); var exporting = ev[0]; var setExporting = ev[1]
-  var queryClient = useQueryClient()
-  var socket = useSocket()
+  const [dateRange, setDateRange] = useState('12m')
+  const [refreshing, setRefreshing] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [selectedType, setSelectedType] = useState('all')
+  const queryClient = useQueryClient()
+  const socket = useSocket()
 
-  useEffect(function() {
+  // Live updates via socket
+  useEffect(() => {
     if (!socket) return
-    var hr = function() { queryClient.invalidateQueries({ queryKey: ['analytics-all-shipments'] }) }
-    socket.on('shipment:new', hr); socket.on('shipment:update', hr)
-    socket.on('shipment:statusUpdate', hr); socket.on('shipment:archiveUpdate', hr)
-    return function() { socket.off('shipment:new', hr); socket.off('shipment:update', hr); socket.off('shipment:statusUpdate', hr); socket.off('shipment:archiveUpdate', hr) }
+    const handler = () => {
+      queryClient.invalidateQueries({ queryKey: ['analytics-all-shipments'] })
+    }
+    socket.on('shipment:new', handler)
+    socket.on('shipment:update', handler)
+    socket.on('shipment:statusUpdate', handler)
+    socket.on('shipment:archiveUpdate', handler)
+    return () => {
+      socket.off('shipment:new', handler)
+      socket.off('shipment:update', handler)
+      socket.off('shipment:statusUpdate', handler)
+      socket.off('shipment:archiveUpdate', handler)
+    }
   }, [socket, queryClient])
 
-  var qr = useQuery({
+  // Fetch all shipments (paginated)
+  const { data: allShipmentsData, isLoading, refetch } = useQuery({
     queryKey: ['analytics-all-shipments'],
-    queryFn: async function() {
-      var res = await api.get('/freight/shipments', { params: { isArchived: 'false', page: 1, limit: 1 } })
-      var total = res.data.pagination?.total || 0
-      if (total === 0) return []
-      var limit = 100, totalPages = Math.ceil(total / limit), promises = []
-      for (var i = 1; i <= totalPages; i++) promises.push(api.get('/freight/shipments', { params: { isArchived: 'false', page: i, limit } }))
-      return (await Promise.all(promises)).flatMap(function(r) { return r.data.data || [] })
-    },
-    staleTime: 300000, refetchOnWindowFocus: false
-  })
-  var allShipmentsData = qr.data; var isLoading = qr.isLoading; var refetch = qr.refetch
-  var shipments = allShipmentsData || []
-
-  var analytics = useMemo(function() {
-    var now = new Date(), months = dateRange==='3m'?3:dateRange==='6m'?6:dateRange==='12m'?12:999
-    var filtered = shipments.filter(function(s) { var dm = (now.getFullYear()-new Date(s.createdAt).getFullYear())*12+(now.getMonth()-new Date(s.createdAt).getMonth()); return dm <= months })
-    var total = filtered.length
-    var delivered = filtered.filter(function(s) { return ['DELIVERED','HAND_OVER','COMPLETED'].includes(s.currentStatus) }).length
-    var active = filtered.filter(function(s) { return !['DELIVERED','HAND_OVER','COMPLETED','CANCELLED'].includes(s.currentStatus) }).length
-    var cr = total>0?(delivered/total*100).toFixed(1):0
-    var imp = filtered.filter(function(s){return s.importExport==='Import'}).length
-    var exp = filtered.filter(function(s){return s.importExport==='Export'}).length
-    var thisMonth = now.getMonth()
-    var thisMonthCount = filtered.filter(function(s){return new Date(s.createdAt).getMonth()===thisMonth}).length
-    var lastMonthCount = filtered.filter(function(s){return new Date(s.createdAt).getMonth()===thisMonth-1}).length
-    var mg = lastMonthCount>0?((thisMonthCount-lastMonthCount)/lastMonthCount*100).toFixed(1):0
-    var gp = Number(mg)>=0
-
-    var typeBreakdown = [
-      {name:'Freight',value:filtered.filter(function(s){return !['CHA Only','Transport','DO Release','FF Only'].includes(s.shipmentType)}).length,color:COLORS.freight,icon:Ship},
-      {name:'CHA',value:filtered.filter(function(s){return s.shipmentType==='CHA Only'}).length,color:COLORS.chaOnly,icon:FileCheck},
-      {name:'Transport',value:filtered.filter(function(s){return s.shipmentType==='Transport'}).length,color:COLORS.transport,icon:Truck},
-      {name:'FF Only',value:filtered.filter(function(s){return s.shipmentType==='FF Only'}).length,color:COLORS.ffOnly,icon:FileText},
-      {name:'DO Release',value:filtered.filter(function(s){return s.shipmentType==='DO Release'}).length,color:COLORS.doRelease,icon:ClipboardList}
-    ].filter(function(item){return item.value>0}).sort(function(a,b){return b.value-a.value})
-
-    var monthly = []
-    for(var i=11;i>=0;i--){var d=new Date(now.getFullYear(),now.getMonth()-i,1);var count=filtered.filter(function(s){var sd=new Date(s.createdAt);return sd.getMonth()===d.getMonth()&&sd.getFullYear()===d.getFullYear()}).length;monthly.push({label:d.toLocaleString('default',{month:'short'}),value:count,color:count>0?'#6366f1':'#cbd5e1'})}
-
-    var weekly = []
-    for(var i=6;i>=0;i--){var d=new Date(now);d.setDate(d.getDate()-i);var count=filtered.filter(function(s){return new Date(s.createdAt).toDateString()===d.toDateString()}).length;weekly.push({label:d.toLocaleString('default',{weekday:'short'}),value:count,color:'#10b981'})}
-
-    var statuses = [
-      {name:'Enquiry',value:filtered.filter(function(s){return s.currentStatus==='ENQUIRY'}).length,color:COLORS.enquiry,icon:'🔍'},
-      {name:'Booked/Scheduled',value:filtered.filter(function(s){return ['BOOKED','SCHEDULED','AWB_GENERATED','NOMINATED'].includes(s.currentStatus)}).length,color:COLORS.booked,icon:'📋'},
-      {name:'Customs Clearance',value:filtered.filter(function(s){return ['CHECKLIST_APPROVED','BOE_FILED','DO_COLLECTED','SB_FILED','OOC_DONE','GATE_PASS','LEO_DONE'].includes(s.currentStatus)}).length,color:COLORS.customs,icon:'🛃'},
-      {name:'Delivered',value:delivered,color:COLORS.delivered,icon:'✅'},
-      {name:'Invoiced',value:filtered.filter(function(s){return ['INVOICE_GENERATED','INVOICE_SENT'].includes(s.currentStatus)}).length,color:COLORS.invoiced,icon:'💰'}
-    ].filter(function(item){return item.value>0})
-
-    var custMap={}
-    filtered.forEach(function(s){var name=s.freightForwarding?.consigneeName||s.freightForwarding?.customerName||'Unknown';if(!custMap[name])custMap[name]={name:name,shipments:0,delivered:0};custMap[name].shipments++;if(['DELIVERED','HAND_OVER'].includes(s.currentStatus))custMap[name].delivered++})
-    var topCustomers=Object.values(custMap).sort(function(a,b){return b.shipments-a.shipments}).slice(0,10)
-
-    var teamMap={}
-    filtered.forEach(function(s){var name=s.createdByName||'Unassigned';if(!teamMap[name])teamMap[name]={name:name,shipments:0,delivered:0,active:0};teamMap[name].shipments++;if(['DELIVERED','HAND_OVER'].includes(s.currentStatus))teamMap[name].delivered++;else if(!['CANCELLED'].includes(s.currentStatus))teamMap[name].active++})
-    var team=Object.values(teamMap).map(function(t){return{name:t.name,shipments:t.shipments,delivered:t.delivered,active:t.active,completionRate:t.shipments>0?((t.delivered/t.shipments)*100).toFixed(0):0}}).sort(function(a,b){return b.shipments-a.shipments})
-
-    var totalDays=Math.max(1,months*30)
-    var avgPerDay=total>0?(total/totalDays).toFixed(1):0
-    var busiestDay=weekly.length>0?weekly.reduce(function(a,b){return a.value>b.value?a:b}):null
-
-    return {total:total,delivered:delivered,active:active,completionRate:cr,imp:imp,exp:exp,thisMonthCount:thisMonthCount,growth:mg,growthPositive:gp,typeBreakdown:typeBreakdown,monthly:monthly,weekly:weekly,statuses:statuses,topCustomers:topCustomers,team:team,avgPerDay:avgPerDay,busiestDay:busiestDay}
-  }, [shipments, dateRange])
-
-  var handleRefresh = async function() { setRefreshing(true); await refetch(); setRefreshing(false) }
-  var handlePDF = function() { setExporting(true); var s=document.createElement('style');s.id='pdf-print-style';s.textContent='@media print{body *{visibility:hidden!important}#analytics-dashboard,#analytics-dashboard *{visibility:visible!important}#analytics-dashboard{position:absolute;left:0;top:0;width:100%}}';document.head.appendChild(s);window.print();setTimeout(function(){var el=document.getElementById('pdf-print-style');if(el)el.remove();setExporting(false)},500) }
-
-  if (isLoading) return cE('div', { className: 'text-center py-20' }, cE('p', { className: 'text-lg', style: { color: 'var(--text-muted)' } }, 'Loading analytics...'))
-
-  var a = analytics
-  var maxTeam = Math.max.apply(null, a.team.map(function(t){return t.shipments})) || 1
-  var maxCust = Math.max.apply(null, a.topCustomers.map(function(c){return c.shipments})) || 1
-  var now = new Date()
-  var cm = now.toLocaleString('default',{month:'long'})
-  var cy = now.getFullYear()
-  var st = { color: 'var(--text-muted)' }
-  var sp = { color: 'var(--text-primary)' }
-  var ss = { color: 'var(--text-secondary)' }
-  var bc = { borderColor: 'var(--border-color)' }
-  var gc = { borderColor: 'var(--glass-border)' }
-
-  return cE('div', { id: 'analytics-dashboard', className: 'space-y-6' },
-    // HEADER
-    cE('div', { className: 'flex flex-col lg:flex-row lg:items-center justify-between gap-4' },
-      cE('div', null,
-        cE('div', { className: 'flex items-center gap-2 mb-1' },
-          cE('div', { className: 'w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-md' },
-            cE(BarChart3, { size: 15, className: 'text-white' })
-          ),
-          cE('span', { className: 'text-[11px] font-semibold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-0.5 rounded-md' }, 'Executive Report'),
-          socket && socket.connected ? cE('span', { className: 'flex items-center gap-1' },
-            cE('span', { className: 'w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse' }),
-            cE('span', { className: 'text-[10px] text-emerald-600 dark:text-emerald-400 font-medium' }, 'LIVE')
-          ) : null
-        ),
-        cE('h1', { className: 'text-[32px] font-bold bg-gradient-to-r from-indigo-600 via-blue-600 to-purple-600 dark:from-indigo-400 dark:via-blue-400 dark:to-purple-400 bg-clip-text text-transparent tracking-tight' }, 'Management Analytics'),
-        cE('p', { className: 'text-xs mt-1', style: st }, cm + ' ' + cy + ' • ' + a.total + ' total shipments • ' + a.active + ' in progress')
-      ),
-      cE('div', { className: 'flex items-center gap-2' },
-        cE('div', { className: 'flex glass rounded-lg p-0.5 border', style: bc },
-          [{label:'3M',value:'3m'},{label:'6M',value:'6m'},{label:'1Y',value:'12m'},{label:'All',value:'all'}].map(function(opt) {
-            return cE('button', { key: opt.value, onClick: function() { setDateRange(opt.value) }, className: 'px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap ' + (dateRange===opt.value?'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm':'text-[var(--text-secondary)]') }, opt.label)
-          })
-        ),
-        cE('button', { onClick: handleRefresh, disabled: refreshing, className: 'p-2.5 glass border rounded-lg', style: bc },
-          cE(RefreshCw, { size: 16, className: refreshing ? 'animate-spin' : '', style: ss })
-        ),
-        cE('button', { onClick: handlePDF, disabled: exporting, className: 'px-3.5 py-2.5 glass border rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2', style: bc },
-          cE(Download, { size: 14 }), ' PDF'
-        )
-      )
-    ),
-
-    // KPI CARDS
-    cE('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3' },
-      [
-        {icon:Package,cc:'text-blue-500',bg:'from-blue-500 to-indigo-600',val:String(a.total),label:'Total Shipments'},
-        {icon:Clock,cc:'text-amber-500',bg:'from-amber-500 to-orange-600',val:String(a.active),label:'In Progress'},
-        {icon:CheckCircle2,cc:'text-emerald-500',bg:'from-emerald-500 to-teal-600',val:String(a.delivered),label:'Delivered'},
-        {icon:Target,cc:'text-violet-500',bg:'from-violet-500 to-purple-600',val:a.completionRate+'%',label:'Completion Rate'},
-        {icon:Globe,cc:'text-cyan-500',bg:'from-cyan-500 to-blue-600',val:a.imp+'/'+a.exp,label:'Import / Export'},
-        {icon:Activity,cc:'text-rose-500',bg:'from-rose-500 to-pink-600',val:(a.growthPositive?'+':'')+a.growth+'%',label:'vs Last Month',growth:true,gp:a.growthPositive}
-      ].map(function(card,i) {
-        var Icon = card.icon
-        return cE('div', { key: i, className: 'glass rounded-xl p-4 border hover-lift group relative overflow-hidden', style: gc },
-          cE('div', { className: 'absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ' + card.bg + ' opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity' }),
-          cE(Icon, { size: 16, className: card.cc + ' mb-2' }),
-          cE('p', { className: 'text-2xl font-bold flex items-center gap-1', style: sp },
-            card.growth ? (card.gp ? cE(ArrowUpRight, { size: 14, className: 'text-emerald-500' }) : cE(ArrowDownRight, { size: 14, className: 'text-red-500' })) : null,
-            card.val
-          ),
-          cE('p', { className: 'text-[10px] font-semibold', style: ss }, card.label)
-        )
+    queryFn: async () => {
+      const res = await api.get('/freight/shipments', {
+        params: { isArchived: 'false', page: 1, limit: 1 }
       })
-    ),
+      const total = res.data.pagination?.total || 0
+      if (total === 0) return []
 
-    // MONTHLY TREND + TYPE
-    cE('div', { className: 'grid grid-cols-1 lg:grid-cols-3 gap-4' },
-      cE('div', { className: 'lg:col-span-2 glass rounded-xl border p-5 hover-lift', style: gc },
-        cE('div', { className: 'flex items-center justify-between mb-4' },
-          cE('h3', { className: 'text-sm font-bold flex items-center gap-2', style: sp }, cE(TrendingUp, { size: 16, className: 'text-indigo-500' }), '12-Month Shipment Trend'),
-          cE('span', { className: 'text-[10px] bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full', style: st }, 'Total: ' + a.total)
-        ),
-        cE('div', { className: 'overflow-x-auto pb-2' }, cE(BarChartSVG, { data: a.monthly, height: 260, color: '#6366f1' }))
-      ),
-      cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
-        cE('h3', { className: 'text-sm font-bold mb-4 flex items-center gap-2', style: sp }, cE(PieChartIcon, { size: 16, className: 'text-indigo-500' }), 'Shipment Type Mix'),
-        cE(DonutChart, { data: a.typeBreakdown, size: 170 }),
-        cE('div', { className: 'space-y-2 mt-4' },
-          a.typeBreakdown.map(function(item,i) {
-            var Ico = item.icon || Package
-            var pct = a.total>0?((item.value/a.total)*100).toFixed(0):0
-            return cE('div', { key: i, className: 'flex items-center justify-between text-xs' },
-              cE('div', { className: 'flex items-center gap-2 min-w-0' },
-                cE('div', { className: 'w-3 h-3 rounded-full flex-shrink-0', style: { backgroundColor: item.color } }),
-                cE(Ico, { size: 12, className: 'flex-shrink-0', style: st }),
-                cE('span', { className: 'font-medium truncate', style: ss }, item.name)
-              ),
-              cE('span', { className: 'font-bold tabular-nums ml-2 flex-shrink-0', style: sp }, item.value + ' ', cE('span', { className: 'font-normal', style: st }, '(' + pct + '%)'))
-            )
-          })
+      const limit = 200
+      const totalPages = Math.ceil(total / limit)
+      const promises = []
+      for (let i = 1; i <= totalPages; i++) {
+        promises.push(
+          api.get('/freight/shipments', { params: { isArchived: 'false', page: i, limit } })
         )
-      )
-    ),
+      }
+      const results = await Promise.all(promises)
+      return results.flatMap(r => r.data.data || [])
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
 
-    // STATUS + WEEKLY
-    cE('div', { className: 'grid grid-cols-1 lg:grid-cols-2 gap-4' },
-      cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
-        cE('h3', { className: 'text-sm font-bold mb-4 flex items-center gap-2', style: sp }, cE(Layers, { size: 16, className: 'text-indigo-500' }), 'Shipment Status Pipeline'),
-        cE('div', { className: 'space-y-4' },
-          a.statuses.map(function(s,i) {
-            return cE('div', { key: i },
-              cE('div', { className: 'flex items-center justify-between mb-2' },
-                cE('div', { className: 'flex items-center gap-2' },
-                  cE('span', { className: 'text-sm' }, s.icon),
-                  cE('span', { className: 'text-xs font-semibold', style: sp }, s.name)
-                ),
-                cE('span', { className: 'text-xs font-bold', style: sp }, s.value + ' ', cE('span', { className: 'font-normal', style: st }, '(' + ((s.value/a.total)*100).toFixed(0) + '%)'))
-              ),
-              cE(ProgressBar, { value: s.value, max: a.total, color: s.color, height: 10 })
-            )
-          })
-        )
-      ),
-      cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
-        cE('h3', { className: 'text-sm font-bold mb-4 flex items-center gap-2', style: sp }, cE(Calendar, { size: 16, className: 'text-indigo-500' }), 'Last 7 Days Performance'),
-        cE('div', { className: 'overflow-x-auto pb-2' }, cE(BarChartSVG, { data: a.weekly, height: 220, color: '#10b981' })),
-        a.busiestDay ? cE('div', { className: 'flex items-center gap-2 mt-3 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg' },
-          cE(Zap, { size: 14, className: 'text-emerald-500' }),
-          cE('span', { className: 'text-xs', style: ss }, 'Busiest day: ', cE('strong', { style: sp }, a.busiestDay.label), ' with ' + a.busiestDay.value + ' shipments')
-        ) : null
-      )
-    ),
-    cE('div', { className: 'grid grid-cols-1 lg:grid-cols-2 gap-4' },
-      cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
-        cE('h3', { className: 'text-sm font-bold mb-4 flex items-center gap-2', style: sp }, cE(Building2, { size: 16, className: 'text-indigo-500' }), 'Top 10 Customers'),
-        cE('div', { className: 'space-y-1' },
-          a.topCustomers.map(function(c,i) {
-            return cE('div', { key: i, className: 'flex items-center gap-3 p-2 rounded-lg hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10' },
-              cE('div', { className: 'w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ' + (i===0?'bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-md':i===1?'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-700 shadow-sm':i===2?'bg-gradient-to-br from-amber-600 to-orange-700 text-white shadow-sm':'bg-gray-100 dark:bg-gray-800'), style: i>=3?st:{} }, i<3 ? cE(Medal, { size: 12 }) : i+1),
-              cE('div', { className: 'flex-1 min-w-0' },
-                cE('p', { className: 'text-xs font-semibold truncate', style: sp, title: c.name }, c.name),
-                cE('div', { className: 'flex items-center gap-2 text-[10px]', style: st },
-                  cE('span', null, c.shipments + ' shipments'),
-                  c.delivered > 0 ? cE('span', { className: 'text-emerald-500' }, ' • ' + c.delivered + ' delivered') : null
-                )
-              ),
-              cE('div', { className: 'w-20 flex-shrink-0' }, cE(ProgressBar, { value: c.shipments, max: maxCust, color: '#6366f1', height: 5 }))
-            )
-          })
-        )
-      ),
-      cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
-        cE('h3', { className: 'text-sm font-bold mb-4 flex items-center gap-2', style: sp }, cE(Zap, { size: 16, className: 'text-indigo-500' }), 'Operational Insights'),
-        cE('div', { className: 'space-y-3' },
-          cE('div', { className: 'flex items-center gap-3 p-3 rounded-xl bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30' },
-            cE('div', { className: 'w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md' }, cE(Calendar, { size: 18, className: 'text-white' })),
-            cE('div', null, cE('p', { className: 'text-xs font-semibold', style: sp }, cm + ' Shipments'), cE('p', { className: 'text-lg font-bold text-blue-600 dark:text-blue-400' }, a.thisMonthCount), cE('p', { className: 'text-[10px]', style: st }, (a.growthPositive?'↑':'↓') + ' ' + Math.abs(Number(a.growth)) + '% vs last month'))
-          ),
-          cE('div', { className: 'flex items-center gap-3 p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30' },
-            cE('div', { className: 'w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0 shadow-md' }, cE(CheckCircle2, { size: 18, className: 'text-white' })),
-            cE('div', { className: 'flex-1' },
-              cE('p', { className: 'text-xs font-semibold', style: sp }, 'Delivery Performance'),
-              cE('div', { className: 'flex items-center gap-2 mt-1' }, cE('span', { className: 'text-lg font-bold text-emerald-600 dark:text-emerald-400' }, a.delivered), cE('span', { className: 'text-xs', style: st }, 'of ' + a.total + ' delivered')),
-              cE(ProgressBar, { value: a.delivered, max: a.total, color: '#10b981', height: 6 })
-            )
-          ),
-          cE('div', { className: 'flex items-center gap-3 p-3 rounded-xl bg-amber-50/50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/30' },
-            cE('div', { className: 'w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-md' }, cE(Clock, { size: 18, className: 'text-white' })),
-            cE('div', { className: 'flex-1' },
-              cE('p', { className: 'text-xs font-semibold', style: sp }, 'Pending Clearance'),
-              cE('div', { className: 'flex items-center gap-2 mt-1' }, cE('span', { className: 'text-lg font-bold text-amber-600 dark:text-amber-400' }, (a.statuses.find(function(s){return s.name==='Customs Clearance'})||{}).value||0), cE('span', { className: 'text-xs', style: st }, 'in customs')),
-              cE(ProgressBar, { value: (a.statuses.find(function(s){return s.name==='Customs Clearance'})||{}).value||0, max: a.total, color: '#f59e0b', height: 6 })
-            )
-          ),
-          cE('div', { className: 'flex items-center gap-3 p-3 rounded-xl bg-violet-50/50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-800/30' },
-            cE('div', { className: 'w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md' }, cE(Activity, { size: 18, className: 'text-white' })),
-            cE('div', null, cE('p', { className: 'text-xs font-semibold', style: sp }, 'Avg Daily Volume'), cE('p', { className: 'text-lg font-bold text-violet-600 dark:text-violet-400' }, a.avgPerDay), cE('p', { className: 'text-[10px]', style: st }, 'shipments per day'))
-          )
-        )
-      )
-    ),
-    cE('div', { className: 'glass rounded-xl border p-5 hover-lift', style: gc },
-      cE('div', { className: 'flex items-center justify-between mb-4' },
-        cE('h3', { className: 'text-sm font-bold flex items-center gap-2', style: sp }, cE(Users, { size: 16, className: 'text-indigo-500' }), 'Team Performance Leaderboard'),
-        cE('span', { className: 'text-[10px]', style: st }, a.team.length + ' members')
-      ),
-      cE('div', { className: 'hidden md:block overflow-x-auto' },
-        cE('table', { className: 'w-full' },
-          cE('thead', null,
-            cE('tr', { className: 'border-b', style: bc },
-              ['Rank','Team Member','Shipments','Active','Delivered','Rate','Performance'].map(function(h){ return cE('th', { key: h, className: 'text-left py-3 px-3 text-[10px] font-semibold uppercase', style: st }, h) })
-            )
-          ),
-          cE('tbody', null,
-            a.team.map(function(m,i) {
-              var rateClass = Number(m.completionRate)>=50?'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400':Number(m.completionRate)>=25?'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400':'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
-              var rankClass = i===0?'bg-gradient-to-br from-amber-400 to-yellow-500 text-white':i===1?'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-700':i===2?'bg-gradient-to-br from-amber-600 to-orange-700 text-white':''
-              return cE('tr', { key: i, className: 'border-b hover:bg-indigo-50/20 dark:hover:bg-indigo-900/10', style: bc },
-                cE('td', { className: 'py-3 px-3' }, cE('span', { className: 'w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ' + rankClass, style: i>=3?st:{} }, i+1)),
-                cE('td', { className: 'py-3 px-3' },
-                  cE('div', { className: 'flex items-center gap-2' },
-                    cE('div', { className: 'w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0' }, m.name.charAt(0).toUpperCase()),
-                    cE('span', { className: 'text-xs font-semibold whitespace-nowrap', style: sp }, m.name)
-                  )
-                ),
-                cE('td', { className: 'py-3 px-3 text-center' }, cE('span', { className: 'text-xs font-bold', style: sp }, m.shipments)),
-                cE('td', { className: 'py-3 px-3 text-center' }, cE('span', { className: 'text-xs text-amber-600 dark:text-amber-400 font-medium' }, m.active)),
-                cE('td', { className: 'py-3 px-3 text-center' }, cE('span', { className: 'text-xs text-emerald-600 dark:text-emerald-400 font-medium' }, m.delivered)),
-                cE('td', { className: 'py-3 px-3 text-center' }, cE('span', { className: 'text-xs font-bold px-2 py-0.5 rounded-full ' + rateClass }, m.completionRate + '%')),
-                cE('td', { className: 'py-3 px-3' }, cE(ProgressBar, { value: m.shipments, max: maxTeam, color: '#6366f1', height: 6 }))
-              )
-            })
-          )
-        )
-      )
-    ),
-    cE('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3' },
-      a.typeBreakdown.map(function(item,i) {
-        var Ico = item.icon || Package
-        return cE('div', { key: i, className: 'glass rounded-xl p-4 border hover-lift text-center', style: gc },
-          cE(Ico, { size: 18, className: 'mx-auto mb-2', style: { color: item.color } }),
-          cE('p', { className: 'text-xl font-bold', style: sp }, item.value),
-          cE('p', { className: 'text-[10px] font-medium', style: st }, item.name)
-        )
-      }).concat([
-        cE('div', { key: 'avg', className: 'glass rounded-xl p-4 border hover-lift text-center', style: gc },
-          cE(Award, { size: 18, className: 'text-indigo-400 mx-auto mb-2' }),
-          cE('p', { className: 'text-xl font-bold', style: sp }, a.avgPerDay),
-          cE('p', { className: 'text-[10px] font-medium', style: st }, 'Avg/Day')
-        )
-      ])
-    ),
-    cE('div', { className: 'flex items-center justify-between text-[10px] py-2 border-t', style: { color: 'var(--text-muted)', borderColor: 'var(--border-color)' } },
-      cE('span', null, 'PAS Freight Management System • Executive Dashboard'),
-      cE('span', null, 'Updated: ' + now.toLocaleDateString() + ' at ' + now.toLocaleTimeString())
+  const shipments = allShipmentsData || []
+
+  // ── ANALYTICS COMPUTATION ──────────────────
+  const analytics = useMemo(() => {
+    const now = new Date()
+    const monthsToInclude = dateRange === '3m' ? 3 : dateRange === '6m' ? 6 : dateRange === '12m' ? 12 : 999
+
+    // Filter by date range
+    const filtered = shipments.filter(s => {
+      const diffMonths = (now.getFullYear() - new Date(s.createdAt).getFullYear()) * 12 +
+                         (now.getMonth() - new Date(s.createdAt).getMonth())
+      return diffMonths <= monthsToInclude
+    })
+
+    // Further filter by selected type
+    const typeFiltered = selectedType === 'all'
+      ? filtered
+      : filtered.filter(s => {
+          if (selectedType === 'freight') return s.shipmentType === 'Freight'
+          if (selectedType === 'ff-only') return s.shipmentType === 'FF Only'
+          if (selectedType === 'cha') return s.shipmentType === 'CHA Only' || s.shipmentType === 'CHA Import' || s.shipmentType === 'CHA Export'
+          if (selectedType === 'transport') return s.shipmentType === 'Transport'
+          if (selectedType === 'do-release') return s.shipmentType === 'DO Release'
+          return true
+        })
+
+    const total = typeFiltered.length
+    const delivered = typeFiltered.filter(s =>
+      ['DELIVERED', 'HAND_OVER', 'COMPLETED'].includes(s.currentStatus)
+    ).length
+    const active = typeFiltered.filter(s =>
+      !['DELIVERED', 'HAND_OVER', 'COMPLETED', 'CANCELLED'].includes(s.currentStatus)
+    ).length
+    const cancelled = typeFiltered.filter(s => s.currentStatus === 'CANCELLED').length
+    const completionRate = total > 0 ? ((delivered / total) * 100).toFixed(1) : '0'
+
+    // Import / Export split
+    const imp = typeFiltered.filter(s => s.importExport === 'Import').length
+    const exp = typeFiltered.filter(s => s.importExport === 'Export').length
+
+    // Month-over-month growth
+    const thisMonth = now.getMonth()
+    const thisMonthCount = typeFiltered.filter(s => new Date(s.createdAt).getMonth() === thisMonth).length
+    const lastMonthCount = typeFiltered.filter(s => new Date(s.createdAt).getMonth() === thisMonth - 1).length
+    const growthPct = lastMonthCount > 0
+      ? (((thisMonthCount - lastMonthCount) / lastMonthCount) * 100).toFixed(1)
+      : '0'
+    const growthPositive = Number(growthPct) >= 0
+
+    // ── Shipment Type Breakdown ──
+    const typeBreakdown = [
+      { name: 'Freight', value: typeFiltered.filter(s => s.shipmentType === 'Freight').length, color: COLORS.freight, ...SHIPMENT_TYPE_CONFIG['Freight'] },
+      { name: 'FF Only', value: typeFiltered.filter(s => s.shipmentType === 'FF Only').length, color: COLORS.ffOnly, ...SHIPMENT_TYPE_CONFIG['FF Only'] },
+      { name: 'CHA Import', value: typeFiltered.filter(s => s.shipmentType === 'CHA Import').length, color: COLORS.chaImport, ...SHIPMENT_TYPE_CONFIG['CHA Import'] },
+      { name: 'CHA Export', value: typeFiltered.filter(s => s.shipmentType === 'CHA Export').length, color: COLORS.chaExport, ...SHIPMENT_TYPE_CONFIG['CHA Export'] },
+      { name: 'Transport', value: typeFiltered.filter(s => s.shipmentType === 'Transport').length, color: COLORS.transport, ...SHIPMENT_TYPE_CONFIG['Transport'] },
+      { name: 'DO Release', value: typeFiltered.filter(s => s.shipmentType === 'DO Release').length, color: COLORS.doRelease, ...SHIPMENT_TYPE_CONFIG['DO Release'] },
+    ].filter(d => d.value > 0).sort((a, b) => b.value - a.value)
+
+    // ── Monthly Trend (last 12 months) ──
+    const monthly = []
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const count = typeFiltered.filter(s => {
+        const sd = new Date(s.createdAt)
+        return sd.getMonth() === d.getMonth() && sd.getFullYear() === d.getFullYear()
+      }).length
+      monthly.push({
+        label: d.toLocaleString('default', { month: 'short' }),
+        value: count,
+        color: count > 0 ? '#6366f1' : '#cbd5e1',
+      })
+    }
+
+    // ── Weekly Performance ──
+    const weekly = []
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now)
+      d.setDate(d.getDate() - i)
+      const count = typeFiltered.filter(s => new Date(s.createdAt).toDateString() === d.toDateString()).length
+      weekly.push({
+        label: d.toLocaleString('default', { weekday: 'short' }),
+        value: count,
+        color: '#10b981',
+      })
+    }
+
+    // ── Status Distribution ──
+    const statusDistribution = Object.entries(STATUS_GROUPS).map(([groupName, group]) => ({
+      name: groupName,
+      value: typeFiltered.filter(s => group.statuses.includes(s.currentStatus)).length,
+      color: group.color,
+      icon: group.icon,
+      statuses: group.statuses,
+    })).filter(d => d.value > 0)
+
+    // ── Top Customers ──
+    const customerMap = {}
+    typeFiltered.forEach(s => {
+      const name = s.freightForwarding?.consigneeName || s.freightForwarding?.customerName || s.freightForwarding?.shipperName || 'Unknown'
+      if (!customerMap[name]) {
+        customerMap[name] = { name, shipments: 0, delivered: 0, revenue: 0 }
+      }
+      customerMap[name].shipments++
+      if (['DELIVERED', 'HAND_OVER'].includes(s.currentStatus)) {
+        customerMap[name].delivered++
+      }
+      // Estimate revenue from freight forwarding data
+      const rate = parseFloat(s.freightForwarding?.sellingRate) || 0
+      const weight = parseFloat(s.freightForwarding?.weight) || 0
+      customerMap[name].revenue += rate * weight || rate || 0
+    })
+    const topCustomers = Object.values(customerMap)
+      .sort((a, b) => b.shipments - a.shipments)
+      .slice(0, 10)
+    const maxCust = Math.max(...topCustomers.map(c => c.shipments), 1)
+
+    // ── Top Routes ──
+    const routeMap = {}
+    typeFiltered.forEach(s => {
+      const from = s.freightForwarding?.fromLocation || 'Unknown Origin'
+      const to = s.freightForwarding?.toLocation || 'Unknown Destination'
+      const key = `${from} → ${to}`
+      if (!routeMap[key]) {
+        routeMap[key] = { from, to, key, shipments: 0, weight: 0 }
+      }
+      routeMap[key].shipments++
+      routeMap[key].weight += parseFloat(s.freightForwarding?.weight) || 0
+    })
+    const topRoutes = Object.values(routeMap)
+      .sort((a, b) => b.shipments - a.shipments)
+      .slice(0, 10)
+    const maxRoute = Math.max(...topRoutes.map(r => r.shipments), 1)
+
+    // ── Team Performance ──
+    const teamMap = {}
+    typeFiltered.forEach(s => {
+      const name = s.createdByName || s.assignedTo || 'Unassigned'
+      if (!teamMap[name]) {
+        teamMap[name] = { name, shipments: 0, delivered: 0, active: 0 }
+      }
+      teamMap[name].shipments++
+      if (['DELIVERED', 'HAND_OVER', 'COMPLETED'].includes(s.currentStatus)) {
+        teamMap[name].delivered++
+      } else if (!['CANCELLED'].includes(s.currentStatus)) {
+        teamMap[name].active++
+      }
+    })
+    const team = Object.values(teamMap)
+      .map(t => ({
+        ...t,
+        completionRate: t.shipments > 0 ? ((t.delivered / t.shipments) * 100).toFixed(0) : '0',
+      }))
+      .sort((a, b) => b.shipments - a.shipments)
+    const maxTeam = Math.max(...team.map(t => t.shipments), 1)
+
+    // ── Revenue Estimate ──
+    const totalRevenue = typeFiltered.reduce((sum, s) => {
+      const rate = parseFloat(s.freightForwarding?.sellingRate) || 0
+      const weight = parseFloat(s.freightForwarding?.weight) || 1
+      return sum + (rate * weight || rate)
+    }, 0)
+    const revenueThisMonth = typeFiltered
+      .filter(s => new Date(s.createdAt).getMonth() === thisMonth)
+      .reduce((sum, s) => {
+        const rate = parseFloat(s.freightForwarding?.sellingRate) || 0
+        const weight = parseFloat(s.freightForwarding?.weight) || 1
+        return sum + (rate * weight || rate)
+      }, 0)
+
+    // ── Additional metrics ──
+    const totalDays = Math.max(1, monthsToInclude * 30)
+    const avgPerDay = total > 0 ? (total / totalDays).toFixed(1) : '0'
+    const busiestDay = weekly.reduce((a, b) => (a.value > b.value ? a : b), weekly[0] || { label: '-', value: 0 })
+    const totalWeight = typeFiltered.reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.weight) || parseFloat(s.freightForwarding?.grossWeight) || 0), 0)
+    const avgWeight = total > 0 ? (totalWeight / total).toFixed(1) : '0'
+
+    return {
+      total,
+      delivered,
+      active,
+      cancelled,
+      completionRate,
+      imp,
+      exp,
+      thisMonthCount,
+      growth: growthPct,
+      growthPositive,
+      typeBreakdown,
+      monthly,
+      weekly,
+      statusDistribution,
+      topCustomers,
+      maxCust,
+      topRoutes,
+      maxRoute,
+      team,
+      maxTeam,
+      totalRevenue,
+      revenueThisMonth,
+      avgPerDay,
+      busiestDay,
+      totalWeight: totalWeight.toFixed(1),
+      avgWeight,
+    }
+  }, [shipments, dateRange, selectedType])
+
+  // ── HANDLERS ──
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    await refetch()
+    setRefreshing(false)
+  }, [refetch])
+
+  const handleExportPDF = useCallback(() => {
+    setExporting(true)
+    const style = document.createElement('style')
+    style.id = 'pdf-print-style'
+    style.textContent = `
+      @media print {
+        body * { visibility: hidden !important; }
+        #analytics-dashboard, #analytics-dashboard * { visibility: visible !important; }
+        #analytics-dashboard {
+          position: absolute; left: 0; top: 0; width: 100%;
+          padding: 20px;
+        }
+        .no-print { display: none !important; }
+        @page { size: A3 landscape; margin: 10mm; }
+      }
+    `
+    document.head.appendChild(style)
+    window.print()
+    setTimeout(() => {
+      const el = document.getElementById('pdf-print-style')
+      if (el) el.remove()
+      setExporting(false)
+    }, 500)
+  }, [])
+
+  // ── LOADING STATE ──
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 gap-4">
+        <div className="w-14 h-14 border-[3px] border-indigo-200 border-t-indigo-600 rounded-full animate-spin shadow-lg" />
+        <p className="text-sm font-medium text-indigo-500">Loading analytics dashboard...</p>
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Fetching shipment data</p>
+      </div>
     )
+  }
+
+  const a = analytics
+  const now = new Date()
+  const currentMonth = now.toLocaleString('default', { month: 'long' })
+  const currentYear = now.getFullYear()
+
+  return (
+    <div id="analytics-dashboard" className="space-y-5 animate-fade-in">
+      {/* ──────────────────────────────────────
+          HEADER SECTION
+          ────────────────────────────────────── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 no-print">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-md">
+              <BarChart3 size={15} className="text-white" />
+            </div>
+            <span className="text-[11px] font-semibold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-0.5 rounded-md">
+              Executive Report
+            </span>
+            {socket?.connected && (
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">LIVE</span>
+              </span>
+            )}
+          </div>
+          <h1 className="text-[32px] font-bold bg-gradient-to-r from-indigo-600 via-blue-600 to-purple-600 dark:from-indigo-400 dark:via-blue-400 dark:to-purple-400 bg-clip-text text-transparent tracking-tight">
+            Management Analytics
+          </h1>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            {currentMonth} {currentYear} • {a.total} total shipments • {a.active} active • {a.completionRate}% delivered
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Date Range Selector */}
+          <div className="flex glass rounded-lg p-0.5 border" style={{ borderColor: 'var(--border-color)' }}>
+            {[
+              { label: '3M', value: '3m' },
+              { label: '6M', value: '6m' },
+              { label: '1Y', value: '12m' },
+              { label: 'All', value: 'all' },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setDateRange(opt.value)}
+                className={`px-3.5 py-2 rounded-md text-xs font-semibold whitespace-nowrap transition-all ${
+                  dateRange === opt.value
+                    ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                    : ''
+                }`}
+                style={dateRange !== opt.value ? { color: 'var(--text-secondary)' } : {}}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Refresh Button */}
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="p-2.5 glass border rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+            style={{ borderColor: 'var(--border-color)' }}
+            title="Refresh data"
+          >
+            <RefreshCw
+              size={16}
+              className={refreshing ? 'animate-spin' : ''}
+              style={{ color: 'var(--text-secondary)' }}
+            />
+          </button>
+
+          {/* Export PDF Button */}
+          <button
+            onClick={handleExportPDF}
+            disabled={exporting}
+            className="px-3.5 py-2.5 glass border rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <Download size={14} /> Export PDF
+          </button>
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────
+          KPI CARDS ROW
+          ────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { icon: Package, color: 'text-blue-500', bgGrad: 'from-blue-500 to-indigo-600', value: a.total, label: 'Total Shipments', sub: `${a.imp} Imp / ${a.exp} Exp` },
+          { icon: Clock, color: 'text-amber-500', bgGrad: 'from-amber-500 to-orange-600', value: a.active, label: 'In Progress', sub: `${a.cancelled} cancelled` },
+          { icon: CheckCircle2, color: 'text-emerald-500', bgGrad: 'from-emerald-500 to-teal-600', value: a.delivered, label: 'Delivered', sub: `${a.completionRate}% rate` },
+          { icon: Target, color: 'text-violet-500', bgGrad: 'from-violet-500 to-purple-600', value: `${a.completionRate}%`, label: 'Completion', sub: 'delivery rate' },
+          { icon: DollarSign, color: 'text-rose-500', bgGrad: 'from-rose-500 to-pink-600', value: `₹${(a.revenueThisMonth / 100000).toFixed(1)}L`, label: 'Revenue (Est.)', sub: 'this month' },
+          { icon: Activity, color: 'text-cyan-500', bgGrad: 'from-cyan-500 to-blue-600', value: `${a.growthPositive ? '+' : ''}${a.growth}%`, label: 'vs Last Month', sub: a.growthPositive ? 'Growth ↑' : 'Decline ↓', growth: true, gp: a.growthPositive },
+        ].map((card, i) => {
+          const Icon = card.icon
+          return (
+            <div
+              key={i}
+              className="glass rounded-xl p-4 border hover-lift group relative overflow-hidden animate-scale-in"
+              style={{ borderColor: 'var(--glass-border)', animationDelay: `${i * 60}ms` }}
+            >
+              {/* Gradient blob */}
+              <div
+                className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${card.bgGrad} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity duration-300`}
+              />
+              <Icon size={16} className={`${card.color} mb-2 relative z-10`} />
+              <p className="text-2xl font-bold flex items-center gap-1 relative z-10" style={{ color: 'var(--text-primary)' }}>
+                {card.growth && (
+                  card.gp
+                    ? <ArrowUpRight size={14} className="text-emerald-500" />
+                    : <TrendingDown size={14} className="text-red-500" />
+                )}
+                {card.value}
+              </p>
+              <p className="text-[10px] font-semibold relative z-10" style={{ color: 'var(--text-secondary)' }}>
+                {card.label}
+              </p>
+              <p className="text-[9px] mt-0.5 relative z-10" style={{ color: 'var(--text-muted)' }}>
+                {card.sub}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* ──────────────────────────────────────
+          MONTHLY TREND + TYPE BREAKDOWN
+          ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Monthly Trend Chart */}
+        <div className="lg:col-span-2 glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <TrendingUp size={16} className="text-indigo-500" />
+              12-Month Shipment Trend
+            </h3>
+            <span className="text-[10px] bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full" style={{ color: 'var(--text-muted)' }}>
+              Total: {a.total}
+            </span>
+          </div>
+          <BarChartSVG data={a.monthly} height={260} color="#6366f1" />
+        </div>
+
+        {/* Shipment Type Donut */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <PieChartIcon size={16} className="text-indigo-500" />
+            Shipment Mix
+          </h3>
+          <DonutChart data={a.typeBreakdown} size={170} centerLabel="Total" />
+          <div className="space-y-2 mt-4">
+            {a.typeBreakdown.map((item, i) => {
+              const Icon = item.icon || Package
+              const pct = a.total > 0 ? ((item.value / a.total) * 100).toFixed(0) : '0'
+              return (
+                <div key={i} className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                    <Icon size={12} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                    <span className="font-medium truncate" style={{ color: 'var(--text-secondary)' }}>{item.name}</span>
+                  </div>
+                  <span className="font-bold tabular-nums ml-2 flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
+                    {item.value} <span className="font-normal" style={{ color: 'var(--text-muted)' }}>({pct}%)</span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────
+          STATUS PIPELINE + WEEKLY PERFORMANCE
+          ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Status Distribution */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Layers size={16} className="text-indigo-500" />
+            Shipment Status Pipeline
+          </h3>
+          <div className="space-y-4">
+            {a.statusDistribution.map((s, i) => (
+              <div key={i}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">{s.icon}</span>
+                    <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{s.name}</span>
+                  </div>
+                  <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
+                    {s.value} <span className="font-normal" style={{ color: 'var(--text-muted)' }}>
+                      ({a.total > 0 ? ((s.value / a.total) * 100).toFixed(0) : 0}%)
+                    </span>
+                  </span>
+                </div>
+                <ProgressBar value={s.value} max={a.total} color={s.color} height={10} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Weekly Performance */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Calendar size={16} className="text-indigo-500" />
+            Last 7 Days Performance
+          </h3>
+          <BarChartSVG data={a.weekly} height={200} color="#10b981" />
+          {a.busiestDay && a.busiestDay.value > 0 && (
+            <div className="flex items-center gap-2 mt-3 px-3 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800/30">
+              <Zap size={14} className="text-emerald-500" />
+              <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>{a.busiestDay.label}</strong> was busiest with{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{a.busiestDay.value}</strong> shipments
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────
+          TOP CUSTOMERS + TOP ROUTES
+          ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Top 10 Customers */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Building2 size={16} className="text-indigo-500" />
+            Top 10 Customers
+          </h3>
+          <div className="space-y-1">
+            {a.topCustomers.length === 0 && (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>No customer data available</p>
+            )}
+            {a.topCustomers.map((c, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors"
+              >
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                    i === 0
+                      ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-md'
+                      : i === 1
+                        ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-700 shadow-sm'
+                        : i === 2
+                          ? 'bg-gradient-to-br from-amber-600 to-orange-700 text-white shadow-sm'
+                          : 'bg-gray-100 dark:bg-gray-800'
+                  }`}
+                  style={i >= 3 ? { color: 'var(--text-secondary)' } : {}}
+                >
+                  {i < 3 ? <Medal size={12} /> : i + 1}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }} title={c.name}>
+                    {c.name}
+                  </p>
+                  <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    <span>{c.shipments} shipments</span>
+                    {c.delivered > 0 && (
+                      <span className="text-emerald-500 font-medium">• {c.delivered} delivered</span>
+                    )}
+                    {c.revenue > 0 && (
+                      <span className="text-indigo-500 font-medium">• ₹{(c.revenue / 1000).toFixed(0)}K</span>
+                    )}
+                  </div>
+                </div>
+                <div className="w-16 flex-shrink-0">
+                  <ProgressBar value={c.shipments} max={a.maxCust} color="#6366f1" height={5} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Top Routes */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Route size={16} className="text-indigo-500" />
+            Top 10 Trade Routes
+          </h3>
+          <div className="space-y-1">
+            {a.topRoutes.length === 0 && (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>No route data available</p>
+            )}
+            {a.topRoutes.map((r, i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors"
+              >
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
+                    i === 0
+                      ? 'bg-gradient-to-br from-blue-400 to-indigo-500 text-white shadow-md'
+                      : i === 1
+                        ? 'bg-gradient-to-br from-blue-300 to-indigo-400 text-white shadow-sm'
+                        : i === 2
+                          ? 'bg-gradient-to-br from-sky-400 to-blue-500 text-white shadow-sm'
+                          : 'bg-gray-100 dark:bg-gray-800'
+                  }`}
+                  style={i >= 3 ? { color: 'var(--text-secondary)' } : {}}
+                >
+                  <MapPin size={10} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                    {r.from} <ArrowRight size={10} className="inline mx-1" style={{ color: 'var(--text-muted)' }} /> {r.to}
+                  </p>
+                  <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                    <span>{r.shipments} shipments</span>
+                    <span>• {r.weight.toFixed(1)} kg</span>
+                  </div>
+                </div>
+                <div className="w-16 flex-shrink-0">
+                  <ProgressBar value={r.shipments} max={a.maxRoute} color="#3b82f6" height={5} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────
+          OPERATIONAL INSIGHTS + QUICK STATS
+          ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Operational Insights */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Zap size={16} className="text-indigo-500" />
+            Operational Insights
+          </h3>
+          <div className="space-y-3">
+            {/* Monthly shipments */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Calendar size={18} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  {currentMonth} Shipments
+                </p>
+                <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{a.thisMonthCount}</p>
+                <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  {a.growthPositive ? '↑' : '↓'} {Math.abs(Number(a.growth))}% vs last month
+                </p>
+              </div>
+            </div>
+
+            {/* Delivery performance */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <CheckCircle2 size={18} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Delivery Performance
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{a.delivered}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    of {a.total} delivered
+                  </span>
+                </div>
+                <ProgressBar value={a.delivered} max={a.total || 1} color="#10b981" height={6} />
+              </div>
+            </div>
+
+            {/* Revenue estimate */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50/50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <DollarSign size={18} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Revenue Estimate (All Time)
+                </p>
+                <p className="text-lg font-bold text-rose-600 dark:text-rose-400">
+                  ₹{(a.totalRevenue / 100000).toFixed(2)}L
+                </p>
+                <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  Based on selling rate × weight
+                </p>
+              </div>
+            </div>
+
+            {/* Average daily volume */}
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-violet-50/50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-800/30">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                <Activity size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Avg Daily Volume
+                </p>
+                <p className="text-lg font-bold text-violet-600 dark:text-violet-400">{a.avgPerDay}</p>
+                <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  shipments per day
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Stats Grid */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Hash size={16} className="text-indigo-500" />
+            Quick Stats
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { icon: Globe, color: 'text-blue-500', label: 'Import', value: a.imp },
+              { icon: Globe, color: 'text-cyan-500', label: 'Export', value: a.exp },
+              { icon: Weight, color: 'text-amber-500', label: 'Total Weight', value: `${a.totalWeight} kg` },
+              { icon: Weight, color: 'text-violet-500', label: 'Avg Weight', value: `${a.avgWeight} kg` },
+              { icon: Users, color: 'text-emerald-500', label: 'Team Members', value: a.team.length },
+              { icon: Clock, color: 'text-rose-500', label: 'Cancelled', value: a.cancelled },
+            ].map((stat, i) => {
+              const Icon = stat.icon
+              return (
+                <div
+                  key={i}
+                  className="p-3 rounded-xl bg-gray-50/50 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-700/30"
+                >
+                  <Icon size={14} className={`${stat.color} mb-1`} />
+                  <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{stat.value}</p>
+                  <p className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>{stat.label}</p>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Type Quick View */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Filter size={16} className="text-indigo-500" />
+            By Shipment Type
+          </h3>
+          <div className="space-y-3">
+            {a.typeBreakdown.map((item, i) => {
+              const Icon = item.icon || Package
+              const pct = a.total > 0 ? ((item.value / a.total) * 100).toFixed(0) : '0'
+              return (
+                <div key={i} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon size={14} style={{ color: item.color }} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ProgressBar value={item.value} max={a.total || 1} color={item.color} height={6} />
+                    <span className="text-xs font-bold tabular-nums w-16 text-right" style={{ color: 'var(--text-primary)' }}>
+                      {item.value} ({pct}%)
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────
+          TEAM PERFORMANCE LEADERBOARD
+          ────────────────────────────────────── */}
+      <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Users size={16} className="text-indigo-500" />
+            Team Performance Leaderboard
+          </h3>
+          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            {a.team.length} team members
+          </span>
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b" style={{ borderColor: 'var(--border-color)' }}>
+                {['#', 'Team Member', 'Total', 'Active', 'Delivered', 'Rate', 'Performance'].map(h => (
+                  <th
+                    key={h}
+                    className="text-left py-3 px-3 text-[10px] font-semibold uppercase tracking-wider"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {a.team.map((m, i) => {
+                const rateNum = Number(m.completionRate)
+                const rateClass = rateNum >= 75
+                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                  : rateNum >= 40
+                    ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                    : 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400'
+                const rankBg = i === 0
+                  ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-sm'
+                  : i === 1
+                    ? 'bg-gradient-to-br from-gray-300 to-gray-400 text-gray-700'
+                    : i === 2
+                      ? 'bg-gradient-to-br from-amber-600 to-orange-700 text-white'
+                      : ''
+
+                return (
+                  <tr
+                    key={i}
+                    className="border-b hover:bg-indigo-50/20 dark:hover:bg-indigo-900/10 transition-colors"
+                    style={{ borderColor: 'var(--border-color)' }}
+                  >
+                    <td className="py-3 px-3">
+                      <span
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${rankBg}`}
+                        style={!rankBg ? { color: 'var(--text-secondary)' } : {}}
+                      >
+                        {i + 1}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+                          {m.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="text-xs font-semibold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+                          {m.name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{m.shipments}</span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">{m.active}</span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">{m.delivered}</span>
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${rateClass}`}>
+                        {m.completionRate}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 min-w-[100px]">
+                      <ProgressBar value={m.shipments} max={a.maxTeam} color="#6366f1" height={6} />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Mobile Cards */}
+        <div className="md:hidden space-y-2">
+          {a.team.map((m, i) => (
+            <div
+              key={i}
+              className="p-3 rounded-lg border"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold bg-gray-100 dark:bg-gray-800" style={{ color: 'var(--text-secondary)' }}>
+                    {i + 1}
+                  </span>
+                  <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{m.name}</span>
+                </div>
+                <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{m.shipments} shipments</span>
+              </div>
+              <ProgressBar value={m.shipments} max={a.maxTeam} color="#6366f1" height={4} />
+              <div className="flex gap-3 mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                <span>Active: <strong className="text-amber-500">{m.active}</strong></span>
+                <span>Delivered: <strong className="text-emerald-500">{m.delivered}</strong></span>
+                <span>Rate: <strong>{m.completionRate}%</strong></span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────
+          FOOTER
+          ────────────────────────────────────── */}
+      <div
+        className="flex items-center justify-between text-[10px] py-3 border-t"
+        style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 bg-gray-900 rounded flex items-center justify-center">
+            <Box size={8} className="text-white" />
+          </div>
+          <span>PAS Freight Management System • Executive Analytics Dashboard</span>
+        </div>
+        <span>
+          Generated: {now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} at {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      </div>
+    </div>
   )
 }
