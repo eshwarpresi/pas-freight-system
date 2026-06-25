@@ -161,13 +161,15 @@ function parseChecklistUniversal(items) {
     /Gateway\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
 
-  // ── LOCAL IGM (manual - not in standard BE PDF) ──
-  // Kept as manual entry fields
-
   // ── CONTAINER NUMBER ──
-  var containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|DETAILS|NUMBER)[\s\S]{0,300}?([A-Z]{4}\d{7})/i);
+  // Pattern 1: "CONTAINER DETAILS ... 1 / 1   TWCU2225760"
+  var containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|DETAILS|NUMBER)[\s\S]{0,400}?([A-Z]{4}\d{7})/i);
   if (!containerMatch) {
-    // Try standalone: 1 / 1 TLLU1178760
+    // Pattern 2: Standalone "1 / 1   TWCU2225760" format (the / separates count from container)
+    containerMatch = rawText.match(/\d+\s*\/\s*\d+\s+([A-Z]{4}\d{7})/);
+  }
+  if (!containerMatch) {
+    // Pattern 3: Any standalone 4-letter + 7-digit container number
     containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
   }
   if (containerMatch && containerMatch[1]) {
@@ -206,7 +208,6 @@ function parseChecklistUniversal(items) {
         var numMatch = nearHbl.match(/(\d{7,12})/);
         if (numMatch && numMatch[1]) {
           result.hawbHblNo = numMatch[1];
-          // Find date after the number
           var dateAfterNum = nearHbl.match(new RegExp(numMatch[1] + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
           if (dateAfterNum && dateAfterNum[1]) {
             result.hawbHblDate = dateAfterNum[1];
@@ -216,6 +217,7 @@ function parseChecklistUniversal(items) {
     }
   } else {
     // AIR PDF: "HBL/HAWB : UESZ26063121" or "HAWB : UESZ26063121"
+    // Use tryPatterns which returns first match with letters AND digits
     result.hawbHblNo = tryPatterns([
       /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
       /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
