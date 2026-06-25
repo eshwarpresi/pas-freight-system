@@ -58,7 +58,6 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
 function findValueOnSameLine(items, labelPattern, maxDistance) {
   maxDistance = maxDistance || 200;
   
-  // First, find the label item
   var labelItem = null;
   for (var i = 0; i < items.length; i++) {
     if (labelPattern.test(items[i].text)) {
@@ -69,7 +68,6 @@ function findValueOnSameLine(items, labelPattern, maxDistance) {
   
   if (!labelItem) return '';
   
-  // Find items on the same line (same y, within 5px) that are to the right
   var candidates = [];
   for (var j = 0; j < items.length; j++) {
     var item = items[j];
@@ -79,10 +77,8 @@ function findValueOnSameLine(items, labelPattern, maxDistance) {
     }
   }
   
-  // Sort by x position (left to right)
   candidates.sort(function(a, b) { return a.x - b.x; });
   
-  // Join the text of candidates, skip colons and empty strings
   var values = [];
   for (var k = 0; k < candidates.length; k++) {
     var txt = candidates[k].text.trim();
@@ -109,7 +105,6 @@ function findValueOnNextLines(items, labelPattern, maxLines, maxXDistance) {
   
   if (!labelItem) return '';
   
-  // Get all unique y positions below this label
   var yPositions = [];
   var yMap = {};
   for (var j = 0; j < items.length; j++) {
@@ -121,7 +116,6 @@ function findValueOnNextLines(items, labelPattern, maxLines, maxXDistance) {
   }
   yPositions.sort(function(a, b) { return a - b; });
   
-  // Check the next few lines
   var results = [];
   for (var line = 0; line < Math.min(maxLines, yPositions.length); line++) {
     var targetY = yPositions[line];
@@ -156,7 +150,6 @@ function parseChecklistUniversal(items) {
   };
 
   var page1Items = items.filter(function(i) { return i.page === 1; });
-  // Sort by y, then x for raw text
   var sortedItems = page1Items.slice().sort(function(a, b) { return a.y - b.y || a.x - b.x; });
   var rawText = sortedItems.map(function(i) { return i.text; }).join(' ');
   var rawTextCompact = rawText.replace(/\s+/g, '');
@@ -251,45 +244,37 @@ function parseChecklistUniversal(items) {
   // POSITION-BASED AWB EXTRACTION
   // ═══════════════════════════════════════════
   
-  // MAWB/MBL: Find "MBL/MAWB" or "MAWB" label, get value on same line
+  // MAWB/MBL
   var mawbLineValue = findValueOnSameLine(page1Items, /MBL\/\s*MAWB|MAWB/i, 300);
   if (mawbLineValue) {
     var mawbParts = mawbLineValue.split(/\s+/);
-    // First part is the MAWB number
     if (mawbParts[0] && /^[A-Z0-9]+$/i.test(mawbParts[0])) {
       result.mawbMblNo = mawbParts[0];
     }
   }
-  // Fallback to regex
   if (!result.mawbMblNo) {
     result.mawbMblNo = tryPatterns([/MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i, /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i], rawText);
   }
 
-  // HAWB/HBL: Find "HBL/HAWB" or "HAWB" label, get value on same line
+  // HAWB/HBL
   var hawbLineValue = findValueOnSameLine(page1Items, /HBL\/\s*HAWB|HBL|HAWB/i, 300);
   if (hawbLineValue) {
     var hawbParts = hawbLineValue.split(/\s+/);
-    // First part should be the HAWB number (can be all numeric like 0711013960)
     if (hawbParts[0] && /^[A-Z0-9]+$/i.test(hawbParts[0]) && hawbParts[0].length >= 3) {
       var candidateHawb = hawbParts[0];
-      // Reject if it's a date
       if (!/^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(candidateHawb)) {
         result.hawbHblNo = candidateHawb;
       }
     }
-    // Second part might be the HAWB date
     if (hawbParts[1] && /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(hawbParts[1])) {
       result.hawbHblDate = hawbParts[1];
     }
   }
-  
-  // Fallback to regex for HAWB
   if (!result.hawbHblNo) {
     result.hawbHblNo = tryPatterns([/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i, /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i], rawText);
   }
 
-  // ── MAWB DATE ──
-  // Find "Date :" that appears near MAWB
+  // MAWB DATE
   if (!result.mawbMblDate) {
     var mawbDateLine = findValueOnNextLines(page1Items, /MBL\/\s*MAWB|MAWB/, 2, 400);
     if (mawbDateLine) {
@@ -301,14 +286,18 @@ function parseChecklistUniversal(items) {
     result.mawbMblDate = tryPatterns([/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/], rawText);
   }
 
-  // ── HAWB DATE ──
+  // HAWB DATE
   if (!result.hawbHblDate && result.hawbHblNo) {
-    // Look for the HAWB number in raw text and grab the date after it
     var escapedNo = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     var dateAfterHawb = rawText.match(new RegExp(escapedNo + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
     if (dateAfterHawb && dateAfterHawb[1]) {
       result.hawbHblDate = dateAfterHawb[1];
     }
+  }
+  
+  // FALLBACK: If HAWB date still empty, use MAWB date (same date in many PDFs)
+  if (!result.hawbHblDate && result.mawbMblDate) {
+    result.hawbHblDate = result.mawbMblDate;
   }
 
   // ── PACKAGES & WEIGHT ──
