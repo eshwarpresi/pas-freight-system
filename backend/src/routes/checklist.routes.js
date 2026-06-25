@@ -162,11 +162,16 @@ function parseChecklistUniversal(items) {
   if (!result.cargoArrivalDate) result.cargoArrivalDate = result.gatewayIgmDate;
 
   // ── CONTAINER NUMBER ──
-  result.containerNo = tryPatterns([
-    /CONTAINER\s*(?:NO|DETAILS|NUMBER)[\s\S]*?([A-Z]{4}\d{7})/i,
-    /Container\s*(?:No|Number)?\s*:?\s*([A-Z]{4}\d{7})/i,
-    /([A-Z]{4}\d{7})/i,
-  ], rawText);
+  // Fix: Look for container in CONTAINER DETAILS section specifically
+  // Pattern: "1 / 1   TLLU1178760   NA   L" (4 letters + 7 digits = container number)
+  var containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|DETAILS|NUMBER)[\s\S]{0,300}?([A-Z]{4}\d{7})/i);
+  if (!containerMatch) {
+    // Try the compact format: "1 / 1 TLLU1178760"
+    containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
+  }
+  if (containerMatch && containerMatch[1]) {
+    result.containerNo = containerMatch[1];
+  }
 
   // ── PORT OF DESTINATION ──
   result.portOfDestination = tryPatterns([
@@ -178,62 +183,98 @@ function parseChecklistUniversal(items) {
   // ═══════════════════════════════════════════
   // ── MAWB/MBL + HAWB/HBL ──
   // ═══════════════════════════════════════════
-  var awbStart = rawText.indexOf('MBL/MAWB');
-  if (awbStart < 0) awbStart = rawText.indexOf('MAWB');
+  // Strategy: Search the ENTIRE raw text, not just an 800-char chunk
   
-  if (awbStart >= 0) {
-    var awbChunk = rawText.substring(awbStart, awbStart + 800);
+  // Find the AWB section: look for "MBL/MAWB" or "HBL/HAWB" anywhere in raw text
+  var awbSectionStart = rawText.indexOf('MBL/MAWB');
+  if (awbSectionStart < 0) awbSectionStart = rawText.indexOf('MAWB');
+  
+  // Also find "Date :" patterns near MBL/MAWB for context
+  // But the Date might be far away, so search full text
+  
+  // MAWB/MBL number
+  result.mawbMblNo = tryPatterns([
+    /MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i,
+    /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
+  ], rawText);
 
-    // MAWB/MBL number
-    var mawbMatch = awbChunk.match(/MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i);
-    if (!mawbMatch) mawbMatch = awbChunk.match(/MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
-    if (mawbMatch && mawbMatch[1]) result.mawbMblNo = mawbMatch[1].trim();
-
-    // HAWB/HBL number
-    var hawbMatch = awbChunk.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
-    if (!hawbMatch) hawbMatch = awbChunk.match(/HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
-    
-    // FALLBACK: find 7-12 digit number near "HBL"
-    if (!hawbMatch || !hawbMatch[1] || hawbMatch[1].length < 3) {
-      var hblPos = awbChunk.indexOf('HBL');
-      if (hblPos >= 0) {
-        var nearHbl = awbChunk.substring(hblPos, hblPos + 100);
-        var numMatch = nearHbl.match(/(\d{7,12})/);
-        if (numMatch) hawbMatch = numMatch;
+  // MAWB date: find "Date :" that appears near MAWB in the AWB line
+  // In some PDFs the Date is in the same line, in others it's separate
+  if (awbSectionStart >= 0) {
+    var afterAwb = rawText.substring(awbSectionStart, awbSectionStart + 500);
+    var dateInAwb = afterAwb.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+    if (dateInAwb && dateInAwb[1]) {
+      result.mawbMblDate = dateInAwb[1].trim();
+    }
+  }
+  // Fallback: find any "Date : XX-XX-XXXX" near "MBL" or "MAWB" in full text
+  if (!result.mawbMblDate) {
+    var mawbPos = rawText.indexOf('MBL');
+    if (mawbPos < 0) mawbPos = rawText.indexOf('MAWB');
+    if (mawbPos >= 0) {
+      var nearMawb = rawText.substring(Math.max(0, mawbPos - 300), mawbPos + 500);
+      var dateNearMawb = nearMawb.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+      if (dateNearMawb && dateNearMawb[1]) {
+        result.mawbMblDate = dateNearMawb[1].trim();
       }
     }
-    
-    if (hawbMatch && hawbMatch[1]) {
-      var hawbVal = hawbMatch[1].trim();
-      var lowerVal = hawbVal.toLowerCase();
-      if (lowerVal !== 'date' && lowerVal !== 'nos' && lowerVal !== 'printed' &&
-          lowerVal !== 'on' && lowerVal !== 'gross' && lowerVal !== 'marks' &&
-          hawbVal.length >= 3) {
-        result.hawbHblNo = hawbVal;
+  }
+
+  // HAWB/HBL number
+  result.hawbHblNo = tryPatterns([
+    /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
+    /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
+  ], rawText);
+  
+  // If standard pattern failed, find HBL and grab the next 7-12 digit number
+  if (!result.hawbHblNo || result.hawbHblNo.length < 3) {
+    var hblPos = rawText.indexOf('HBL');
+    if (hblPos >= 0) {
+      var nearHbl = rawText.substring(hblPos, hblPos + 150);
+      var numMatch = nearHbl.match(/(\d{7,12})/);
+      if (numMatch && numMatch[1]) {
+        var numVal = numMatch[1];
+        // Don't capture IGM numbers (typically 7 digits starting with 4)
+        // HAWB numbers are typically 7-10 digits
+        if (numVal.length >= 7 && numVal.length <= 12) {
+          result.hawbHblNo = numVal;
+        }
       }
     }
+  }
 
-    // MAWB date
-    var dateMatches = awbChunk.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g);
-    if (dateMatches && dateMatches.length >= 1) {
-      result.mawbMblDate = dateMatches[0].replace(/Date\s*:\s*/, '').trim();
+  // Clean HAWB value
+  if (result.hawbHblNo) {
+    var lowerHawb = result.hawbHblNo.toLowerCase();
+    if (lowerHawb === 'date' || lowerHawb === 'nos' || lowerHawb === 'printed' ||
+        lowerHawb === 'on' || lowerHawb === 'gross' || lowerHawb === 'marks' ||
+        result.hawbHblNo.length < 3) {
+      result.hawbHblNo = '';
     }
+  }
 
-    // HAWB date: find date right after HAWB number
-    if (result.hawbHblNo) {
-      var escapedNo = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      var hawbDatePattern = new RegExp(escapedNo + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})');
-      var hawbDateMatch = awbChunk.match(hawbDatePattern);
-      if (hawbDateMatch && hawbDateMatch[1]) {
-        result.hawbHblDate = hawbDateMatch[1];
-      } else {
-        var hblPos2 = awbChunk.indexOf('HBL');
-        if (hblPos2 < 0) hblPos2 = awbChunk.indexOf('HAWB');
-        if (hblPos2 >= 0) {
-          var nearHbl2 = awbChunk.substring(hblPos2, hblPos2 + 200);
-          var dateNearHbl = nearHbl2.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
-          if (dateNearHbl && dateNearHbl[1] && dateNearHbl[1] !== result.mawbMblDate) {
-            result.hawbHblDate = dateNearHbl[1];
+  // HAWB date: find date right after the HAWB number in the raw text
+  if (result.hawbHblNo) {
+    var escapedNo = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var hawbDatePattern = new RegExp(escapedNo + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})');
+    var hawbDateMatch = rawText.match(hawbDatePattern);
+    if (hawbDateMatch && hawbDateMatch[1]) {
+      result.hawbHblDate = hawbDateMatch[1];
+    }
+  }
+  
+  // If HAWB date still empty, find date near HBL position in full text
+  if (!result.hawbHblDate) {
+    var hblSearchPos = rawText.indexOf('HBL');
+    if (hblSearchPos >= 0) {
+      var nearHblDate = rawText.substring(hblSearchPos, hblSearchPos + 200);
+      // Find date that's NOT the MAWB date
+      var datesInHbl = nearHblDate.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g);
+      if (datesInHbl) {
+        for (var di = 0; di < datesInHbl.length; di++) {
+          if (datesInHbl[di] !== result.mawbMblDate) {
+            result.hawbHblDate = datesInHbl[di];
+            break;
           }
         }
       }
@@ -276,8 +317,6 @@ function parseChecklistUniversal(items) {
     /Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i,
     /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
   ], rawText);
-
-  // ── FREIGHT ──
   result.billNo = tryPatterns([/Freight\s*:?\s*([\d.]+\s*[A-Z]{3})/i, /Freight\s*Charges?\s*:?\s*([\d.]+\s*[A-Z]{3})/i], rawText);
   result.billDate = tryPatterns([
     /Exchange\s*Rate\s*:\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i,
