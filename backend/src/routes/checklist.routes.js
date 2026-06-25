@@ -175,7 +175,9 @@ function parseChecklistUniversal(items) {
     /Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i,
   ], rawText);
 
+  // ═══════════════════════════════════════════
   // ── MAWB/MBL + HAWB/HBL ──
+  // ═══════════════════════════════════════════
   var awbStart = rawText.indexOf('MBL/MAWB');
   if (awbStart < 0) awbStart = rawText.indexOf('MAWB');
   
@@ -187,13 +189,23 @@ function parseChecklistUniversal(items) {
     if (!mawbMatch) mawbMatch = awbChunk.match(/MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
     if (mawbMatch && mawbMatch[1]) result.mawbMblNo = mawbMatch[1].trim();
 
-    // HAWB/HBL number - can be ALL NUMERIC like 0711013960
+    // HAWB/HBL number
     var hawbMatch = awbChunk.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
     if (!hawbMatch) hawbMatch = awbChunk.match(/HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
+    
+    // FALLBACK: find 7-12 digit number near "HBL"
+    if (!hawbMatch || !hawbMatch[1] || hawbMatch[1].length < 3) {
+      var hblPos = awbChunk.indexOf('HBL');
+      if (hblPos >= 0) {
+        var nearHbl = awbChunk.substring(hblPos, hblPos + 100);
+        var numMatch = nearHbl.match(/(\d{7,12})/);
+        if (numMatch) hawbMatch = numMatch;
+      }
+    }
+    
     if (hawbMatch && hawbMatch[1]) {
       var hawbVal = hawbMatch[1].trim();
       var lowerVal = hawbVal.toLowerCase();
-      // Only reject obvious junk words
       if (lowerVal !== 'date' && lowerVal !== 'nos' && lowerVal !== 'printed' &&
           lowerVal !== 'on' && lowerVal !== 'gross' && lowerVal !== 'marks' &&
           hawbVal.length >= 3) {
@@ -201,21 +213,29 @@ function parseChecklistUniversal(items) {
       }
     }
 
-    // MAWB date from "Date : DD/MM/YYYY"
-    var mawbDateMatch = awbChunk.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
-    if (mawbDateMatch && mawbDateMatch[1]) {
-      result.mawbMblDate = mawbDateMatch[1].trim();
+    // MAWB date
+    var dateMatches = awbChunk.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g);
+    if (dateMatches && dateMatches.length >= 1) {
+      result.mawbMblDate = dateMatches[0].replace(/Date\s*:\s*/, '').trim();
     }
 
-    // HAWB date - find date near HBL/HAWB position
-    var hawbPos = awbChunk.indexOf('HBL/HAWB');
-    if (hawbPos < 0) hawbPos = awbChunk.indexOf('HAWB');
-    if (hawbPos >= 0) {
-      var hawbSection = awbChunk.substring(hawbPos, hawbPos + 200);
-      // Match: HAWB number followed by a date
-      var hawbDateMatch = hawbSection.match(/[A-Z0-9]+\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+    // HAWB date: find date right after HAWB number
+    if (result.hawbHblNo) {
+      var escapedNo = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var hawbDatePattern = new RegExp(escapedNo + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})');
+      var hawbDateMatch = awbChunk.match(hawbDatePattern);
       if (hawbDateMatch && hawbDateMatch[1]) {
         result.hawbHblDate = hawbDateMatch[1];
+      } else {
+        var hblPos2 = awbChunk.indexOf('HBL');
+        if (hblPos2 < 0) hblPos2 = awbChunk.indexOf('HAWB');
+        if (hblPos2 >= 0) {
+          var nearHbl2 = awbChunk.substring(hblPos2, hblPos2 + 200);
+          var dateNearHbl = nearHbl2.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+          if (dateNearHbl && dateNearHbl[1] && dateNearHbl[1] !== result.mawbMblDate) {
+            result.hawbHblDate = dateNearHbl[1];
+          }
+        }
       }
     }
   }
@@ -257,30 +277,22 @@ function parseChecklistUniversal(items) {
     /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
   ], rawText);
 
-  // ── FREIGHT CHARGES ──
+  // ── FREIGHT ──
   result.billNo = tryPatterns([/Freight\s*:?\s*([\d.]+\s*[A-Z]{3})/i, /Freight\s*Charges?\s*:?\s*([\d.]+\s*[A-Z]{3})/i], rawText);
-
-  // ── EXCHANGE RATE ──
   result.billDate = tryPatterns([
     /Exchange\s*Rate\s*:\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i,
     /Exchange\s*Rate\s*:?\s*(.+?)(?:\s{2,}|$)/i,
   ], rawText);
 
-  // ── DELIVERY ORDER DATE ──
+  // ── DO/OCC/GATE PASS ──
   result.deliveryOrderDate = tryPatterns([
     /DO\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /Delivery\s*Order\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /DO\s*Collection\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
-
-  // ── OCC DATE ──
   result.occDate = tryPatterns([
     /OCC\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /OOC\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /OOC\s*Done\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
-
-  // ── GATE PASS DATE ──
   result.gatePassDate = tryPatterns([
     /Gate\s*Pass\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /Gate\s*Pass\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
