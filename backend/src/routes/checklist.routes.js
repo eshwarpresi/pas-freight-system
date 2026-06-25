@@ -67,7 +67,6 @@ function parseChecklistUniversal(items) {
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
   };
 
-  // Page 1 only, top-to-bottom, left-to-right
   var page1Items = items.filter(function(i) { return i.page === 1; })
     .sort(function(a, b) { return a.y - b.y || a.x - b.x; });
   var rawText = page1Items.map(function(i) { return i.text; }).join(' ');
@@ -112,10 +111,14 @@ function parseChecklistUniversal(items) {
   ], rawText);
   if (result.importerName) result.importerName = result.importerName.replace(/\s+/g, ' ').trim();
 
+  // GSTIN - 3 fallback patterns
   var gstMatch = rawText.match(/GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
   if (!gstMatch) {
     var noSpace = rawText.replace(/\s+/g, '');
     gstMatch = noSpace.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/);
+  }
+  if (!gstMatch) {
+    gstMatch = rawText.match(/(29[A-Z]{4}\d{4}[A-Z]\d{3}[A-Z]{3}\d)/i);
   }
   if (gstMatch) result.additionalRemarks = 'GSTIN: ' + gstMatch[1];
 
@@ -129,7 +132,6 @@ function parseChecklistUniversal(items) {
     /Destination\s*(?:Port)?\s*:?\s*([A-Z]+-[A-Z]+)/i,
   ], rawText);
 
-  // MBL/MAWB + BOTH DATES
   result.mawbMblNo = tryPatterns([
     /MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i,
     /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
