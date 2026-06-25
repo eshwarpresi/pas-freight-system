@@ -54,6 +54,92 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
   }
 });
 
+// POSITION-BASED EXTRACTOR: Find value to the right of a label on the same line
+function findValueOnSameLine(items, labelPattern, maxDistance) {
+  maxDistance = maxDistance || 200;
+  
+  // First, find the label item
+  var labelItem = null;
+  for (var i = 0; i < items.length; i++) {
+    if (labelPattern.test(items[i].text)) {
+      labelItem = items[i];
+      break;
+    }
+  }
+  
+  if (!labelItem) return '';
+  
+  // Find items on the same line (same y, within 5px) that are to the right
+  var candidates = [];
+  for (var j = 0; j < items.length; j++) {
+    var item = items[j];
+    if (item === labelItem) continue;
+    if (Math.abs(item.y - labelItem.y) <= 5 && item.x > labelItem.x && (item.x - labelItem.x) < maxDistance) {
+      candidates.push(item);
+    }
+  }
+  
+  // Sort by x position (left to right)
+  candidates.sort(function(a, b) { return a.x - b.x; });
+  
+  // Join the text of candidates, skip colons and empty strings
+  var values = [];
+  for (var k = 0; k < candidates.length; k++) {
+    var txt = candidates[k].text.trim();
+    if (txt && txt !== ':' && txt !== 'Date' && txt !== 'NOS') {
+      values.push(txt);
+    }
+  }
+  
+  return values.join(' ');
+}
+
+// POSITION-BASED: Find a value on the NEXT line(s) after a label
+function findValueOnNextLines(items, labelPattern, maxLines, maxXDistance) {
+  maxLines = maxLines || 3;
+  maxXDistance = maxXDistance || 300;
+  
+  var labelItem = null;
+  for (var i = 0; i < items.length; i++) {
+    if (labelPattern.test(items[i].text)) {
+      labelItem = items[i];
+      break;
+    }
+  }
+  
+  if (!labelItem) return '';
+  
+  // Get all unique y positions below this label
+  var yPositions = [];
+  var yMap = {};
+  for (var j = 0; j < items.length; j++) {
+    var y = items[j].y;
+    if (y > labelItem.y && !yMap[y]) {
+      yMap[y] = true;
+      yPositions.push(y);
+    }
+  }
+  yPositions.sort(function(a, b) { return a - b; });
+  
+  // Check the next few lines
+  var results = [];
+  for (var line = 0; line < Math.min(maxLines, yPositions.length); line++) {
+    var targetY = yPositions[line];
+    var lineItems = [];
+    for (var k = 0; k < items.length; k++) {
+      if (Math.abs(items[k].y - targetY) <= 5 && items[k].x >= labelItem.x && items[k].x < labelItem.x + maxXDistance) {
+        lineItems.push(items[k]);
+      }
+    }
+    lineItems.sort(function(a, b) { return a.x - b.x; });
+    
+    var lineText = lineItems.map(function(it) { return it.text.trim(); }).filter(function(t) { return t && t !== ':'; }).join(' ');
+    if (lineText) results.push(lineText);
+  }
+  
+  return results.join(' | ');
+}
+
 function parseChecklistUniversal(items) {
   var result = {
     referenceNumber: '', shipmentMode: '', importerName: '', exporterName: '',
@@ -69,9 +155,10 @@ function parseChecklistUniversal(items) {
     containerNo: ''
   };
 
-  var page1Items = items.filter(function(i) { return i.page === 1; })
-    .sort(function(a, b) { return a.y - b.y || a.x - b.x; });
-  var rawText = page1Items.map(function(i) { return i.text; }).join(' ');
+  var page1Items = items.filter(function(i) { return i.page === 1; });
+  // Sort by y, then x for raw text
+  var sortedItems = page1Items.slice().sort(function(a, b) { return a.y - b.y || a.x - b.x; });
+  var rawText = sortedItems.map(function(i) { return i.text; }).join(' ');
   var rawTextCompact = rawText.replace(/\s+/g, '');
 
   function tryPatterns(patterns, text) {
@@ -117,10 +204,7 @@ function parseChecklistUniversal(items) {
   result.portOfDischarge = loc;
 
   // ── SHIPMENT MODE ──
-  result.shipmentMode = tryPatterns([
-    /Transport\s*Mode\s*:\s*(\S)/i,
-    /Mode\s*:\s*(\S)/i,
-  ], rawText);
+  result.shipmentMode = tryPatterns([/Transport\s*Mode\s*:\s*(\S)/i, /Mode\s*:\s*(\S)/i], rawText);
 
   // ── IMPORTER NAME ──
   result.importerName = tryPatterns([
@@ -129,7 +213,6 @@ function parseChecklistUniversal(items) {
     /(ONLINE\s+INSTRUMENTS\s*\(INDIA\)\s*LIMITED)/i,
     /(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i,
     /(ARION\s+TECHNOLOGY\s+LTD)/i,
-    /Importer\s+Details?\s*:?\s*\d*\s+([A-Z][\w\s]+(?:LIMITED|LTD|PRIVATE|PVT)[\w\s]*)/i,
   ], rawText);
   result.importerName = cleanCompanyName(result.importerName);
 
@@ -140,20 +223,11 @@ function parseChecklistUniversal(items) {
     var looseMatch = rawText.match(/\b(\d{2}[A-Z0-9]{13})\b/i);
     if (looseMatch && /[A-Z]/.test(looseMatch[1]) && /\d/.test(looseMatch[1].substring(2))) gstMatch = looseMatch;
   }
-  if (!gstMatch) {
-    var looseCompact = rawTextCompact.match(/(\d{2}[A-Z0-9]{13})/i);
-    if (looseCompact && /[A-Z]/.test(looseCompact[1]) && /\d/.test(looseCompact[1].substring(2))) gstMatch = looseCompact;
-  }
-  if (gstMatch) {
-    result.additionalRemarks = 'GSTIN: ' + gstMatch[1].toUpperCase();
-  }
+  if (gstMatch) result.additionalRemarks = 'GSTIN: ' + gstMatch[1].toUpperCase();
 
   // ── IGM ──
   result.igmNo = tryPatterns([/IGM\s*NO\s*:\s*(\d+)/i, /IGM\s*No\s*:?\s*(\d+)/i], rawText);
-  result.igmDate = tryPatterns([
-    /IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /IGM\s*No\s*:?\s*\d+[\s\/]*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-  ], rawText);
+  result.igmDate = tryPatterns([/IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
 
   // ── GATEWAY IGM ──
   result.gatewayIgmNo = tryPatterns([/Gateway\s*IGM\s*:\s*(\d+)/i], rawText);
@@ -162,16 +236,9 @@ function parseChecklistUniversal(items) {
   if (!result.cargoArrivalDate) result.cargoArrivalDate = result.gatewayIgmDate;
 
   // ── CONTAINER NUMBER ──
-  // Fix: Look for container in CONTAINER DETAILS section specifically
-  // Pattern: "1 / 1   TLLU1178760   NA   L" (4 letters + 7 digits = container number)
   var containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|DETAILS|NUMBER)[\s\S]{0,300}?([A-Z]{4}\d{7})/i);
-  if (!containerMatch) {
-    // Try the compact format: "1 / 1 TLLU1178760"
-    containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
-  }
-  if (containerMatch && containerMatch[1]) {
-    result.containerNo = containerMatch[1];
-  }
+  if (!containerMatch) containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
+  if (containerMatch && containerMatch[1]) result.containerNo = containerMatch[1];
 
   // ── PORT OF DESTINATION ──
   result.portOfDestination = tryPatterns([
@@ -181,103 +248,66 @@ function parseChecklistUniversal(items) {
   ], rawText);
 
   // ═══════════════════════════════════════════
-  // ── MAWB/MBL + HAWB/HBL ──
+  // POSITION-BASED AWB EXTRACTION
   // ═══════════════════════════════════════════
-  // Strategy: Search the ENTIRE raw text, not just an 800-char chunk
   
-  // Find the AWB section: look for "MBL/MAWB" or "HBL/HAWB" anywhere in raw text
-  var awbSectionStart = rawText.indexOf('MBL/MAWB');
-  if (awbSectionStart < 0) awbSectionStart = rawText.indexOf('MAWB');
-  
-  // Also find "Date :" patterns near MBL/MAWB for context
-  // But the Date might be far away, so search full text
-  
-  // MAWB/MBL number
-  result.mawbMblNo = tryPatterns([
-    /MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i,
-    /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
-  ], rawText);
-
-  // MAWB date: find "Date :" that appears near MAWB in the AWB line
-  // In some PDFs the Date is in the same line, in others it's separate
-  if (awbSectionStart >= 0) {
-    var afterAwb = rawText.substring(awbSectionStart, awbSectionStart + 500);
-    var dateInAwb = afterAwb.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
-    if (dateInAwb && dateInAwb[1]) {
-      result.mawbMblDate = dateInAwb[1].trim();
+  // MAWB/MBL: Find "MBL/MAWB" or "MAWB" label, get value on same line
+  var mawbLineValue = findValueOnSameLine(page1Items, /MBL\/\s*MAWB|MAWB/i, 300);
+  if (mawbLineValue) {
+    var mawbParts = mawbLineValue.split(/\s+/);
+    // First part is the MAWB number
+    if (mawbParts[0] && /^[A-Z0-9]+$/i.test(mawbParts[0])) {
+      result.mawbMblNo = mawbParts[0];
     }
   }
-  // Fallback: find any "Date : XX-XX-XXXX" near "MBL" or "MAWB" in full text
+  // Fallback to regex
+  if (!result.mawbMblNo) {
+    result.mawbMblNo = tryPatterns([/MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i, /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i], rawText);
+  }
+
+  // HAWB/HBL: Find "HBL/HAWB" or "HAWB" label, get value on same line
+  var hawbLineValue = findValueOnSameLine(page1Items, /HBL\/\s*HAWB|HBL|HAWB/i, 300);
+  if (hawbLineValue) {
+    var hawbParts = hawbLineValue.split(/\s+/);
+    // First part should be the HAWB number (can be all numeric like 0711013960)
+    if (hawbParts[0] && /^[A-Z0-9]+$/i.test(hawbParts[0]) && hawbParts[0].length >= 3) {
+      var candidateHawb = hawbParts[0];
+      // Reject if it's a date
+      if (!/^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(candidateHawb)) {
+        result.hawbHblNo = candidateHawb;
+      }
+    }
+    // Second part might be the HAWB date
+    if (hawbParts[1] && /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(hawbParts[1])) {
+      result.hawbHblDate = hawbParts[1];
+    }
+  }
+  
+  // Fallback to regex for HAWB
+  if (!result.hawbHblNo) {
+    result.hawbHblNo = tryPatterns([/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i, /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i], rawText);
+  }
+
+  // ── MAWB DATE ──
+  // Find "Date :" that appears near MAWB
   if (!result.mawbMblDate) {
-    var mawbPos = rawText.indexOf('MBL');
-    if (mawbPos < 0) mawbPos = rawText.indexOf('MAWB');
-    if (mawbPos >= 0) {
-      var nearMawb = rawText.substring(Math.max(0, mawbPos - 300), mawbPos + 500);
-      var dateNearMawb = nearMawb.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
-      if (dateNearMawb && dateNearMawb[1]) {
-        result.mawbMblDate = dateNearMawb[1].trim();
-      }
+    var mawbDateLine = findValueOnNextLines(page1Items, /MBL\/\s*MAWB|MAWB/, 2, 400);
+    if (mawbDateLine) {
+      var dateM = mawbDateLine.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
+      if (dateM) result.mawbMblDate = dateM[1];
     }
   }
-
-  // HAWB/HBL number
-  result.hawbHblNo = tryPatterns([
-    /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
-    /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
-  ], rawText);
-  
-  // If standard pattern failed, find HBL and grab the next 7-12 digit number
-  if (!result.hawbHblNo || result.hawbHblNo.length < 3) {
-    var hblPos = rawText.indexOf('HBL');
-    if (hblPos >= 0) {
-      var nearHbl = rawText.substring(hblPos, hblPos + 150);
-      var numMatch = nearHbl.match(/(\d{7,12})/);
-      if (numMatch && numMatch[1]) {
-        var numVal = numMatch[1];
-        // Don't capture IGM numbers (typically 7 digits starting with 4)
-        // HAWB numbers are typically 7-10 digits
-        if (numVal.length >= 7 && numVal.length <= 12) {
-          result.hawbHblNo = numVal;
-        }
-      }
-    }
+  if (!result.mawbMblDate) {
+    result.mawbMblDate = tryPatterns([/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/], rawText);
   }
 
-  // Clean HAWB value
-  if (result.hawbHblNo) {
-    var lowerHawb = result.hawbHblNo.toLowerCase();
-    if (lowerHawb === 'date' || lowerHawb === 'nos' || lowerHawb === 'printed' ||
-        lowerHawb === 'on' || lowerHawb === 'gross' || lowerHawb === 'marks' ||
-        result.hawbHblNo.length < 3) {
-      result.hawbHblNo = '';
-    }
-  }
-
-  // HAWB date: find date right after the HAWB number in the raw text
-  if (result.hawbHblNo) {
+  // ── HAWB DATE ──
+  if (!result.hawbHblDate && result.hawbHblNo) {
+    // Look for the HAWB number in raw text and grab the date after it
     var escapedNo = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    var hawbDatePattern = new RegExp(escapedNo + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})');
-    var hawbDateMatch = rawText.match(hawbDatePattern);
-    if (hawbDateMatch && hawbDateMatch[1]) {
-      result.hawbHblDate = hawbDateMatch[1];
-    }
-  }
-  
-  // If HAWB date still empty, find date near HBL position in full text
-  if (!result.hawbHblDate) {
-    var hblSearchPos = rawText.indexOf('HBL');
-    if (hblSearchPos >= 0) {
-      var nearHblDate = rawText.substring(hblSearchPos, hblSearchPos + 200);
-      // Find date that's NOT the MAWB date
-      var datesInHbl = nearHblDate.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g);
-      if (datesInHbl) {
-        for (var di = 0; di < datesInHbl.length; di++) {
-          if (datesInHbl[di] !== result.mawbMblDate) {
-            result.hawbHblDate = datesInHbl[di];
-            break;
-          }
-        }
-      }
+    var dateAfterHawb = rawText.match(new RegExp(escapedNo + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
+    if (dateAfterHawb && dateAfterHawb[1]) {
+      result.hawbHblDate = dateAfterHawb[1];
     }
   }
 
@@ -305,37 +335,16 @@ function parseChecklistUniversal(items) {
   }
 
   // ── INVOICE ──
-  result.invoiceNo = tryPatterns([
-    /Inv\.?\s*No\s*:\s*([A-Z0-9]+[-\/]?\d*[A-Z]?[-\/]?\d*)/i,
-    /Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i,
-  ], rawText);
-  result.invoiceDate = tryPatterns([
-    /Inv\.?\s*Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Invoice\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-  ], rawText);
-  result.billingCurrency = tryPatterns([
-    /Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i,
-    /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
-  ], rawText);
-  result.billNo = tryPatterns([/Freight\s*:?\s*([\d.]+\s*[A-Z]{3})/i, /Freight\s*Charges?\s*:?\s*([\d.]+\s*[A-Z]{3})/i], rawText);
-  result.billDate = tryPatterns([
-    /Exchange\s*Rate\s*:\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i,
-    /Exchange\s*Rate\s*:?\s*(.+?)(?:\s{2,}|$)/i,
-  ], rawText);
+  result.invoiceNo = tryPatterns([/Inv\.?\s*No\s*:\s*([A-Z0-9]+[-\/]?\d*[A-Z]?[-\/]?\d*)/i, /Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i], rawText);
+  result.invoiceDate = tryPatterns([/Inv\.?\s*Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i, /Invoice\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
+  result.billingCurrency = tryPatterns([/Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i, /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i], rawText);
+  result.billNo = tryPatterns([/Freight\s*:?\s*([\d.]+\s*[A-Z]{3})/i], rawText);
+  result.billDate = tryPatterns([/Exchange\s*Rate\s*:\s*([\d.]+\s*[A-Z]{3}\s*=\s*[\d.]+\s*INR)/i], rawText);
 
   // ── DO/OCC/GATE PASS ──
-  result.deliveryOrderDate = tryPatterns([
-    /DO\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Delivery\s*Order\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-  ], rawText);
-  result.occDate = tryPatterns([
-    /OCC\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /OOC\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-  ], rawText);
-  result.gatePassDate = tryPatterns([
-    /Gate\s*Pass\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Gate\s*Pass\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-  ], rawText);
+  result.deliveryOrderDate = tryPatterns([/DO\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
+  result.occDate = tryPatterns([/O[OC]C\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
+  result.gatePassDate = tryPatterns([/Gate\s*Pass\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
 
   // ── FINAL CLEANUP ──
   result.importerName = cleanCompanyName(result.importerName);
