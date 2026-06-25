@@ -54,96 +54,6 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
   }
 });
 
-// Helper: filter out junk tokens from position-extracted values
-function filterJunk(tokens) {
-  var junk = ['date', 'nos', 'hbl', 'hawb', 'mbl', 'mawb', 'printed', 'on', 'gross', 'marks', ':'];
-  return tokens.filter(function(t) {
-    if (!t || t.length < 2) return false;
-    if (junk.indexOf(t.toLowerCase()) >= 0) return false;
-    return true;
-  });
-}
-
-// POSITION-BASED EXTRACTOR: Find value to the right of a label on the same line
-function findValueOnSameLine(items, labelPattern, maxDistance) {
-  maxDistance = maxDistance || 200;
-  
-  var labelItem = null;
-  for (var i = 0; i < items.length; i++) {
-    if (labelPattern.test(items[i].text)) {
-      labelItem = items[i];
-      break;
-    }
-  }
-  
-  if (!labelItem) return '';
-  
-  var candidates = [];
-  for (var j = 0; j < items.length; j++) {
-    var item = items[j];
-    if (item === labelItem) continue;
-    if (Math.abs(item.y - labelItem.y) <= 5 && item.x > labelItem.x && (item.x - labelItem.x) < maxDistance) {
-      candidates.push(item);
-    }
-  }
-  
-  candidates.sort(function(a, b) { return a.x - b.x; });
-  
-  var values = [];
-  for (var k = 0; k < candidates.length; k++) {
-    var txt = candidates[k].text.trim();
-    if (txt && txt !== ':' && txt.toLowerCase() !== 'date' && txt.toLowerCase() !== 'nos') {
-      values.push(txt);
-    }
-  }
-  
-  return values.join(' ');
-}
-
-// POSITION-BASED: Find a value on the NEXT line(s) after a label
-function findValueOnNextLines(items, labelPattern, maxLines, maxXDistance) {
-  maxLines = maxLines || 3;
-  maxXDistance = maxXDistance || 300;
-  
-  var labelItem = null;
-  for (var i = 0; i < items.length; i++) {
-    if (labelPattern.test(items[i].text)) {
-      labelItem = items[i];
-      break;
-    }
-  }
-  
-  if (!labelItem) return '';
-  
-  var yPositions = [];
-  var yMap = {};
-  for (var j = 0; j < items.length; j++) {
-    var y = items[j].y;
-    if (y > labelItem.y && !yMap[y]) {
-      yMap[y] = true;
-      yPositions.push(y);
-    }
-  }
-  yPositions.sort(function(a, b) { return a - b; });
-  
-  var results = [];
-  for (var line = 0; line < Math.min(maxLines, yPositions.length); line++) {
-    var targetY = yPositions[line];
-    var lineItems = [];
-    for (var k = 0; k < items.length; k++) {
-      if (Math.abs(items[k].y - targetY) <= 5 && items[k].x >= labelItem.x && items[k].x < labelItem.x + maxXDistance) {
-        lineItems.push(items[k]);
-      }
-    }
-    lineItems.sort(function(a, b) { return a.x - b.x; });
-    
-    var lineText = lineItems.map(function(it) { return it.text.trim(); }).filter(function(t) { return t && t !== ':'; }).join(' ');
-    if (lineText) results.push(lineText);
-  }
-  
-  return results.join(' | ');
-}
-
 function parseChecklistUniversal(items) {
   var result = {
     referenceNumber: '', shipmentMode: '', importerName: '', exporterName: '',
@@ -178,6 +88,9 @@ function parseChecklistUniversal(items) {
   }
 
   result.agentDebitNote = 'PAS FREIGHT SERVICES';
+
+  // ── DETECT PDF TYPE ──
+  var isSea = /Gateway\s*IGM|IGM\s*NO|Container|HBL\/\s*HAWB|MBL\/\s*MAWB/i.test(rawText);
 
   // ── REFERENCE NUMBER ──
   result.referenceNumber = tryPatterns([
@@ -251,82 +164,60 @@ function parseChecklistUniversal(items) {
   ], rawText);
 
   // ═══════════════════════════════════════════
-  // AWB EXTRACTION (Air + Sea auto-detect)
+  // AWB EXTRACTION
   // ═══════════════════════════════════════════
-  
-  var isSea = /Gateway\s*IGM|IGM\s*NO|Container|MBL/i.test(rawText);
 
-  // ── MAWB/MBL ──
-  var mawbLineValue = findValueOnSameLine(page1Items, /MBL\/\s*MAWB|MAWB/i, 300);
-  if (mawbLineValue) {
-    var mawbParts = filterJunk(mawbLineValue.split(/\s+/));
-    if (mawbParts[0] && /^[A-Z0-9]+$/i.test(mawbParts[0])) {
-      result.mawbMblNo = mawbParts[0];
-    }
-  }
-  if (!result.mawbMblNo) {
-    result.mawbMblNo = tryPatterns([/MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i, /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i], rawText);
-  }
+  // ── MAWB/MBL Number ──
+  result.mawbMblNo = tryPatterns([
+    /MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i,
+    /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
+  ], rawText);
 
-  // ── HAWB/HBL ──
-  var hawbLineValue = findValueOnSameLine(page1Items, /HBL\/\s*HAWB|HBL|HAWB/i, 300);
-  if (hawbLineValue) {
-    var hawbParts = filterJunk(hawbLineValue.split(/\s+/));
-    if (hawbParts[0] && /^[A-Z0-9]+$/i.test(hawbParts[0]) && hawbParts[0].length >= 3) {
-      var candidateHawb = hawbParts[0];
-      // Reject if it's a date
-      if (!/^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(candidateHawb)) {
-        result.hawbHblNo = candidateHawb;
-      }
+  // ── HAWB/HBL Number + Date ──
+  if (isSea) {
+    // SEA PDF: Direct regex - "HBL/HAWB : 0711013960 20/03/2025"
+    var seaHawb = rawText.match(/HBL\/\s*HAWB\s*:\s*(\d{7,12})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
+    if (seaHawb) {
+      result.hawbHblNo = seaHawb[1];
+      result.hawbHblDate = seaHawb[2];
+    } else {
+      // Fallback: just the number
+      var seaHawb2 = rawText.match(/HBL\/\s*HAWB\s*:\s*(\d{7,12})/i);
+      if (seaHawb2) result.hawbHblNo = seaHawb2[1];
     }
-    // Check if second part is a date
-    if (hawbParts[1] && /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(hawbParts[1])) {
-      result.hawbHblDate = hawbParts[1];
-    }
-  }
-  
-  // Fallback: Sea-specific HBL extraction
-  if (!result.hawbHblNo && isSea) {
-    // Find HBL and grab the 7-12 digit number near it
-    var hblIdx = rawText.indexOf('HBL');
-    if (hblIdx >= 0) {
-      var nearHbl = rawText.substring(hblIdx, hblIdx + 150);
-      var numMatch = nearHbl.match(/(\d{7,12})/);
-      if (numMatch && numMatch[1]) {
-        result.hawbHblNo = numMatch[1];
-      }
-    }
-  }
-  
-  // Last resort regex fallback
-  if (!result.hawbHblNo) {
-    result.hawbHblNo = tryPatterns([/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i, /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i], rawText);
+  } else {
+    // AIR PDF: "HBL/HAWB : UESZ26063121" or "HAWB : UESZ26063121"
+    result.hawbHblNo = tryPatterns([
+      /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
+      /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
+    ], rawText);
   }
 
-  // ── MAWB DATE ──
-  if (!result.mawbMblDate) {
-    var mawbDateLine = findValueOnNextLines(page1Items, /MBL\/\s*MAWB|MAWB/, 2, 400);
-    if (mawbDateLine) {
-      var dateM = mawbDateLine.match(/(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/);
-      if (dateM) result.mawbMblDate = dateM[1];
-    }
-  }
-  if (!result.mawbMblDate) {
-    result.mawbMblDate = tryPatterns([/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/], rawText);
-  }
+  // ── MAWB Date ──
+  result.mawbMblDate = tryPatterns([
+    /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
 
-  // ── HAWB DATE ──
+  // ── HAWB Date (only if not already set by Sea regex) ──
   if (!result.hawbHblDate && result.hawbHblNo) {
-    var escapedNo = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    var dateAfterHawb = rawText.match(new RegExp(escapedNo + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-    if (dateAfterHawb && dateAfterHawb[1]) {
-      result.hawbHblDate = dateAfterHawb[1];
-    }
+    // Find date right after HAWB number
+    var esc = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    var dateAfter = rawText.match(new RegExp(esc + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
+    if (dateAfter && dateAfter[1]) result.hawbHblDate = dateAfter[1];
   }
-  
-  // Fallback: Use MAWB date for HAWB (common in Air PDFs where both share same date)
+
+  // Fallback: HAWB date = MAWB date (common for Air PDFs)
   if (!result.hawbHblDate && result.mawbMblDate) {
     result.hawbHblDate = result.mawbMblDate;
+  }
+
+  // Clean: if HAWB number is "Date" or empty junk, clear it
+  if (result.hawbHblNo) {
+    var h = result.hawbHblNo.toLowerCase();
+    if (h === 'date' || h === 'nos' || h === 'printed' || h.length < 3) {
+      result.hawbHblNo = '';
+      result.hawbHblDate = '';
+    }
   }
 
   // ── PACKAGES & WEIGHT ──
