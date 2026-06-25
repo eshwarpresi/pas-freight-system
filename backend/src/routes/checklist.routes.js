@@ -64,7 +64,10 @@ function parseChecklistUniversal(items) {
     cargoArrivalNotice: '', cargoArrivalDate: '', deliveryOrderDate: '',
     occDate: '', gatePassDate: '', remarks: '', invoiceNo: '', invoiceDate: '',
     agentDebitNote: '', billingCurrency: '', billNo: '', billDate: '',
-    billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: ''
+    billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: '',
+    // ── SEA SHIPMENT FIELDS ──
+    gatewayIgmNo: '', gatewayIgmDate: '', localIgmNo: '', localIgmDate: '',
+    containerNo: ''
   };
 
   var page1Items = items.filter(function(i) { return i.page === 1; })
@@ -127,20 +130,16 @@ function parseChecklistUniversal(items) {
   if (result.importerName) result.importerName = result.importerName.replace(/\s+/g, ' ').trim();
 
   // ── GSTIN - FIXED: Correct 15-char Indian GST format ──
-  // Standard GSTIN: 22AAAAA0000A1Z5 (2 digits + 5 letters + 4 digits + 1 letter + 1 digit + Z + 1 alphanumeric)
   var gstMatch = rawText.match(/GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
   
   if (!gstMatch) {
-    // Try without whitespace
     gstMatch = rawTextCompact.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
   }
   
   if (!gstMatch) {
-    // Fallback: any 15-char alphanumeric starting with 2 digits (looser match)
     var looseMatch = rawText.match(/\b(\d{2}[A-Z0-9]{13})\b/i);
     if (looseMatch) {
       var candidate = looseMatch[1];
-      // Validate it has both letters and digits (not all numbers)
       if (/[A-Z]/.test(candidate) && /\d/.test(candidate.substring(2))) {
         gstMatch = looseMatch;
       }
@@ -148,7 +147,6 @@ function parseChecklistUniversal(items) {
   }
   
   if (!gstMatch) {
-    // Last resort: try compact text
     var looseCompact = rawTextCompact.match(/(\d{2}[A-Z0-9]{13})/i);
     if (looseCompact) {
       var candidate2 = looseCompact[1];
@@ -162,11 +160,41 @@ function parseChecklistUniversal(items) {
     result.additionalRemarks = 'GSTIN: ' + gstMatch[1].toUpperCase();
   }
 
-  // ── IGM ──
-  result.igmNo = tryPatterns([/IGM\s*NO\s*:\s*(\d+)/i], rawText);
-  result.igmDate = tryPatterns([/IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
-  result.cargoArrivalNotice = tryPatterns([/Gateway\s*IGM\s*:\s*(\d+)/i], rawText);
-  result.cargoArrivalDate = tryPatterns([/Gateway\s*Port\s*:\s*([A-Za-z]+\([A-Z]+\)-[A-Z0-9]+)/i], rawText);
+  // ── IGM (Main IGM from Bill of Entry) ──
+  result.igmNo = tryPatterns([
+    /IGM\s*NO\s*:\s*(\d+)/i,
+    /IGM\s*No\s*:?\s*(\d+)/i,
+  ], rawText);
+  
+  result.igmDate = tryPatterns([
+    /IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /IGM\s*No\s*:?\s*\d+[\s\/]*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
+
+  // ── GATEWAY IGM (from sea shipment: "Gateway IGM : 1198337 /15-06-2026") ──
+  result.gatewayIgmNo = tryPatterns([
+    /Gateway\s*IGM\s*:\s*(\d+)/i,
+  ], rawText);
+  
+  result.gatewayIgmDate = tryPatterns([
+    /Gateway\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
+  
+  // Also set cargoArrivalNotice from Gateway IGM for backward compatibility
+  if (!result.cargoArrivalNotice) {
+    result.cargoArrivalNotice = result.gatewayIgmNo;
+  }
+  if (!result.cargoArrivalDate) {
+    result.cargoArrivalDate = result.gatewayIgmDate;
+  }
+
+  // ── CONTAINER NUMBER (from "CONTAINER DETAILS" section: TWCU2225760) ──
+  // Standard container format: 4 letters + 7 digits (e.g., TWCU2225760, MSCU1234567)
+  result.containerNo = tryPatterns([
+    /CONTAINER\s*(?:NO|DETAILS|NUMBER)[\s\S]*?([A-Z]{4}\d{7})/i,
+    /Container\s*(?:No|Number)?\s*:?\s*([A-Z]{4}\d{7})/i,
+    /([A-Z]{4}\d{7})/i,
+  ], rawText);
 
   // ── PORT OF DESTINATION ──
   result.portOfDestination = tryPatterns([
@@ -256,7 +284,7 @@ function parseChecklistUniversal(items) {
     /Exchange\s*Rate\s*:?\s*(.+?)(?:\s{2,}|$)/i,
   ], rawText);
 
-  // ── DELIVERY ORDER DATE ── (try common patterns)
+  // ── DELIVERY ORDER DATE ──
   result.deliveryOrderDate = tryPatterns([
     /DO\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /Delivery\s*Order\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,

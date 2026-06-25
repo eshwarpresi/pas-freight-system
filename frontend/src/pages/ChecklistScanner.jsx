@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import api from '../lib/api'
-import { Upload, FileText, Download, RefreshCw, Search, FileUp, X, Image, Copy, CheckCircle2, Eye, EyeOff } from 'lucide-react'
+import { Upload, FileText, Download, RefreshCw, Search, FileUp, X, Image, Copy, CheckCircle2, Eye, EyeOff, Anchor } from 'lucide-react'
 
 export default function ChecklistScanner() {
   var [file, setFile] = useState(null)
@@ -13,6 +13,9 @@ export default function ChecklistScanner() {
   var [showRawPanel, setShowRawPanel] = useState(true)
   var [copied, setCopied] = useState(false)
   var fileInputRef = useRef(null)
+
+  // Check if Sea shipment type is selected
+  var isSeaShipment = shipmentType === 'Sea FCL' || shipmentType === 'Sea LCL' || shipmentType === 'Sea'
 
   useEffect(function() {
     var savedLogo = localStorage.getItem('pas_checklist_logo')
@@ -54,7 +57,7 @@ export default function ChecklistScanner() {
     setDownloading(true)
     var style = document.createElement('style')
     style.id = 'pdf-print-style'
-    style.textContent = '@media print{@page{size:A4;margin:6mm 8mm}body{visibility:hidden!important;background:#fff!important}#checklist-print,#checklist-print *{visibility:visible!important}#checklist-print{position:absolute;left:0;top:0;width:100%;background:#fff!important;font-family:"Segoe UI",Arial,sans-serif!important;color:#0a0a1a!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.watermark-img{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;opacity:0.04!important;z-index:0!important;pointer-events:none!important;width:160mm!important;height:230mm!important;object-fit:contain!important}.print-header-table{width:100%!important;border-collapse:collapse!important;margin-bottom:4mm!important}.print-header-table td{border:2pt solid #0a0a1a!important;padding:3mm!important;text-align:center!important;vertical-align:middle!important}.print-brand{font-size:13pt!important;font-weight:900!important;color:#0a0a1a!important;letter-spacing:1pt!important}.print-addr{font-size:7pt!important;color:#333!important;line-height:1.4!important}.print-gst{font-size:7pt!important;font-weight:700!important;color:#0a0a1a!important}.print-st-label{font-size:6pt!important;font-weight:700!important;text-transform:uppercase!important}.print-st-select{width:100%!important;padding:3pt!important;border:1pt solid #0a0a1a!important;font-size:8pt!important;font-weight:700!important;text-align:center!important;background:#fff!important}.print-st-badge{padding:2pt 8pt!important;background:#0a0a1a!important;color:#fff!important;font-size:7pt!important;font-weight:700!important;margin-top:2mm!important;display:inline-block!important}.print-title{background:#0a0a1a!important;color:#fff!important;text-align:center!important;padding:2mm!important;margin-bottom:3mm!important;font-size:10pt!important;font-weight:900!important;letter-spacing:3pt!important;text-transform:uppercase!important}.print-title-sub{font-size:6pt!important;opacity:0.8!important;font-weight:400!important;letter-spacing:0!important}.print-row{display:flex!important;border-bottom:0.5pt solid #ddd!important;padding:3pt 0!important;align-items:center!important;min-height:22pt!important}.print-row-label{font-size:7pt!important;font-weight:700!important;color:#555!important;text-transform:uppercase!important;width:30%!important;flex-shrink:0!important}.print-row-value{font-size:9pt!important;font-weight:600!important;color:#0a0a1a!important;flex:1!important;word-wrap:break-word!important}.print-row-date-label{font-size:6pt!important;font-weight:700!important;color:#555!important;width:8%!important;text-align:right!important;padding-right:4pt!important}.print-row-date-value{font-size:8pt!important;font-weight:600!important;color:#444!important;width:16%!important}.print-input{border:none!important;background:transparent!important;width:100%!important;font-size:inherit!important;font-weight:inherit!important;color:inherit!important;outline:none!important;padding:2pt 0!important;font-family:inherit!important;word-wrap:break-word!important}.print-footer{text-align:center!important;font-size:6pt!important;color:#999!important;margin-top:6mm!important}}'
+    style.textContent = '@media print{@page{size:A4;margin:6mm 8mm}body{visibility:hidden!important;background:#fff!important}#checklist-print,#checklist-print *{visibility:visible!important}#checklist-print{position:absolute;left:0;top:0;width:100%;background:#fff!important;font-family:"Segoe UI",Arial,sans-serif!important;color:#0a0a1a!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}.watermark-img{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%)!important;opacity:0.04!important;z-index:0!important;pointer-events:none!important;width:160mm!important;height:230mm!important;object-fit:contain!important}.print-header-table{width:100%!important;border-collapse:collapse!important;margin-bottom:4mm!important}.print-header-table td{border:2pt solid #0a0a1a!important;padding:3mm!important;text-align:center!important;vertical-align:middle!important}.print-brand{font-size:13pt!important;font-weight:900!important;color:#0a0a1a!important;letter-spacing:1pt!important}.print-addr{font-size:7pt!important;color:#333!important;line-height:1.4!important}.print-gst{font-size:7pt!important;font-weight:700!important;color:#0a0a1a!important}.print-st-label{font-size:6pt!important;font-weight:700!important;text-transform:uppercase!important}.print-st-select{width:100%!important;padding:3pt!important;border:1pt solid #0a0a1a!important;font-size:8pt!important;font-weight:700!important;text-align:center!important;background:#fff!important}.print-st-badge{padding:2pt 8pt!important;background:#0a0a1a!important;color:#fff!important;font-size:7pt!important;font-weight:700!important;margin-top:2mm!important;display:inline-block!important}.print-title{background:#0a0a1a!important;color:#fff!important;text-align:center!important;padding:2mm!important;margin-bottom:3mm!important;font-size:10pt!important;font-weight:900!important;letter-spacing:3pt!important;text-transform:uppercase!important}.print-title-sub{font-size:6pt!important;opacity:0.8!important;font-weight:400!important;letter-spacing:0!important}.print-row{display:flex!important;border-bottom:0.5pt solid #ddd!important;padding:3pt 0!important;align-items:center!important;min-height:22pt!important}.print-row-label{font-size:7pt!important;font-weight:700!important;color:#555!important;text-transform:uppercase!important;width:30%!important;flex-shrink:0!important}.print-row-value{font-size:9pt!important;font-weight:600!important;color:#0a0a1a!important;flex:1!important;word-wrap:break-word!important}.print-row-date-label{font-size:6pt!important;font-weight:700!important;color:#555!important;width:8%!important;text-align:right!important;padding-right:4pt!important}.print-row-date-value{font-size:8pt!important;font-weight:600!important;color:#444!important;width:16%!important}.print-input{border:none!important;background:transparent!important;width:100%!important;font-size:inherit!important;font-weight:inherit!important;color:inherit!important;outline:none!important;padding:2pt 0!important;font-family:inherit!important;word-wrap:break-word!important}.print-footer{text-align:center!important;font-size:6pt!important;color:#999!important;margin-top:6mm!important}.sea-section-title{background:#0a0a1a!important;color:#fff!important;text-align:center!important;padding:1.5mm!important;margin:3mm 0!important;font-size:7pt!important;font-weight:700!important;letter-spacing:2pt!important;text-transform:uppercase!important}}'
     document.head.appendChild(style)
     window.print()
     setTimeout(function() { var el = document.getElementById('pdf-print-style'); if(el) el.remove(); setDownloading(false) }, 500)
@@ -133,8 +136,10 @@ export default function ChecklistScanner() {
         React.createElement('div', { className: 'px-3 py-1.5 rounded-full text-xs font-bold', style: { background: '#dbeafe', color: '#1e40af' } }, 'Shipment Type'),
         React.createElement('select', { value: shipmentType, onChange: function(e) { setShipmentType(e.target.value) }, className: 'px-3 py-2 border rounded-lg text-sm font-semibold' },
           React.createElement('option', { value: '' }, '-- Select --'),
-          React.createElement('option', { value: 'Air' }, '✈ Air'), React.createElement('option', { value: 'Sea FCL' }, '🚢 Sea FCL'),
-          React.createElement('option', { value: 'Sea LCL' }, '🚢 Sea LCL'), React.createElement('option', { value: 'Local Transport' }, '🚛 Local Transport')
+          React.createElement('option', { value: 'Air' }, '✈ Air'),
+          React.createElement('option', { value: 'Sea FCL' }, '🚢 Sea FCL'),
+          React.createElement('option', { value: 'Sea LCL' }, '🚢 Sea LCL'),
+          React.createElement('option', { value: 'Local Transport' }, '🚛 Local Transport')
         ),
         React.createElement('button', { onClick: function() { setShowRawPanel(!showRawPanel) }, className: 'px-3 py-2 glass border rounded-lg text-xs font-semibold flex items-center gap-2', style: { borderColor: 'var(--border-color)' } },
           showRawPanel ? React.createElement(EyeOff, { size: 14 }) : React.createElement(Eye, { size: 14 }),
@@ -155,6 +160,19 @@ export default function ChecklistScanner() {
           SF('HAWB / HBL Number', 'hawbHblNo'), SF('HAWB / HBL Date', 'hawbHblDate'),
           SF('Number of Packages', 'noOfPackages'), SF('Gross Weight', 'grossWeight'),
           SF('Port of Discharge', 'portOfDischarge'), SF('Port of Destination', 'portOfDestination'),
+          
+          // ── SEA SHIPMENT SECTION ──
+          isSeaShipment ? React.createElement('div', { className: 'mb-2 mt-3' },
+            React.createElement('div', { className: 'flex items-center gap-2 mb-2 px-3 py-2 rounded-lg', style: { background: '#eff6ff', border: '1px solid #bfdbfe' } },
+              React.createElement(Anchor, { size: 14, style: { color: '#1d4ed8' } }),
+              React.createElement('span', { className: 'text-xs font-bold uppercase tracking-wider', style: { color: '#1d4ed8' } }, 'Sea Shipment Details')
+            ),
+            SF('Gateway IGM No', 'gatewayIgmNo'), SF('Gateway IGM Date', 'gatewayIgmDate'),
+            SF('IGM No', 'igmNo'), SF('IGM Date', 'igmDate'),
+            SF('Local IGM No', 'localIgmNo'), SF('Local IGM Date', 'localIgmDate'),
+            SF('Container No', 'containerNo')
+          ) : null,
+          
           SF('Invoice Number', 'invoiceNo'), SF('Invoice Date', 'invoiceDate'),
           SF('Invoice Value / Currency', 'billingCurrency'), SF('Freight Charges', 'billNo'), SF('Exchange Rate', 'billDate'),
           SF('CHA / Agent', 'agentDebitNote'), SF('Delivery Order Date', 'deliveryOrderDate'),
@@ -196,6 +214,16 @@ export default function ChecklistScanner() {
           PRD('MAWB / MBL NUMBER', 'mawbMblNo', 'mawbMblDate'), PRD('HAWB / HBL NUMBER', 'hawbHblNo', 'hawbHblDate'),
           PR('NUMBER OF PACKAGES', 'noOfPackages'), PR('GROSS WEIGHT', 'grossWeight'),
           PR('PORT OF DISCHARGE', 'portOfDischarge'), PR('PORT OF DESTINATION', 'portOfDestination'),
+          
+          // ── SEA SECTION IN PRINT ──
+          isSeaShipment ? React.createElement(React.Fragment, null,
+            React.createElement('div', { className: 'sea-section-title' }, '🚢 Sea Shipment Details'),
+            PRD('GATEWAY IGM NO', 'gatewayIgmNo', 'gatewayIgmDate'),
+            PRD('IGM NO', 'igmNo', 'igmDate'),
+            PRD('LOCAL IGM NO', 'localIgmNo', 'localIgmDate'),
+            PR('CONTAINER NO', 'containerNo')
+          ) : null,
+          
           PRD('INVOICE NUMBER', 'invoiceNo', 'invoiceDate'), PR('INVOICE VALUE / CURRENCY', 'billingCurrency'),
           PR('FREIGHT CHARGES', 'billNo'), PR('EXCHANGE RATE', 'billDate'),
           PR('CHA / AGENT', 'agentDebitNote'), PR('DELIVERY ORDER DATE', 'deliveryOrderDate'),
