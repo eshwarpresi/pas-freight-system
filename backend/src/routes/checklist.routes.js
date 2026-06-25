@@ -65,7 +65,6 @@ function parseChecklistUniversal(items) {
     occDate: '', gatePassDate: '', remarks: '', invoiceNo: '', invoiceDate: '',
     agentDebitNote: '', billingCurrency: '', billNo: '', billDate: '',
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: '',
-    // ── SEA SHIPMENT FIELDS ──
     gatewayIgmNo: '', gatewayIgmDate: '', localIgmNo: '', localIgmDate: '',
     containerNo: ''
   };
@@ -73,8 +72,6 @@ function parseChecklistUniversal(items) {
   var page1Items = items.filter(function(i) { return i.page === 1; })
     .sort(function(a, b) { return a.y - b.y || a.x - b.x; });
   var rawText = page1Items.map(function(i) { return i.text; }).join(' ');
-
-  // Also build no-space version for compact pattern matching
   var rawTextCompact = rawText.replace(/\s+/g, '');
 
   function tryPatterns(patterns, text) {
@@ -83,6 +80,13 @@ function parseChecklistUniversal(items) {
       if (m && m[1] && m[1].trim().length > 0) return m[1].trim();
     }
     return '';
+  }
+
+  // Helper: clean trailing junk words from extracted company names
+  function cleanCompanyName(name) {
+    if (!name) return '';
+    // Remove trailing "Inv", "Inv.", "SUPPLIER", "CHA" etc that leak from adjacent text
+    return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN)\s*$/i, '').trim();
   }
 
   result.agentDebitNote = 'PAS FREIGHT SERVICES';
@@ -121,50 +125,27 @@ function parseChecklistUniversal(items) {
   ], rawText);
 
   // ── IMPORTER NAME ──
-  // Strategy: Find "PAS FREIGHT SERVICES" in the CHA Details block, then the text
-  // after it on the same line or next meaningful word group is the importer.
-  // Common pattern: "PAS FREIGHT SERVICES   IMPORTER_NAME   #address"
   result.importerName = tryPatterns([
-    // Pattern 1: PAS FREIGHT SERVICES followed by company name ending in LTD/LIMITED/PRIVATE
     /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:LIMITED|PRIVATE|INTEGRATORS|TECHNOLOGY|LTD)[\w\s]*?)(?:\s+#|\s{2,}|\s+\d)/i,
-    // Pattern 2: PAS FREIGHT SERVICES then any capitalized word group before an address
     /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT|INC|CORP|CO\.?)(?:[\w\s]*?))(?:\s+#|\s{2,})/i,
-    // Pattern 3: Known importers
     /(ONLINE\s+INSTRUMENTS\s*\(INDIA\)\s*LIMITED)/i,
     /(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i,
     /(ARION\s+TECHNOLOGY\s+LTD)/i,
-    // Pattern 4: Generic - any WORD WORD LTD pattern near CHA Details
     /Importer\s+Details?\s*:?\s*\d*\s+([A-Z][\w\s]+(?:LIMITED|LTD|PRIVATE|PVT)[\w\s]*)/i,
   ], rawText);
-  if (result.importerName) result.importerName = result.importerName.replace(/\s+/g, ' ').trim();
+  if (result.importerName) result.importerName = cleanCompanyName(result.importerName);
 
   // ── GSTIN ──
   var gstMatch = rawText.match(/GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
-  
-  if (!gstMatch) {
-    gstMatch = rawTextCompact.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
-  }
-  
+  if (!gstMatch) gstMatch = rawTextCompact.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
   if (!gstMatch) {
     var looseMatch = rawText.match(/\b(\d{2}[A-Z0-9]{13})\b/i);
-    if (looseMatch) {
-      var candidate = looseMatch[1];
-      if (/[A-Z]/.test(candidate) && /\d/.test(candidate.substring(2))) {
-        gstMatch = looseMatch;
-      }
-    }
+    if (looseMatch && /[A-Z]/.test(looseMatch[1]) && /\d/.test(looseMatch[1].substring(2))) gstMatch = looseMatch;
   }
-  
   if (!gstMatch) {
     var looseCompact = rawTextCompact.match(/(\d{2}[A-Z0-9]{13})/i);
-    if (looseCompact) {
-      var candidate2 = looseCompact[1];
-      if (/[A-Z]/.test(candidate2) && /\d/.test(candidate2.substring(2))) {
-        gstMatch = looseCompact;
-      }
-    }
+    if (looseCompact && /[A-Z]/.test(looseCompact[1]) && /\d/.test(looseCompact[1].substring(2))) gstMatch = looseCompact;
   }
-  
   if (gstMatch) {
     result.additionalRemarks = 'GSTIN: ' + gstMatch[1].toUpperCase();
   }
@@ -174,27 +155,16 @@ function parseChecklistUniversal(items) {
     /IGM\s*NO\s*:\s*(\d+)/i,
     /IGM\s*No\s*:?\s*(\d+)/i,
   ], rawText);
-  
   result.igmDate = tryPatterns([
     /IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /IGM\s*No\s*:?\s*\d+[\s\/]*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
 
   // ── GATEWAY IGM ──
-  result.gatewayIgmNo = tryPatterns([
-    /Gateway\s*IGM\s*:\s*(\d+)/i,
-  ], rawText);
-  
-  result.gatewayIgmDate = tryPatterns([
-    /Gateway\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-  ], rawText);
-  
-  if (!result.cargoArrivalNotice) {
-    result.cargoArrivalNotice = result.gatewayIgmNo;
-  }
-  if (!result.cargoArrivalDate) {
-    result.cargoArrivalDate = result.gatewayIgmDate;
-  }
+  result.gatewayIgmNo = tryPatterns([/Gateway\s*IGM\s*:\s*(\d+)/i], rawText);
+  result.gatewayIgmDate = tryPatterns([/Gateway\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
+  if (!result.cargoArrivalNotice) result.cargoArrivalNotice = result.gatewayIgmNo;
+  if (!result.cargoArrivalDate) result.cargoArrivalDate = result.gatewayIgmDate;
 
   // ── CONTAINER NUMBER ──
   result.containerNo = tryPatterns([
@@ -210,45 +180,66 @@ function parseChecklistUniversal(items) {
     /Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i,
   ], rawText);
 
-  // ── MAWB/MBL ──
-  result.mawbMblNo = tryPatterns([
-    /MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i,
-    /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
-  ], rawText);
-  
-  // Extract MAWB/MBL and HAWB/HBL dates more intelligently
+  // ── MAWB/MBL + HAWB/HBL (parse together from the AWB block) ──
+  // Find the AWB block: "MBL/MAWB : XXXXX   HBL/HAWB : YYYYY"
   var awbStart = rawText.indexOf('MBL/MAWB');
   if (awbStart < 0) awbStart = rawText.indexOf('MAWB');
+  
   if (awbStart >= 0) {
     var awbChunk = rawText.substring(awbStart, awbStart + 800);
-    
-    // Find "Date : DD-MM-YYYY" patterns in the AWB chunk
+
+    // Extract MAWB/MBL number
+    var mawbMatch = awbChunk.match(/MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i);
+    if (!mawbMatch) mawbMatch = awbChunk.match(/MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
+    if (mawbMatch && mawbMatch[1]) result.mawbMblNo = mawbMatch[1].trim();
+
+    // Extract HAWB/HBL number (can be all-numeric like 0711013960)
+    var hawbMatch = awbChunk.match(/HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i);
+    if (!hawbMatch) hawbMatch = awbChunk.match(/HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i);
+    if (hawbMatch && hawbMatch[1]) {
+      var hawbVal = hawbMatch[1].trim();
+      // Reject if it's "Date", "NOS", a date string, or too short
+      if (hawbVal.toLowerCase() !== 'date' && hawbVal.toLowerCase() !== 'nos' &&
+          !/^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(hawbVal) && hawbVal.length >= 3) {
+        result.hawbHblNo = hawbVal;
+      }
+    }
+
+    // Extract dates from the AWB block
+    // Pattern: "Date : DD/MM/YYYY" or "Date : DD-MM-YYYY"
     var dateMatches = awbChunk.match(/Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/g);
     if (dateMatches) {
       var dates = dateMatches.map(function(d) { return d.replace(/Date\s*:\s*/, '').trim(); });
-      // First date is MAWB/MBL date
-      if (dates.length >= 1 && dates[0] && dates[0].length > 4) {
+      
+      // Find which date belongs to MAWB and which to HAWB
+      // Look at context: date right after "HBL/HAWB" belongs to HAWB
+      var hawbDateIdx = -1;
+      var hawbPos = awbChunk.indexOf('HBL/HAWB');
+      if (hawbPos < 0) hawbPos = awbChunk.indexOf('HAWB');
+      
+      if (hawbPos >= 0 && dates.length >= 2) {
+        // Find the date closest to HAWB position
+        for (var d = 0; d < dates.length; d++) {
+          var datePos = awbChunk.indexOf(dates[d], hawbPos);
+          if (datePos > hawbPos && datePos < hawbPos + 150) {
+            hawbDateIdx = d;
+            break;
+          }
+        }
+      }
+
+      // First valid date is MAWB date
+      if (dates.length >= 1 && dates[0].length > 4) {
         result.mawbMblDate = dates[0];
       }
-      // Second date is HAWB/HBL date
-      if (dates.length >= 2 && dates[1] && dates[1].length > 4) {
+      
+      // HAWB date
+      if (hawbDateIdx >= 0 && dates[hawbDateIdx]) {
+        result.hawbHblDate = dates[hawbDateIdx];
+      } else if (dates.length >= 2 && dates[1].length > 4 && !result.hawbHblDate) {
         result.hawbHblDate = dates[1];
       }
     }
-  }
-
-  // ── HAWB/HBL ──
-  result.hawbHblNo = tryPatterns([
-    /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
-    /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
-  ], rawText);
-  
-  // If HAWB/HBL extracted value is "Date" or other garbage, clear it
-  if (result.hawbHblNo && !/[A-Z]/.test(result.hawbHblNo)) {
-    result.hawbHblNo = '';
-  }
-  if (result.hawbHblNo && result.hawbHblNo.length < 3) {
-    result.hawbHblNo = '';
   }
 
   // ── PACKAGES & WEIGHT ──
@@ -256,7 +247,6 @@ function parseChecklistUniversal(items) {
     /No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i,
     /Pkgs\s*:\s*(\d+)/i,
   ], rawText);
-  
   result.grossWeight = tryPatterns([
     /Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i,
     /Weight\s*:\s*([\d.]+\s*KGS)/i,
@@ -274,12 +264,10 @@ function parseChecklistUniversal(items) {
     /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
     /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
     /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
-    /Supplier\s*:?\s*(.+?)(?:\s{2,}|$)/i,
-    // Fallback: Look for company names in SUPPLIER DETAILS section
     /SUPPLIER\s+DETAILS[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
   ], rawText);
   if (result.supplierName) {
-    result.supplierName = result.supplierName.replace(/\s+/g, ' ').trim();
+    result.supplierName = cleanCompanyName(result.supplierName);
     result.exporterName = result.supplierName;
   }
 
@@ -288,12 +276,10 @@ function parseChecklistUniversal(items) {
     /Inv\.?\s*No\s*:\s*([A-Z0-9]+[-\/]?\d*[A-Z]?[-\/]?\d*)/i,
     /Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i,
   ], rawText);
-  
   result.invoiceDate = tryPatterns([
     /Inv\.?\s*Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /Invoice\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
-  
   result.billingCurrency = tryPatterns([
     /Inv\.?\s*Value\s*:\s*([\d.]+\s*[A-Z]{3})/i,
     /Invoice\s*Value\s*:?\s*([\d.]+\s*[A-Z]{3})/i,
@@ -331,24 +317,23 @@ function parseChecklistUniversal(items) {
     /Gate\s*Pass\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
 
-  // ── POST-PROCESSING: Clean up extracted values ──
-  
-  // If importer still empty, try extracting from the CHA/Importer signature block
-  if (!result.importerName) {
-    // Look for company name after "PAS FREIGHT SERVICES" in the signature area
-    var sigMatch = rawText.match(/PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|PRIVATE|TECHNOLOGY))/i);
-    if (sigMatch && sigMatch[1]) {
-      result.importerName = sigMatch[1].replace(/\s+/g, ' ').trim();
+  // ── FINAL CLEANUP ──
+  result.importerName = cleanCompanyName(result.importerName);
+  result.exporterName = cleanCompanyName(result.exporterName);
+  result.supplierName = cleanCompanyName(result.supplierName);
+
+  // Reject bogus HAWB values
+  if (result.hawbHblNo) {
+    var badHawb = result.hawbHblNo.toLowerCase();
+    if (badHawb === 'date' || badHawb === 'nos' || badHawb === 'printed' ||
+        /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(result.hawbHblNo) ||
+        result.hawbHblNo.length < 3) {
+      result.hawbHblNo = '';
     }
   }
 
-  // Clean HAWB/HBL - if it looks like a date, clear it
-  if (result.hawbHblNo && /^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(result.hawbHblNo)) {
-    result.hawbHblNo = '';
-  }
-  if (result.hawbHblNo && result.hawbHblNo.toLowerCase() === 'date') {
-    result.hawbHblNo = '';
-  }
+  // If HAWB date equals invoice date and HAWB number exists, it might be wrong
+  // but we'll keep it since sometimes they are the same date
 
   return result;
 }
