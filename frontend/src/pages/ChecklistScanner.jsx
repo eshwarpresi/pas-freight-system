@@ -161,7 +161,9 @@ export default function ChecklistScanner() {
           SF('HAWB / HBL Number', 'hawbHblNo'), SF('HAWB / HBL Date', 'hawbHblDate'),
           SF('Number of Packages', 'noOfPackages'), SF('Gross Weight', 'grossWeight'),
           SF('Port of Discharge', 'portOfDischarge'), SF('Port of Destination', 'portOfDestination'),
+          SF('Invoice Number', 'invoiceNo'), SF('Invoice Date', 'invoiceDate'),
           
+          // ── SEA SECTION MOVED AFTER INVOICE ──
           isSeaShipment ? React.createElement('div', { className: 'mb-2 mt-3' },
             React.createElement('div', { className: 'flex items-center gap-2 mb-2 px-3 py-2 rounded-lg', style: { background: '#eff6ff', border: '1px solid #bfdbfe' } },
               React.createElement(Anchor, { size: 14, style: { color: '#1d4ed8' } }),
@@ -173,7 +175,6 @@ export default function ChecklistScanner() {
             SF('Container No', 'containerNo')
           ) : null,
           
-          SF('Invoice Number', 'invoiceNo'), SF('Invoice Date', 'invoiceDate'),
           SF('Delivery Order Date', 'deliveryOrderDate'),
           SF('OCC Date', 'occDate'), SF('Gate Pass Date', 'gatePassDate'),
           SF('Marks & Nos', 'remarks'), SF('GSTIN / Additional Info', 'additionalRemarks')
@@ -192,13 +193,13 @@ export default function ChecklistScanner() {
       ),
 
       // ═══════════════════════════════════════════
-      // PROFESSIONAL PDF TEMPLATE (hidden, used for download)
+      // PROFESSIONAL PDF TEMPLATE
       // ═══════════════════════════════════════════
       React.createElement('div', {
         ref: pdfRef,
         style: {
           position: 'absolute', left: '-9999px', top: 0,
-          width: '794px', // A4 width at 96dpi
+          width: '794px',
           background: '#ffffff',
           fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
           color: '#0a0a1a',
@@ -206,7 +207,6 @@ export default function ChecklistScanner() {
           boxSizing: 'border-box'
         }
       },
-        // Watermark logo
         logo ? React.createElement('img', {
           src: logo,
           style: {
@@ -229,57 +229,24 @@ export default function ChecklistScanner() {
           },
             React.createElement('tbody', null,
               React.createElement('tr', null,
-                // Logo cell
                 React.createElement('td', {
-                  style: {
-                    width: '18%', padding: '10px', textAlign: 'center',
-                    verticalAlign: 'middle', borderRight: '2px solid #0a0a1a'
-                  }
+                  style: { width: '18%', padding: '10px', textAlign: 'center', verticalAlign: 'middle', borderRight: '2px solid #0a0a1a' }
                 },
-                  logo ? React.createElement('img', {
-                    src: logo, alt: 'PAS Logo',
-                    style: { maxWidth: '100%', maxHeight: '55px', objectFit: 'contain' }
-                  }) : React.createElement('span', {
-                    style: { fontSize: '28px', fontWeight: '900', color: '#0a0a1a', letterSpacing: '2px' }
-                  }, 'PAS')
+                  logo ? React.createElement('img', { src: logo, alt: 'PAS Logo', style: { maxWidth: '100%', maxHeight: '55px', objectFit: 'contain' } })
+                  : React.createElement('span', { style: { fontSize: '28px', fontWeight: '900', color: '#0a0a1a', letterSpacing: '2px' } }, 'PAS')
                 ),
-                // Company info cell
                 React.createElement('td', {
-                  style: {
-                    padding: '8px 14px', textAlign: 'center',
-                    verticalAlign: 'middle', borderRight: '2px solid #0a0a1a'
-                  }
+                  style: { padding: '8px 14px', textAlign: 'center', verticalAlign: 'middle', borderRight: '2px solid #0a0a1a' }
                 },
-                  React.createElement('div', {
-                    style: { fontSize: '16px', fontWeight: '900', color: '#0a0a1a', letterSpacing: '1px', marginBottom: '2px' }
-                  }, 'PAS FREIGHT SERVICES PVT LTD'),
-                  React.createElement('div', {
-                    style: { fontSize: '8px', color: '#444', lineHeight: '1.5' }
-                  }, 'Site No 171, 1st Floor, 7th Block, Arkavathy Layout'),
-                  React.createElement('div', {
-                    style: { fontSize: '8px', color: '#444', lineHeight: '1.5' }
-                  }, 'Jakkur, Bengaluru - 560064'),
-                  React.createElement('div', {
-                    style: { fontSize: '9px', fontWeight: '700', color: '#0a0a1a', marginTop: '2px' }
-                  }, 'GST No: 29AALCP2369R1ZD')
+                  React.createElement('div', { style: { fontSize: '16px', fontWeight: '900', color: '#0a0a1a', letterSpacing: '1px', marginBottom: '2px' } }, 'PAS FREIGHT SERVICES PVT LTD'),
+                  React.createElement('div', { style: { fontSize: '8px', color: '#444', lineHeight: '1.5' } }, 'Site No 171, 1st Floor, 7th Block, Arkavathy Layout'),
+                  React.createElement('div', { style: { fontSize: '8px', color: '#444', lineHeight: '1.5' } }, 'Jakkur, Bengaluru - 560064'),
+                  React.createElement('div', { style: { fontSize: '9px', fontWeight: '700', color: '#0a0a1a', marginTop: '2px' } }, 'GST No: 29AALCP2369R1ZD')
                 ),
-                // Shipment type cell
-                React.createElement('td', {
-                  style: {
-                    width: '16%', padding: '8px', textAlign: 'center',
-                    verticalAlign: 'middle'
-                  }
-                },
+                React.createElement('td', { style: { width: '16%', padding: '8px', textAlign: 'center', verticalAlign: 'middle' } },
+                  React.createElement('div', { style: { fontSize: '7px', fontWeight: '700', textTransform: 'uppercase', color: '#555', marginBottom: '4px' } }, 'Shipment Type'),
                   React.createElement('div', {
-                    style: { fontSize: '7px', fontWeight: '700', textTransform: 'uppercase', color: '#555', marginBottom: '4px' }
-                  }, 'Shipment Type'),
-                  React.createElement('div', {
-                    style: {
-                      fontSize: '11px', fontWeight: '900',
-                      color: '#ffffff', background: '#0a0a1a',
-                      padding: '6px 10px', display: 'inline-block',
-                      letterSpacing: '1px'
-                    }
+                    style: { fontSize: '11px', fontWeight: '900', color: '#ffffff', background: '#0a0a1a', padding: '6px 10px', display: 'inline-block', letterSpacing: '1px' }
                   }, shipmentType ? shipmentType.toUpperCase() : '—')
                 )
               )
@@ -288,61 +255,28 @@ export default function ChecklistScanner() {
 
           // ═══ TITLE BAR ═══
           React.createElement('div', {
-            style: {
-              background: '#0a0a1a', color: '#ffffff',
-              textAlign: 'center', padding: '8px 0',
-              marginBottom: '14px',
-              fontSize: '13px', fontWeight: '900',
-              letterSpacing: '3px', textTransform: 'uppercase'
-            }
+            style: { background: '#0a0a1a', color: '#ffffff', textAlign: 'center', padding: '8px 0', marginBottom: '14px', fontSize: '13px', fontWeight: '900', letterSpacing: '3px', textTransform: 'uppercase' }
           },
             'Checklist Report',
-            React.createElement('div', {
-              style: { fontSize: '7px', fontWeight: '400', letterSpacing: '0', opacity: 0.8, marginTop: '2px' }
-            }, 'Date: ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + '  |  Ref: ' + F('referenceNumber'))
+            React.createElement('div', { style: { fontSize: '7px', fontWeight: '400', letterSpacing: '0', opacity: 0.8, marginTop: '2px' } },
+              'Date: ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + '  |  Ref: ' + F('referenceNumber'))
           ),
 
           // ═══ DATA ROWS ═══
           React.createElement('div', { style: { fontSize: '0' } },
-            // Row helper function
             (function() {
               var rows = []
               function ROW(label, value, value2) {
                 rows.push(
                   React.createElement('div', {
                     key: label,
-                    style: {
-                      display: 'flex', borderBottom: '0.5px solid #d1d5db',
-                      padding: '5px 0', alignItems: 'center', minHeight: '26px',
-                      fontSize: '0'
-                    }
+                    style: { display: 'flex', borderBottom: '0.5px solid #d1d5db', padding: '5px 0', alignItems: 'center', minHeight: '26px', fontSize: '0' }
                   },
-                    React.createElement('div', {
-                      style: {
-                        fontSize: '7.5px', fontWeight: '700', color: '#4b5563',
-                        textTransform: 'uppercase', width: '30%', flexShrink: 0,
-                        paddingLeft: '4px'
-                      }
-                    }, label),
-                    React.createElement('div', {
-                      style: {
-                        fontSize: '9px', fontWeight: '600', color: '#0a0a1a',
-                        flex: 1, wordWrap: 'break-word'
-                      }
-                    }, value || '—'),
+                    React.createElement('div', { style: { fontSize: '7.5px', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase', width: '30%', flexShrink: 0, paddingLeft: '4px' } }, label),
+                    React.createElement('div', { style: { fontSize: '9px', fontWeight: '600', color: '#0a0a1a', flex: 1, wordWrap: 'break-word' } }, value || '—'),
                     value2 !== undefined ? React.createElement(React.Fragment, null,
-                      React.createElement('div', {
-                        style: {
-                          fontSize: '6.5px', fontWeight: '700', color: '#6b7280',
-                          width: '7%', textAlign: 'right', paddingRight: '6px'
-                        }
-                      }, 'DATE'),
-                      React.createElement('div', {
-                        style: {
-                          fontSize: '8px', fontWeight: '600', color: '#374151',
-                          width: '17%'
-                        }
-                      }, value2 || '—')
+                      React.createElement('div', { style: { fontSize: '6.5px', fontWeight: '700', color: '#6b7280', width: '7%', textAlign: 'right', paddingRight: '6px' } }, 'DATE'),
+                      React.createElement('div', { style: { fontSize: '8px', fontWeight: '600', color: '#374151', width: '17%' } }, value2 || '—')
                     ) : null
                   )
                 )
@@ -362,19 +296,14 @@ export default function ChecklistScanner() {
               ROW('Gross Weight', F('grossWeight'))
               ROW('Port of Discharge', F('portOfDischarge'))
               ROW('Port of Destination', F('portOfDestination'))
+              ROW('Invoice Number', F('invoiceNo'), F('invoiceDate'))
 
-              // Sea section
+              // Sea section AFTER Invoice Number
               if (isSeaShipment) {
                 rows.push(
                   React.createElement('div', {
                     key: 'sea-title',
-                    style: {
-                      background: '#0a0a1a', color: '#ffffff',
-                      textAlign: 'center', padding: '5px 0',
-                      margin: '6px 0',
-                      fontSize: '8px', fontWeight: '700',
-                      letterSpacing: '2px', textTransform: 'uppercase'
-                    }
+                    style: { background: '#0a0a1a', color: '#ffffff', textAlign: 'center', padding: '5px 0', margin: '6px 0', fontSize: '8px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase' }
                   }, '🚢  Sea Shipment Details')
                 )
                 ROW('Gateway IGM No', F('gatewayIgmNo'), F('gatewayIgmDate'))
@@ -383,7 +312,6 @@ export default function ChecklistScanner() {
                 ROW('Container No', F('containerNo'))
               }
 
-              ROW('Invoice Number', F('invoiceNo'), F('invoiceDate'))
               ROW('Delivery Order Date', F('deliveryOrderDate'))
               ROW('OCC Date', F('occDate'))
               ROW('Gate Pass Date', F('gatePassDate'))
@@ -396,10 +324,7 @@ export default function ChecklistScanner() {
 
           // ═══ FOOTER ═══
           React.createElement('div', {
-            style: {
-              textAlign: 'center', fontSize: '7px', color: '#9ca3af',
-              marginTop: '16px', borderTop: '1px solid #e5e7eb', paddingTop: '8px'
-            }
+            style: { textAlign: 'center', fontSize: '7px', color: '#9ca3af', marginTop: '16px', borderTop: '1px solid #e5e7eb', paddingTop: '8px' }
           }, 'PAS Freight Services Pvt Ltd  •  ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + '  •  Generated by PAS Checklist Scanner')
         )
       )

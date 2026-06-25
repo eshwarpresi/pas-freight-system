@@ -141,20 +141,38 @@ function parseChecklistUniversal(items) {
   }
   if (gstMatch) result.additionalRemarks = 'GSTIN: ' + gstMatch[1].toUpperCase();
 
-  // ── IGM ──
-  result.igmNo = tryPatterns([/IGM\s*NO\s*:\s*(\d+)/i, /IGM\s*No\s*:?\s*(\d+)/i], rawText);
-  result.igmDate = tryPatterns([/IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
+  // ── IGM (Main IGM) ──
+  result.igmNo = tryPatterns([
+    /IGM\s*NO\s*:\s*(\d+)/i,
+    /IGM\s*No\s*:?\s*(\d+)/i,
+  ], rawText);
+  
+  result.igmDate = tryPatterns([
+    /IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /IGM\s*No\s*:?\s*\d+[\s\/]*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
 
   // ── GATEWAY IGM ──
-  result.gatewayIgmNo = tryPatterns([/Gateway\s*IGM\s*:\s*(\d+)/i], rawText);
-  result.gatewayIgmDate = tryPatterns([/Gateway\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], rawText);
-  if (!result.cargoArrivalNotice) result.cargoArrivalNotice = result.gatewayIgmNo;
-  if (!result.cargoArrivalDate) result.cargoArrivalDate = result.gatewayIgmDate;
+  result.gatewayIgmNo = tryPatterns([
+    /Gateway\s*IGM\s*:\s*(\d+)/i,
+  ], rawText);
+  
+  result.gatewayIgmDate = tryPatterns([
+    /Gateway\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+  ], rawText);
+
+  // ── LOCAL IGM (manual - not in standard BE PDF) ──
+  // Kept as manual entry fields
 
   // ── CONTAINER NUMBER ──
   var containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|DETAILS|NUMBER)[\s\S]{0,300}?([A-Z]{4}\d{7})/i);
-  if (!containerMatch) containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
-  if (containerMatch && containerMatch[1]) result.containerNo = containerMatch[1];
+  if (!containerMatch) {
+    // Try standalone: 1 / 1 TLLU1178760
+    containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
+  }
+  if (containerMatch && containerMatch[1]) {
+    result.containerNo = containerMatch[1];
+  }
 
   // ── PORT OF DESTINATION ──
   result.portOfDestination = tryPatterns([
@@ -175,15 +193,26 @@ function parseChecklistUniversal(items) {
 
   // ── HAWB/HBL Number + Date ──
   if (isSea) {
-    // SEA PDF: Direct regex - "HBL/HAWB : 0711013960 20/03/2025"
+    // SEA PDF: "HBL/HAWB : 0711013960 20/03/2025"
     var seaHawb = rawText.match(/HBL\/\s*HAWB\s*:\s*(\d{7,12})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (seaHawb) {
       result.hawbHblNo = seaHawb[1];
       result.hawbHblDate = seaHawb[2];
     } else {
-      // Fallback: just the number
-      var seaHawb2 = rawText.match(/HBL\/\s*HAWB\s*:\s*(\d{7,12})/i);
-      if (seaHawb2) result.hawbHblNo = seaHawb2[1];
+      // Fallback: find any 7-12 digit number after HBL
+      var hblIdx = rawText.indexOf('HBL');
+      if (hblIdx >= 0) {
+        var nearHbl = rawText.substring(hblIdx, hblIdx + 150);
+        var numMatch = nearHbl.match(/(\d{7,12})/);
+        if (numMatch && numMatch[1]) {
+          result.hawbHblNo = numMatch[1];
+          // Find date after the number
+          var dateAfterNum = nearHbl.match(new RegExp(numMatch[1] + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
+          if (dateAfterNum && dateAfterNum[1]) {
+            result.hawbHblDate = dateAfterNum[1];
+          }
+        }
+      }
     }
   } else {
     // AIR PDF: "HBL/HAWB : UESZ26063121" or "HAWB : UESZ26063121"
@@ -198,20 +227,17 @@ function parseChecklistUniversal(items) {
     /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
   ], rawText);
 
-  // ── HAWB Date (only if not already set by Sea regex) ──
+  // ── HAWB Date fallback ──
   if (!result.hawbHblDate && result.hawbHblNo) {
-    // Find date right after HAWB number
     var esc = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     var dateAfter = rawText.match(new RegExp(esc + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
     if (dateAfter && dateAfter[1]) result.hawbHblDate = dateAfter[1];
   }
-
-  // Fallback: HAWB date = MAWB date (common for Air PDFs)
   if (!result.hawbHblDate && result.mawbMblDate) {
     result.hawbHblDate = result.mawbMblDate;
   }
 
-  // Clean: if HAWB number is "Date" or empty junk, clear it
+  // Clean HAWB junk
   if (result.hawbHblNo) {
     var h = result.hawbHblNo.toLowerCase();
     if (h === 'date' || h === 'nos' || h === 'printed' || h.length < 3) {
