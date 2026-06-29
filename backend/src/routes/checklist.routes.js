@@ -349,45 +349,70 @@ function parseChecklistUniversal(items) {
     ], rawText);
   }
 
-  // ── CONTAINER NUMBER (SEA only) - IMPROVED ──
+  // ── CONTAINER NUMBER (SEA only) - IMPROVED WITH VALIDATION ──
   if (isSea) {
-    // Try multiple patterns for container number
     var containerMatch = null;
+    var containerNumbers = [];
     
-    // Pattern 1: CONTAINER DETAILS section
+    // Find ALL potential container numbers first (4 letters + 7 digits)
+    var allMatches = rawText.match(/\b([A-Z]{4}\d{7})\b/g);
+    if (allMatches) {
+      containerNumbers = allMatches;
+    }
+    
+    // Filter out MBL numbers (usually start with CSBL, JJCSK, etc.)
+    // Container numbers typically start with: TLLU, MSCU, TCKU, OOCU, etc.
+    var validContainers = containerNumbers.filter(function(c) {
+      // Skip if it looks like an MBL/MAWB number (starts with CSBL, JJCSK, etc.)
+      var mblPatterns = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
+      return !mblPatterns.test(c);
+    });
+    
+    // Try to find container in CONTAINER DETAILS section first
     var containerSection = rawText.match(/CONTAINER\s+DETAILS[\s\S]{0,500}/i);
     if (containerSection) {
-      var contMatch = containerSection[0].match(/([A-Z]{4}\d{7})/);
-      if (contMatch) containerMatch = contMatch;
+      var contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
+      if (contMatch && !/^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i.test(contMatch[1])) {
+        containerMatch = contMatch;
+      }
     }
     
-    // Pattern 2: CONTAINER NO with label
+    // Pattern: IGM SL.NO CHA CONTAINER NO
     if (!containerMatch) {
-      containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|NUMBER)[\s\S]{0,300}?([A-Z]{4}\d{7})/i);
+      var igmMatch = rawText.match(/IGM\s+SL\.?NO\s+CHA\s+\b([A-Z]{4}\d{7})\b/i);
+      if (igmMatch && !/^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i.test(igmMatch[1])) {
+        containerMatch = igmMatch;
+      }
     }
     
-    // Pattern 3: IGM SL.NO CHA CONTAINER NO pattern
+    // Pattern: CONTAINER NO with label
     if (!containerMatch) {
-      containerMatch = rawText.match(/IGM\s+SL\.?NO\s+CHA\s+([A-Z]{4}\d{7})/i);
+      var labelMatch = rawText.match(/CONTAINER\s+(?:NO\.?|NUMBER)[\s\S]{0,300}?\b([A-Z]{4}\d{7})\b/i);
+      if (labelMatch && !/^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i.test(labelMatch[1])) {
+        containerMatch = labelMatch;
+      }
     }
     
-    // Pattern 4: Container number with seal number pattern
-    if (!containerMatch) {
-      containerMatch = rawText.match(/\d+\s*\/\s*\d+\s+(?:Signature\s+)?(?:CHA\s+)?(?:Importer\s+)?([A-Z]{4}\d{7})/i);
+    // Use first valid container from the list
+    if (!containerMatch && validContainers.length > 0) {
+      containerMatch = [null, validContainers[0]];
     }
     
-    // Pattern 5: Standalone container number
+    // Fallback: any container pattern
     if (!containerMatch) {
-      containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
-    }
-    
-    // Pattern 6: TLLU, MSCU, etc. patterns
-    if (!containerMatch) {
-      containerMatch = rawText.match(/([A-Z]{4}\d{7})/);
+      var fallbackMatch = rawText.match(/\b([A-Z]{4}\d{7})\b/);
+      if (fallbackMatch && !/^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i.test(fallbackMatch[1])) {
+        containerMatch = fallbackMatch;
+      }
     }
     
     if (containerMatch && containerMatch[1]) {
-      result.containerNo = containerMatch[1];
+      // Validate it's a real container number (not an MBL)
+      var container = containerMatch[1];
+      var invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
+      if (!invalidPrefixes.test(container)) {
+        result.containerNo = container;
+      }
     }
   }
 
