@@ -585,7 +585,8 @@ export default function ChecklistScanner() {
               FieldRow('BILL NUMBER', F('billNo'), 'DATE', F('billDate'))
               FieldRow('BILL TO', F('billTo'))
               FieldRow('DOCKET NUMBER', F('docketNo'), 'DATE', F('docketDate'))
-              FieldRow('REMARKS', F('additionalRemarks'))
+              // FIX: REMARKS should be empty - not showing GSTIN
+              FieldRow('REMARKS', '')
               FieldRow('GSTIN', '29AALCP2369R1ZD')
 
               return rows
