@@ -230,7 +230,7 @@ export default function ChecklistScanner() {
       ),
 
       // ═══════════════════════════════════════════
-      // FINAL OFFICE DOCKET - PERFECTED WITH LARGER FONTS
+      // FINAL OFFICE DOCKET - OPTIMIZED FOR ONE PAGE
       // ═══════════════════════════════════════════
       React.createElement('div', {
         id: 'checklist-print-content',
@@ -243,7 +243,7 @@ export default function ChecklistScanner() {
           height: '1123px',
           background: '#ffffff',
           fontFamily: '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
-          padding: '24px 32px',
+          padding: '20px 28px',
           boxSizing: 'border-box',
           overflow: 'hidden'
         }
@@ -258,9 +258,9 @@ export default function ChecklistScanner() {
             transform: 'translate(-50%, -50%)',
             opacity: 0.18,
             zIndex: 0,
-            width: '600px',
+            width: '500px',
             height: 'auto',
-            maxHeight: '800px',
+            maxHeight: '700px',
             objectFit: 'contain',
             pointerEvents: 'none',
             userSelect: 'none'
@@ -274,18 +274,18 @@ export default function ChecklistScanner() {
             style: {
               display: 'flex',
               alignItems: 'center',
-              gap: '16px',
-              marginBottom: '14px',
-              borderBottom: '3px solid #0a0a1a',
-              paddingBottom: '12px'
+              gap: '12px',
+              marginBottom: '8px',
+              borderBottom: '2px solid #0a0a1a',
+              paddingBottom: '8px'
             }
           },
             // ── LOGO LEFT ──
             React.createElement('div', {
               style: {
                 flexShrink: 0,
-                width: '90px',
-                height: '90px',
+                width: '70px',
+                height: '70px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center'
@@ -296,13 +296,13 @@ export default function ChecklistScanner() {
                 alt: 'PAS Logo',
                 style: {
                   maxWidth: '100%',
-                  maxHeight: '85px',
+                  maxHeight: '65px',
                   objectFit: 'contain',
                   display: 'block'
                 }
               }) : React.createElement('div', {
                 style: {
-                  fontSize: '30px',
+                  fontSize: '24px',
                   fontWeight: '900',
                   color: '#0a0a1a',
                   letterSpacing: '2px',
@@ -320,19 +320,19 @@ export default function ChecklistScanner() {
             },
               React.createElement('div', {
                 style: {
-                  fontSize: '20px',
+                  fontSize: '16px',
                   fontWeight: '800',
                   color: '#0a0a1a',
-                  letterSpacing: '1.5px',
+                  letterSpacing: '1px',
                   fontFamily: '"Inter", sans-serif',
-                  marginBottom: '4px'
+                  marginBottom: '2px'
                 }
               }, 'PAS FREIGHT SERVICES PVT LTD'),
               React.createElement('div', {
                 style: {
-                  fontSize: '11px',
+                  fontSize: '8.5px',
                   color: '#4b5563',
-                  lineHeight: '1.7',
+                  lineHeight: '1.5',
                   fontWeight: '600',
                   letterSpacing: '0.3px',
                   fontFamily: '"Inter", sans-serif'
@@ -340,9 +340,9 @@ export default function ChecklistScanner() {
               }, 'SITE NO:171, ARKAVATHEY LAYOUT 7TH BLOCK, SY NO.90/3, JAKKUR-BDA, BANGALORE -560064'),
               React.createElement('div', {
                 style: {
-                  fontSize: '11px',
+                  fontSize: '8.5px',
                   color: '#4b5563',
-                  lineHeight: '1.7',
+                  lineHeight: '1.5',
                   fontWeight: '600',
                   letterSpacing: '0.3px',
                   fontFamily: '"Inter", sans-serif'
@@ -356,14 +356,14 @@ export default function ChecklistScanner() {
             style: {
               borderTop: '2px solid #0a0a1a',
               borderBottom: '2px solid #0a0a1a',
-              padding: '10px 0',
-              marginBottom: '16px',
+              padding: '6px 0',
+              marginBottom: '10px',
               textAlign: 'center'
             }
           },
             React.createElement('div', {
               style: {
-                fontSize: '20px',
+                fontSize: '16px',
                 fontWeight: '900',
                 color: '#0a0a1a',
                 letterSpacing: '4px',
@@ -373,7 +373,7 @@ export default function ChecklistScanner() {
             }, 'OFFICE DOCKET')
           ),
 
-          // ═══ ALL FIELDS ── EXACT ORDER ──
+          // ═══ ALL FIELDS ── EXACT ORDER ═══
           React.createElement('div', {
             style: {
               fontSize: '0',
@@ -393,49 +393,49 @@ export default function ChecklistScanner() {
                     style: {
                       display: 'flex',
                       borderBottom: '1px solid #e5e7eb',
-                      padding: '6px 0',
+                      padding: '3px 0',
                       alignItems: 'center',
-                      minHeight: '32px'
+                      minHeight: '24px'
                     }
                   },
                     React.createElement('div', {
                       style: {
-                        fontSize: '12px',
+                        fontSize: '9.5px',
                         fontWeight: '800',
                         color: '#0a0a1a',
-                        width: '165px',
+                        width: '150px',
                         flexShrink: 0,
-                        letterSpacing: '0.5px',
+                        letterSpacing: '0.3px',
                         fontFamily: '"Inter", sans-serif'
                       }
                     }, label),
                     React.createElement('div', {
                       style: {
-                        fontSize: '13px',
+                        fontSize: '10.5px',
                         fontWeight: '700',
                         color: '#0a0a1a',
                         flex: 1,
-                        paddingLeft: '12px',
+                        paddingLeft: '8px',
                         fontFamily: '"Inter", sans-serif',
-                        letterSpacing: '0.3px'
+                        letterSpacing: '0.2px'
                       }
                     }, displayValue),
                     dateLabel ? React.createElement('div', {
                       style: {
-                        fontSize: '10.5px',
+                        fontSize: '8.5px',
                         fontWeight: '700',
                         color: '#6b7280',
-                        marginLeft: '8px',
+                        marginLeft: '4px',
                         fontFamily: '"Inter", sans-serif'
                       }
                     }, dateLabel + ':') : null,
                     dateLabel ? React.createElement('div', {
                       style: {
-                        fontSize: '12px',
+                        fontSize: '9.5px',
                         fontWeight: '700',
                         color: '#0a0a1a',
-                        marginLeft: '4px',
-                        minWidth: '85px',
+                        marginLeft: '2px',
+                        minWidth: '75px',
                         fontFamily: '"Inter", sans-serif'
                       }
                     }, displayDate) : null
@@ -451,11 +451,11 @@ export default function ChecklistScanner() {
                       background: '#0a0a1a',
                       color: '#ffffff',
                       textAlign: 'center',
-                      padding: '7px 0',
-                      margin: '8px 0',
-                      fontSize: '12px',
+                      padding: '4px 0',
+                      margin: '4px 0',
+                      fontSize: '9.5px',
                       fontWeight: '800',
-                      letterSpacing: '3px',
+                      letterSpacing: '2px',
                       textTransform: 'uppercase',
                       fontFamily: '"Inter", sans-serif'
                     }
@@ -473,27 +473,27 @@ export default function ChecklistScanner() {
                   style: {
                     display: 'flex',
                     borderBottom: '1px solid #e5e7eb',
-                    padding: '6px 0',
+                    padding: '3px 0',
                     alignItems: 'center',
-                    minHeight: '32px'
+                    minHeight: '24px'
                   }
                 },
                   React.createElement('div', {
                     style: {
-                      fontSize: '12px',
+                      fontSize: '9.5px',
                       fontWeight: '800',
                       color: '#0a0a1a',
-                      width: '165px',
+                      width: '150px',
                       flexShrink: 0,
-                      letterSpacing: '0.5px',
+                      letterSpacing: '0.3px',
                       fontFamily: '"Inter", sans-serif'
                     }
                   }, 'SHIPMENT MODE'),
                   React.createElement('div', {
                     style: {
                       display: 'flex',
-                      gap: '24px',
-                      paddingLeft: '12px',
+                      gap: '16px',
+                      paddingLeft: '8px',
                       flex: 1
                     }
                   },
@@ -501,8 +501,8 @@ export default function ChecklistScanner() {
                       style: {
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '12px',
+                        gap: '4px',
+                        fontSize: '9.5px',
                         fontWeight: '800',
                         color: '#0a0a1a',
                         fontFamily: '"Inter", sans-serif'
@@ -511,13 +511,13 @@ export default function ChecklistScanner() {
                       React.createElement('span', {
                         style: {
                           display: 'inline-block',
-                          width: '16px',
-                          height: '16px',
+                          width: '13px',
+                          height: '13px',
                           border: '2px solid #0a0a1a',
                           background: isAirChecked ? '#0a0a1a' : 'transparent',
                           textAlign: 'center',
-                          lineHeight: '14px',
-                          fontSize: '10px',
+                          lineHeight: '11px',
+                          fontSize: '8px',
                           color: isAirChecked ? '#ffffff' : '#0a0a1a'
                         }
                       }, isAirChecked ? '✓' : ''),
@@ -527,8 +527,8 @@ export default function ChecklistScanner() {
                       style: {
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '12px',
+                        gap: '4px',
+                        fontSize: '9.5px',
                         fontWeight: '800',
                         color: '#0a0a1a',
                         fontFamily: '"Inter", sans-serif'
@@ -537,13 +537,13 @@ export default function ChecklistScanner() {
                       React.createElement('span', {
                         style: {
                           display: 'inline-block',
-                          width: '16px',
-                          height: '16px',
+                          width: '13px',
+                          height: '13px',
                           border: '2px solid #0a0a1a',
                           background: isSeaChecked ? '#0a0a1a' : 'transparent',
                           textAlign: 'center',
-                          lineHeight: '14px',
-                          fontSize: '10px',
+                          lineHeight: '11px',
+                          fontSize: '8px',
                           color: isSeaChecked ? '#ffffff' : '#0a0a1a'
                         }
                       }, isSeaChecked ? '✓' : ''),
@@ -595,12 +595,12 @@ export default function ChecklistScanner() {
           // ═══ FOOTER ═══
           React.createElement('div', {
             style: {
-              marginTop: '14px',
+              marginTop: '8px',
               textAlign: 'center',
-              fontSize: '10px',
+              fontSize: '8px',
               color: '#9ca3af',
               borderTop: '1px solid #e5e7eb',
-              paddingTop: '10px',
+              paddingTop: '6px',
               fontWeight: '600',
               fontFamily: '"Inter", sans-serif',
               letterSpacing: '0.5px'
