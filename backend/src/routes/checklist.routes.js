@@ -349,12 +349,46 @@ function parseChecklistUniversal(items) {
     ], rawText);
   }
 
-  // ── CONTAINER NUMBER (SEA only) ──
+  // ── CONTAINER NUMBER (SEA only) - IMPROVED ──
   if (isSea) {
-    var containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|DETAILS|NUMBER)[\s\S]{0,500}?([A-Z]{4}\d{7})/i);
-    if (!containerMatch) containerMatch = rawText.match(/\d+\s*\/\s*\d+\s+(?:Signature\s+)?(?:CHA\s+)?(?:Importer\s+)?([A-Z]{4}\d{7})/i);
-    if (!containerMatch) containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
-    if (containerMatch && containerMatch[1]) result.containerNo = containerMatch[1];
+    // Try multiple patterns for container number
+    var containerMatch = null;
+    
+    // Pattern 1: CONTAINER DETAILS section
+    var containerSection = rawText.match(/CONTAINER\s+DETAILS[\s\S]{0,500}/i);
+    if (containerSection) {
+      var contMatch = containerSection[0].match(/([A-Z]{4}\d{7})/);
+      if (contMatch) containerMatch = contMatch;
+    }
+    
+    // Pattern 2: CONTAINER NO with label
+    if (!containerMatch) {
+      containerMatch = rawText.match(/CONTAINER\s+(?:NO\.?|NUMBER)[\s\S]{0,300}?([A-Z]{4}\d{7})/i);
+    }
+    
+    // Pattern 3: IGM SL.NO CHA CONTAINER NO pattern
+    if (!containerMatch) {
+      containerMatch = rawText.match(/IGM\s+SL\.?NO\s+CHA\s+([A-Z]{4}\d{7})/i);
+    }
+    
+    // Pattern 4: Container number with seal number pattern
+    if (!containerMatch) {
+      containerMatch = rawText.match(/\d+\s*\/\s*\d+\s+(?:Signature\s+)?(?:CHA\s+)?(?:Importer\s+)?([A-Z]{4}\d{7})/i);
+    }
+    
+    // Pattern 5: Standalone container number
+    if (!containerMatch) {
+      containerMatch = rawText.match(/(?:^|\s)([A-Z]{4}\d{7})(?:\s|$)/);
+    }
+    
+    // Pattern 6: TLLU, MSCU, etc. patterns
+    if (!containerMatch) {
+      containerMatch = rawText.match(/([A-Z]{4}\d{7})/);
+    }
+    
+    if (containerMatch && containerMatch[1]) {
+      result.containerNo = containerMatch[1];
+    }
   }
 
   // ── CARGO ARRIVAL NOTICE ──
