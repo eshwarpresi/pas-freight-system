@@ -131,146 +131,6 @@ function parseChecklistUniversal(items) {
     return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN)\s*$/i, '').trim();
   }
 
-  function extractAccountsData(text) {
-    var accounts = {
-      agentDebitNote: '',
-      billingCurrency: '',
-      billNo: '',
-      billDate: '',
-      billTo: '',
-      docketNo: '',
-      docketDate: ''
-    };
-
-    // ── AGENT DEBIT NOTE ──
-    // Extract from CHA Details or PAS FREIGHT SERVICES mentions
-    var chaMatch = text.match(/CHA\s+Details\s*:?\s*([\w\s]+?(?:PAS\s+FREIGHT|FREIGHT|SERVICES)[\w\s]*?)(?:\s+Importer|\s+#|\s{2,})/i);
-    if (chaMatch) {
-      accounts.agentDebitNote = cleanCompanyName(chaMatch[1]);
-    }
-    
-    // Fallback: Look for PAS FREIGHT SERVICES
-    if (!accounts.agentDebitNote) {
-      var pasMatch = text.match(/PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT)[\w\s]*?)(?:\s+#|\s{2,})/i);
-      if (pasMatch) {
-        accounts.agentDebitNote = cleanCompanyName(pasMatch[1]);
-      }
-    }
-    
-    // Default if still empty
-    if (!accounts.agentDebitNote) {
-      accounts.agentDebitNote = 'PAS FREIGHT SERVICES';
-    }
-
-    // ── BILLING CURRENCY ──
-    var currencyMatch = text.match(/Inv\.?\s*Value\s*:\s*([\d.,]+\s*([A-Z]{3}))/i);
-    if (currencyMatch) {
-      accounts.billingCurrency = currencyMatch[2];
-    }
-    
-    if (!accounts.billingCurrency) {
-      var currMatch = text.match(/Currency\s*:?\s*([A-Z]{3})/i);
-      if (currMatch) accounts.billingCurrency = currMatch[1];
-    }
-    
-    if (!accounts.billingCurrency) {
-      var rateMatch = text.match(/Exchange\s*Rate\s*:\s*[\d.]+\s*([A-Z]{3})\s*=/i);
-      if (rateMatch) accounts.billingCurrency = rateMatch[1];
-    }
-
-    // ── BILL NUMBER ──
-    // Try UCR Number first (this is often the bill number)
-    var ucrMatch = text.match(/UCR\s*Number\s*:?\s*([A-Z0-9\-]+)/i);
-    if (ucrMatch) {
-      accounts.billNo = ucrMatch[1];
-    }
-    
-    if (!accounts.billNo) {
-      var billNoMatch = text.match(/Bill\s*No\s*:?\s*([A-Z0-9\-]+)/i);
-      if (billNoMatch) accounts.billNo = billNoMatch[1];
-    }
-    
-    if (!accounts.billNo) {
-      var invMatch = text.match(/Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i);
-      if (invMatch) accounts.billNo = invMatch[1];
-    }
-
-    // ── BILL DATE ──
-    if (accounts.billNo) {
-      var escBill = accounts.billNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      var dateMatch = text.match(new RegExp(escBill + '[\\s\\S]{0,100}?(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-      if (dateMatch) accounts.billDate = dateMatch[1];
-    }
-    
-    if (!accounts.billDate) {
-      var billDateMatch = text.match(/Bill\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
-      if (billDateMatch) accounts.billDate = billDateMatch[1];
-    }
-
-    // ── BILL TO ──
-    // Extract from Importer Details or Bill To
-    var billToMatch = text.match(/Bill\s*To\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE|INC|CORP)[\w\s]*?)(?:\s+#|\s{2,})/i);
-    if (billToMatch) {
-      accounts.billTo = cleanCompanyName(billToMatch[1]);
-    }
-    
-    if (!accounts.billTo) {
-      var impMatch = text.match(/Importer\s+Details\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*?)(?:\s+#|\s{2,})/i);
-      if (impMatch) {
-        accounts.billTo = cleanCompanyName(impMatch[1]);
-      }
-    }
-    
-    if (!accounts.billTo) {
-      var impNameMatch = text.match(/Importer\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i);
-      if (impNameMatch) {
-        accounts.billTo = cleanCompanyName(impNameMatch[1]);
-      }
-    }
-    
-    // Fallback: Use importerName from earlier extraction
-    if (!accounts.billTo) {
-      var companyMatch = text.match(/(ONLINE\s+INSTRUMENTS\s*\(INDIA\)\s*LIMITED|ARION\s+TECHNOLOGY\s+LTD|RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i);
-      if (companyMatch) accounts.billTo = companyMatch[1];
-    }
-
-    // ── DOCKET NUMBER ──
-    // Try File No first
-    var fileMatch = text.match(/File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i);
-    if (fileMatch) {
-      accounts.docketNo = fileMatch[1];
-    }
-    
-    if (!accounts.docketNo) {
-      var docketMatch = text.match(/Docket\s*No\s*:?\s*([A-Z0-9\-]+)/i);
-      if (docketMatch) accounts.docketNo = docketMatch[1];
-    }
-    
-    if (!accounts.docketNo) {
-      var jobMatch = text.match(/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i);
-      if (jobMatch) accounts.docketNo = 'JOB-' + jobMatch[1];
-    }
-
-    // ── DOCKET DATE ──
-    if (accounts.docketNo) {
-      var escDocket = accounts.docketNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      var dDateMatch = text.match(new RegExp(escDocket + '[\\s\\S]{0,100}?(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-      if (dDateMatch) accounts.docketDate = dDateMatch[1];
-    }
-    
-    if (!accounts.docketDate) {
-      var fileDateMatch = text.match(/File\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
-      if (fileDateMatch) accounts.docketDate = fileDateMatch[1];
-    }
-    
-    if (!accounts.docketDate) {
-      var jobDateMatch = text.match(/Job\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
-      if (jobDateMatch) accounts.docketDate = jobDateMatch[1];
-    }
-
-    return accounts;
-  }
-
   // ── DETECT SHIPMENT TYPE ──
   var isSea = /Gateway\s*IGM|IGM\s*NO|Container|HBL\/\s*HAWB|MBL\/\s*MAWB|SEA|FCL|LCL/i.test(rawText);
   var isAir = /MAWB|AWB|AIR\s*WAYBILL|FLIGHT|AIRPORT/i.test(rawText);
@@ -378,17 +238,37 @@ function parseChecklistUniversal(items) {
 
   // ── HAWB/HBL NUMBER + DATE (AIR vs SEA specific) ──
   if (isAir) {
+    // AIR: HAWB is the house airway bill
     result.hawbHblNo = tryPatterns([
       /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
       /House\s*Air\s*Waybill\s*No\s*:?\s*([A-Z0-9]+)/i,
-      /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i
+      /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
+      /HAWB\s*:?\s*([A-Z0-9]+)/i
     ], rawText);
     
-    result.hawbHblDate = tryPatterns([
-      /HAWB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /HBL\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], rawText);
+    // FIX: Better HAWB/HBL date extraction for Air
+    if (result.hawbHblNo) {
+      var escH = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var dateH = rawText.match(new RegExp(escH + '[\\s\\S]{0,150}?(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
+      if (dateH) {
+        result.hawbHblDate = dateH[1];
+      } else {
+        // Try direct pattern: HBL/HAWB : OGC2606474 Date : 21/06/2026
+        var directDate = rawText.match(/HBL\/\s*HAWB\s*:\s*[A-Z0-9]+\s+Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
+        if (directDate) result.hawbHblDate = directDate[1];
+      }
+    }
+    
+    // If still no date, try general patterns
+    if (!result.hawbHblDate) {
+      result.hawbHblDate = tryPatterns([
+        /HAWB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+        /HBL\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+        /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+      ], rawText);
+    }
   } else {
+    // SEA: HBL is the house bill of lading
     var seaM = rawText.match(/HBL\/\s*HAWB\s*:\s*(\d{7,12})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (seaM) { 
       result.hawbHblNo = seaM[1]; 
