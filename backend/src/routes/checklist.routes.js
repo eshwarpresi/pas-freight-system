@@ -387,9 +387,9 @@ function parseChecklistUniversal(items) {
       }
     }
     
-    // Pattern 5: Look for specific container prefixes (TLLU, MSCU, TCKU, etc.)
+    // Pattern 5: Look for specific container prefixes (TLLU, MSCU, TCKU, TWCU, etc.)
     if (!containerMatch) {
-      var specificMatch = rawText.match(/\b(TLLU|MSCU|TCKU|OOCU|TRLU|SCZU|MRKU|GESU|HLCU|TGHU|TCLU|TEXU|TRIU|TSLU|TTAU|TTNU|TTSU|TTTU|TTUU|TTVU|TTWU|TTXU|TTYU|TTZU)\d{7}\b/i);
+      var specificMatch = rawText.match(/\b(TLLU|MSCU|TCKU|OOCU|TRLU|SCZU|MRKU|GESU|HLCU|TGHU|TCLU|TEXU|TRIU|TSLU|TTAU|TTNU|TTSU|TTTU|TTUU|TTVU|TTWU|TTXU|TTYU|TTZU|TWCU)\d{7}\b/i);
       if (specificMatch) {
         containerMatch = specificMatch;
       }
