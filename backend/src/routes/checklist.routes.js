@@ -349,51 +349,58 @@ function parseChecklistUniversal(items) {
     ], rawText);
   }
 
-  // ── CONTAINER NUMBER (SEA only) - IMPROVED ──
+  // ── CONTAINER NUMBER (SEA only) - ULTIMATE FIX ──
   if (isSea) {
     var containerMatch = null;
+    var invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
     
-    // Pattern 1: CONTAINER DETAILS section - MOST RELIABLE
-    var containerSection = rawText.match(/CONTAINER\s+DETAILS[\s\S]{0,500}/i);
-    if (containerSection) {
-      // Look for container number pattern: 4 letters + 7 digits
-      var contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
-      if (contMatch && contMatch[1]) {
-        containerMatch = contMatch;
+    // Pattern 1: Look for container number near "Signature" or "CHA" patterns
+    var signatureMatch = rawText.match(/Signature\s+\b([A-Z]{4}\d{7})\b/i);
+    if (signatureMatch && !invalidPrefixes.test(signatureMatch[1])) {
+      containerMatch = signatureMatch;
+    }
+    
+    // Pattern 2: CONTAINER DETAILS section
+    if (!containerMatch) {
+      var containerSection = rawText.match(/CONTAINER\s+DETAILS[\s\S]{0,500}/i);
+      if (containerSection) {
+        var contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
+        if (contMatch && !invalidPrefixes.test(contMatch[1])) {
+          containerMatch = contMatch;
+        }
       }
     }
     
-    // Pattern 2: IGM SL.NO CHA CONTAINER NO pattern
+    // Pattern 3: IGM SL.NO CHA CONTAINER NO pattern
     if (!containerMatch) {
-      var igmMatch = rawText.match(/IGM\s+SL\.?NO\s+CHA\s+\b([A-Z]{4}\d{7})\b/i);
-      if (igmMatch) {
+      var igmMatch = rawText.match(/IGM\s+SL\.?NO\s+CHA[\s\S]{0,300}?\b([A-Z]{4}\d{7})\b/i);
+      if (igmMatch && !invalidPrefixes.test(igmMatch[1])) {
         containerMatch = igmMatch;
       }
     }
     
-    // Pattern 3: CONTAINER NO with label
+    // Pattern 4: CONTAINER NO with label
     if (!containerMatch) {
       var labelMatch = rawText.match(/CONTAINER\s+(?:NO\.?|NUMBER)[\s\S]{0,300}?\b([A-Z]{4}\d{7})\b/i);
-      if (labelMatch) {
+      if (labelMatch && !invalidPrefixes.test(labelMatch[1])) {
         containerMatch = labelMatch;
       }
     }
     
-    // Pattern 4: Container with seal number pattern
+    // Pattern 5: Look for specific container prefixes (TLLU, MSCU, TCKU, etc.)
     if (!containerMatch) {
-      var sealMatch = rawText.match(/\d+\s*\/\s*\d+\s+(?:Signature\s+)?(?:CHA\s+)?(?:Importer\s+)?\b([A-Z]{4}\d{7})\b/i);
-      if (sealMatch) {
-        containerMatch = sealMatch;
+      var specificMatch = rawText.match(/\b(TLLU|MSCU|TCKU|OOCU|TRLU|SCZU|MRKU|GESU|HLCU|TGHU|TCLU|TEXU|TRIU|TSLU|TTAU|TTNU|TTSU|TTTU|TTUU|TTVU|TTWU|TTXU|TTYU|TTZU)\d{7}\b/i);
+      if (specificMatch) {
+        containerMatch = specificMatch;
       }
     }
     
-    // Pattern 5: Standalone container number - but filter out MBL numbers
+    // Pattern 6: Standalone container number with validation
     if (!containerMatch) {
       var allMatches = rawText.match(/\b([A-Z]{4}\d{7})\b/g);
       if (allMatches) {
-        // Filter out MBL/MAWB numbers (CSBL, JJCSK, SZBGL, etc.)
+        // Filter out MBL/MAWB numbers
         var validContainers = allMatches.filter(function(c) {
-          var invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
           return !invalidPrefixes.test(c);
         });
         if (validContainers.length > 0) {
@@ -402,27 +409,12 @@ function parseChecklistUniversal(items) {
       }
     }
     
-    // Pattern 6: Generic container pattern as last resort
-    if (!containerMatch) {
-      var genericMatch = rawText.match(/\b([A-Z]{4}\d{7})\b/);
-      if (genericMatch) {
-        // Check if it's not an MBL number
-        var invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
-        if (!invalidPrefixes.test(genericMatch[1])) {
-          containerMatch = genericMatch;
-        }
-      }
-    }
-    
     // Validate and set container number
     if (containerMatch && containerMatch[1]) {
       var container = containerMatch[1];
       // Verify it's a valid container format (4 letters + 7 digits)
-      if (/^[A-Z]{4}\d{7}$/.test(container)) {
-        var invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
-        if (!invalidPrefixes.test(container)) {
-          result.containerNo = container;
-        }
+      if (/^[A-Z]{4}\d{7}$/.test(container) && !invalidPrefixes.test(container)) {
+        result.containerNo = container;
       }
     }
   }
