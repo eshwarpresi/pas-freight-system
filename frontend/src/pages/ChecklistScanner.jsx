@@ -14,10 +14,13 @@ export default function ChecklistScanner() {
   var [logo, setLogo] = useState(null)
   var [showRawPanel, setShowRawPanel] = useState(true)
   var [copied, setCopied] = useState(false)
+  var [isSeaChecked, setIsSeaChecked] = useState(false)
+  var [isAirChecked, setIsAirChecked] = useState(false)
+  var [detectedShipmentType, setDetectedShipmentType] = useState('')
   var fileInputRef = useRef(null)
   var pdfRef = useRef(null)
 
-  var isSeaShipment = shipmentType === 'Sea FCL' || shipmentType === 'Sea LCL' || shipmentType === 'Sea'
+  var isSeaShipment = shipmentType === 'Sea FCL' || shipmentType === 'Sea LCL' || shipmentType === 'Sea' || shipmentType === 'Sea'
 
   useEffect(function() {
     var savedLogo = localStorage.getItem('pas_checklist_logo')
@@ -41,6 +44,21 @@ export default function ChecklistScanner() {
       var res = await api.post('/checklist/scan', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       setFormData(res.data.data); setRawText(res.data.rawText || '')
       setShowRawPanel(true)
+      
+      // Auto-detect shipment type from API response
+      if (res.data.data && res.data.data.shipmentType) {
+        var detected = res.data.data.shipmentType
+        setDetectedShipmentType(detected)
+        if (detected === 'Sea') {
+          setShipmentType('Sea FCL')
+          setIsSeaChecked(true)
+          setIsAirChecked(false)
+        } else if (detected === 'Air') {
+          setShipmentType('Air')
+          setIsAirChecked(true)
+          setIsSeaChecked(false)
+        }
+      }
     } catch (err) { alert('Failed to scan PDF.') }
     setScanning(false)
   }
@@ -64,15 +82,22 @@ export default function ChecklistScanner() {
         useCORS: true,
         allowTaint: true,
         backgroundColor: '#ffffff',
-        logging: false
+        logging: false,
+        width: 794,
+        height: 1123,
+        onclone: function(clonedDoc) {
+          var element = clonedDoc.getElementById('checklist-print-content')
+          if (element) {
+            element.style.display = 'block'
+          }
+        }
       })
       var imgData = canvas.toDataURL('image/png')
-      var imgWidth = 210
-      var pageHeight = 297
-      var imgHeight = (canvas.height * imgWidth) / canvas.width
-      if (imgHeight > pageHeight) imgHeight = pageHeight
       var pdf = new jsPDF('p', 'mm', 'a4')
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+      var pdfWidth = 210
+      var pdfHeight = (canvas.height * pdfWidth) / canvas.width
+      if (pdfHeight > 297) pdfHeight = 297
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
       pdf.save('PAS_Checklist_' + (F('referenceNumber') || 'Report') + '.pdf')
     } catch (err) {
       console.error('PDF generation error:', err)
@@ -81,7 +106,7 @@ export default function ChecklistScanner() {
     setDownloading(false)
   }
 
-  function handleReset() { setFile(null); setFormData(null); setRawText(''); setShipmentType(''); if (fileInputRef.current) fileInputRef.current.value = '' }
+  function handleReset() { setFile(null); setFormData(null); setRawText(''); setShipmentType(''); setIsSeaChecked(false); setIsAirChecked(false); setDetectedShipmentType(''); if (fileInputRef.current) fileInputRef.current.value = '' }
 
   var F = function(key) { return (formData && formData[key]) || '' }
   var U = function(key) { return function(e) { updateField(key, e.target.value) } }
@@ -136,13 +161,27 @@ export default function ChecklistScanner() {
       // ── SHIPMENT TYPE + TOGGLE ──
       React.createElement('div', { className: 'flex items-center gap-3 mb-4 flex-wrap' },
         React.createElement('div', { className: 'px-3 py-1.5 rounded-full text-xs font-bold', style: { background: '#dbeafe', color: '#1e40af' } }, 'Shipment Type'),
-        React.createElement('select', { value: shipmentType, onChange: function(e) { setShipmentType(e.target.value) }, className: 'px-3 py-2 border rounded-lg text-sm font-semibold', style: { borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--input-bg)' } },
+        React.createElement('select', { value: shipmentType, onChange: function(e) { 
+          setShipmentType(e.target.value)
+          if (e.target.value === 'Air') {
+            setIsAirChecked(true)
+            setIsSeaChecked(false)
+          } else if (e.target.value === 'Sea FCL' || e.target.value === 'Sea LCL' || e.target.value === 'Sea') {
+            setIsSeaChecked(true)
+            setIsAirChecked(false)
+          } else {
+            setIsAirChecked(false)
+            setIsSeaChecked(false)
+          }
+        }, className: 'px-3 py-2 border rounded-lg text-sm font-semibold', style: { borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--input-bg)' } },
           React.createElement('option', { value: '' }, '-- Select --'),
           React.createElement('option', { value: 'Air' }, '✈ Air'),
           React.createElement('option', { value: 'Sea FCL' }, '🚢 Sea FCL'),
           React.createElement('option', { value: 'Sea LCL' }, '🚢 Sea LCL'),
+          React.createElement('option', { value: 'Sea' }, '🚢 Sea'),
           React.createElement('option', { value: 'Local Transport' }, '🚛 Local Transport')
         ),
+        detectedShipmentType ? React.createElement('span', { className: 'px-3 py-1.5 rounded-full text-xs font-bold', style: { background: '#d1fae5', color: '#065f46' } }, '🔍 Detected: ' + detectedShipmentType) : null,
         React.createElement('button', { onClick: function() { setShowRawPanel(!showRawPanel) }, className: 'px-3 py-2 glass border rounded-lg text-xs font-semibold flex items-center gap-2', style: { borderColor: 'var(--border-color)' } },
           showRawPanel ? React.createElement(EyeOff, { size: 14 }) : React.createElement(Eye, { size: 14 }),
           showRawPanel ? 'Hide Raw Text' : 'Show Raw Text'
@@ -163,7 +202,7 @@ export default function ChecklistScanner() {
           SF('Port of Discharge', 'portOfDischarge'), SF('Port of Destination', 'portOfDestination'),
           SF('Invoice Number', 'invoiceNo'), SF('Invoice Date', 'invoiceDate'),
           
-          // ── SEA SECTION MOVED AFTER INVOICE ──
+          // ── SEA SECTION (only show for Sea shipments) ──
           isSeaShipment ? React.createElement('div', { className: 'mb-2 mt-3' },
             React.createElement('div', { className: 'flex items-center gap-2 mb-2 px-3 py-2 rounded-lg', style: { background: '#eff6ff', border: '1px solid #bfdbfe' } },
               React.createElement(Anchor, { size: 14, style: { color: '#1d4ed8' } }),
@@ -193,130 +232,365 @@ export default function ChecklistScanner() {
       ),
 
       // ═══════════════════════════════════════════
-      // PROFESSIONAL PDF TEMPLATE
+      // FINAL OFFICE DOCKET - PERFECTED
       // ═══════════════════════════════════════════
       React.createElement('div', {
+        id: 'checklist-print-content',
         ref: pdfRef,
         style: {
-          position: 'absolute', left: '-9999px', top: 0,
+          position: 'absolute',
+          left: '-9999px',
+          top: 0,
           width: '794px',
+          height: '1123px',
           background: '#ffffff',
-          fontFamily: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
-          color: '#0a0a1a',
-          padding: '40px 48px',
-          boxSizing: 'border-box'
+          fontFamily: '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+          padding: '28px 36px',
+          boxSizing: 'border-box',
+          overflow: 'hidden'
         }
       },
+        // ── WATERMARK LOGO ──
         logo ? React.createElement('img', {
           src: logo,
           style: {
-            position: 'absolute', top: '50%', left: '50%',
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
             transform: 'translate(-50%, -50%)',
-            opacity: 0.03, zIndex: 0,
-            width: '500px', height: '700px',
-            objectFit: 'contain', pointerEvents: 'none'
+            opacity: 0.18,
+            zIndex: 0,
+            width: '600px',
+            height: 'auto',
+            maxHeight: '800px',
+            objectFit: 'contain',
+            pointerEvents: 'none',
+            userSelect: 'none'
           }
         }) : null,
 
         React.createElement('div', { style: { position: 'relative', zIndex: 1 } },
 
-          // ═══ HEADER TABLE ═══
-          React.createElement('table', {
+          // ═══ HEADER ── LOGO LEFT + COMPANY RIGHT ═══
+          React.createElement('div', {
             style: {
-              width: '100%', borderCollapse: 'collapse',
-              marginBottom: '16px', border: '2px solid #0a0a1a'
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              marginBottom: '12px',
+              borderBottom: '3px solid #0a0a1a',
+              paddingBottom: '10px'
             }
           },
-            React.createElement('tbody', null,
-              React.createElement('tr', null,
-                React.createElement('td', {
-                  style: { width: '18%', padding: '10px', textAlign: 'center', verticalAlign: 'middle', borderRight: '2px solid #0a0a1a' }
-                },
-                  logo ? React.createElement('img', { src: logo, alt: 'PAS Logo', style: { maxWidth: '100%', maxHeight: '55px', objectFit: 'contain' } })
-                  : React.createElement('span', { style: { fontSize: '28px', fontWeight: '900', color: '#0a0a1a', letterSpacing: '2px' } }, 'PAS')
-                ),
-                React.createElement('td', {
-                  style: { padding: '8px 14px', textAlign: 'center', verticalAlign: 'middle', borderRight: '2px solid #0a0a1a' }
-                },
-                  React.createElement('div', { style: { fontSize: '16px', fontWeight: '900', color: '#0a0a1a', letterSpacing: '1px', marginBottom: '2px' } }, 'PAS FREIGHT SERVICES PVT LTD'),
-                  React.createElement('div', { style: { fontSize: '8px', color: '#444', lineHeight: '1.5' } }, 'Site No 171, 1st Floor, 7th Block, Arkavathy Layout'),
-                  React.createElement('div', { style: { fontSize: '8px', color: '#444', lineHeight: '1.5' } }, 'Jakkur, Bengaluru - 560064'),
-                  React.createElement('div', { style: { fontSize: '9px', fontWeight: '700', color: '#0a0a1a', marginTop: '2px' } }, 'GST No: 29AALCP2369R1ZD')
-                ),
-                React.createElement('td', { style: { width: '16%', padding: '8px', textAlign: 'center', verticalAlign: 'middle' } },
-                  React.createElement('div', { style: { fontSize: '7px', fontWeight: '700', textTransform: 'uppercase', color: '#555', marginBottom: '4px' } }, 'Shipment Type'),
-                  React.createElement('div', {
-                    style: { fontSize: '11px', fontWeight: '900', color: '#ffffff', background: '#0a0a1a', padding: '6px 10px', display: 'inline-block', letterSpacing: '1px' }
-                  }, shipmentType ? shipmentType.toUpperCase() : '—')
-                )
-              )
+            // ── LOGO LEFT ──
+            React.createElement('div', {
+              style: {
+                flexShrink: 0,
+                width: '80px',
+                height: '80px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }
+            },
+              logo ? React.createElement('img', {
+                src: logo,
+                alt: 'PAS Logo',
+                style: {
+                  maxWidth: '100%',
+                  maxHeight: '75px',
+                  objectFit: 'contain',
+                  display: 'block'
+                }
+              }) : React.createElement('div', {
+                style: {
+                  fontSize: '26px',
+                  fontWeight: '900',
+                  color: '#0a0a1a',
+                  letterSpacing: '2px',
+                  fontFamily: '"Inter", sans-serif'
+                }
+              }, 'PAS')
+            ),
+
+            // ── COMPANY DETAILS RIGHT ──
+            React.createElement('div', {
+              style: {
+                flex: 1,
+                textAlign: 'center'
+              }
+            },
+              React.createElement('div', {
+                style: {
+                  fontSize: '17px',
+                  fontWeight: '800',
+                  color: '#0a0a1a',
+                  letterSpacing: '1.5px',
+                  fontFamily: '"Inter", sans-serif',
+                  marginBottom: '3px'
+                }
+              }, 'PAS FREIGHT SERVICES PVT LTD'),
+              React.createElement('div', {
+                style: {
+                  fontSize: '9px',
+                  color: '#4b5563',
+                  lineHeight: '1.6',
+                  fontWeight: '500',
+                  letterSpacing: '0.3px',
+                  fontFamily: '"Inter", sans-serif'
+                }
+              }, 'SITE NO:171, ARKAVATHEY LAYOUT 7TH BLOCK, SY NO.90/3, JAKKUR-BDA, BANGALORE -560064'),
+              React.createElement('div', {
+                style: {
+                  fontSize: '9px',
+                  color: '#4b5563',
+                  lineHeight: '1.6',
+                  fontWeight: '500',
+                  letterSpacing: '0.3px',
+                  fontFamily: '"Inter", sans-serif'
+                }
+              }, 'LANDLINE: +91 80-43722701  |  WWW.PASFREIGHT.COM')
             )
           ),
 
-          // ═══ TITLE BAR ═══
+          // ═══ OFFICE DOCKET TITLE ═══
           React.createElement('div', {
-            style: { background: '#0a0a1a', color: '#ffffff', textAlign: 'center', padding: '8px 0', marginBottom: '14px', fontSize: '13px', fontWeight: '900', letterSpacing: '3px', textTransform: 'uppercase' }
+            style: {
+              borderTop: '2px solid #0a0a1a',
+              borderBottom: '2px solid #0a0a1a',
+              padding: '8px 0',
+              marginBottom: '14px',
+              textAlign: 'center'
+            }
           },
-            'Checklist Report',
-            React.createElement('div', { style: { fontSize: '7px', fontWeight: '400', letterSpacing: '0', opacity: 0.8, marginTop: '2px' } },
-              'Date: ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + '  |  Ref: ' + F('referenceNumber'))
+            React.createElement('div', {
+              style: {
+                fontSize: '16px',
+                fontWeight: '900',
+                color: '#0a0a1a',
+                letterSpacing: '4px',
+                textTransform: 'uppercase',
+                fontFamily: '"Inter", sans-serif'
+              }
+            }, 'OFFICE DOCKET')
           ),
 
-          // ═══ DATA ROWS ═══
-          React.createElement('div', { style: { fontSize: '0' } },
+          // ═══ ALL FIELDS ── EXACT ORDER ═══
+          React.createElement('div', {
+            style: {
+              fontSize: '0',
+              fontFamily: '"Inter", sans-serif'
+            }
+          },
             (function() {
               var rows = []
-              function ROW(label, value, value2) {
+              
+              function FieldRow(label, value, dateLabel, dateValue) {
+                var displayValue = value || '_______________________'
+                var displayDate = dateValue || '__________'
+                
                 rows.push(
                   React.createElement('div', {
-                    key: label,
-                    style: { display: 'flex', borderBottom: '0.5px solid #d1d5db', padding: '5px 0', alignItems: 'center', minHeight: '26px', fontSize: '0' }
+                    key: label + rows.length,
+                    style: {
+                      display: 'flex',
+                      borderBottom: '1px solid #e5e7eb',
+                      padding: '4px 0',
+                      alignItems: 'center',
+                      minHeight: '26px'
+                    }
                   },
-                    React.createElement('div', { style: { fontSize: '7.5px', fontWeight: '700', color: '#4b5563', textTransform: 'uppercase', width: '30%', flexShrink: 0, paddingLeft: '4px' } }, label),
-                    React.createElement('div', { style: { fontSize: '9px', fontWeight: '600', color: '#0a0a1a', flex: 1, wordWrap: 'break-word' } }, value || '—'),
-                    value2 !== undefined ? React.createElement(React.Fragment, null,
-                      React.createElement('div', { style: { fontSize: '6.5px', fontWeight: '700', color: '#6b7280', width: '7%', textAlign: 'right', paddingRight: '6px' } }, 'DATE'),
-                      React.createElement('div', { style: { fontSize: '8px', fontWeight: '600', color: '#374151', width: '17%' } }, value2 || '—')
-                    ) : null
+                    React.createElement('div', {
+                      style: {
+                        fontSize: '9.5px',
+                        fontWeight: '700',
+                        color: '#0a0a1a',
+                        width: '155px',
+                        flexShrink: 0,
+                        letterSpacing: '0.3px',
+                        fontFamily: '"Inter", sans-serif'
+                      }
+                    }, label),
+                    React.createElement('div', {
+                      style: {
+                        fontSize: '10.5px',
+                        fontWeight: '600',
+                        color: '#0a0a1a',
+                        flex: 1,
+                        paddingLeft: '10px',
+                        fontFamily: '"Inter", sans-serif',
+                        letterSpacing: '0.2px'
+                      }
+                    }, displayValue),
+                    dateLabel ? React.createElement('div', {
+                      style: {
+                        fontSize: '8.5px',
+                        fontWeight: '600',
+                        color: '#6b7280',
+                        marginLeft: '6px',
+                        fontFamily: '"Inter", sans-serif'
+                      }
+                    }, dateLabel + ':') : null,
+                    dateLabel ? React.createElement('div', {
+                      style: {
+                        fontSize: '9.5px',
+                        fontWeight: '600',
+                        color: '#0a0a1a',
+                        marginLeft: '3px',
+                        minWidth: '75px',
+                        fontFamily: '"Inter", sans-serif'
+                      }
+                    }, displayDate) : null
                   )
                 )
               }
 
-              ROW('Reference Number', F('referenceNumber'))
-              ROW('Job Order No', F('jobOrderNo'), F('jobOrderDate'))
-              ROW('BOE/SB Number', F('boeSbNo'), F('boeSbDate'))
-              ROW('Shipment Mode', F('shipmentMode'))
-              ROW('Location / Filing Port', F('location'))
-              ROW('Importer Name', F('importerName'))
-              ROW('Exporter Name', F('exporterName'))
-              ROW('Supplier Name', F('supplierName'))
-              ROW('MAWB / MBL Number', F('mawbMblNo'), F('mawbMblDate'))
-              ROW('HAWB / HBL Number', F('hawbHblNo'), F('hawbHblDate'))
-              ROW('Number of Packages', F('noOfPackages'))
-              ROW('Gross Weight', F('grossWeight'))
-              ROW('Port of Discharge', F('portOfDischarge'))
-              ROW('Port of Destination', F('portOfDestination'))
-              ROW('Invoice Number', F('invoiceNo'), F('invoiceDate'))
-
-              // Sea section AFTER Invoice Number
-              if (isSeaShipment) {
+              function SectionTitle(title) {
                 rows.push(
                   React.createElement('div', {
-                    key: 'sea-title',
-                    style: { background: '#0a0a1a', color: '#ffffff', textAlign: 'center', padding: '5px 0', margin: '6px 0', fontSize: '8px', fontWeight: '700', letterSpacing: '2px', textTransform: 'uppercase' }
-                  }, '🚢  Sea Shipment Details')
+                    key: 'section-' + title + rows.length,
+                    style: {
+                      background: '#0a0a1a',
+                      color: '#ffffff',
+                      textAlign: 'center',
+                      padding: '5px 0',
+                      margin: '6px 0',
+                      fontSize: '9px',
+                      fontWeight: '700',
+                      letterSpacing: '2px',
+                      textTransform: 'uppercase',
+                      fontFamily: '"Inter", sans-serif'
+                    }
+                  }, title)
                 )
-                ROW('Gateway IGM No', F('gatewayIgmNo'), F('gatewayIgmDate'))
-                ROW('IGM No', F('igmNo'), F('igmDate'))
-                ROW('Local IGM No', F('localIgmNo'), F('localIgmDate'))
-                ROW('Container No', F('containerNo'))
               }
 
-              ROW('Delivery Order Date', F('deliveryOrderDate'))
-              ROW('OCC Date', F('occDate'))
-              ROW('Gate Pass Date', F('gatePassDate'))
-              ROW('Marks & Nos', F('remarks'))
-              ROW('GSTIN / Additional Info', F('additionalRemarks'))
+              // ── ALL FIELDS IN EXACT ORDER ──
+              FieldRow('REFERENCE NUMBER', F('referenceNumber'))
+              
+              // Shipment Mode with checkboxes
+              rows.push(
+                React.createElement('div', {
+                  key: 'shipment-mode',
+                  style: {
+                    display: 'flex',
+                    borderBottom: '1px solid #e5e7eb',
+                    padding: '4px 0',
+                    alignItems: 'center',
+                    minHeight: '26px'
+                  }
+                },
+                  React.createElement('div', {
+                    style: {
+                      fontSize: '9.5px',
+                      fontWeight: '700',
+                      color: '#0a0a1a',
+                      width: '155px',
+                      flexShrink: 0,
+                      letterSpacing: '0.3px',
+                      fontFamily: '"Inter", sans-serif'
+                    }
+                  }, 'SHIPMENT MODE'),
+                  React.createElement('div', {
+                    style: {
+                      display: 'flex',
+                      gap: '20px',
+                      paddingLeft: '10px',
+                      flex: 1
+                    }
+                  },
+                    React.createElement('div', {
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '9.5px',
+                        fontWeight: '700',
+                        color: '#0a0a1a',
+                        fontFamily: '"Inter", sans-serif'
+                      }
+                    },
+                      React.createElement('span', {
+                        style: {
+                          display: 'inline-block',
+                          width: '13px',
+                          height: '13px',
+                          border: '2px solid #0a0a1a',
+                          background: isAirChecked ? '#0a0a1a' : 'transparent',
+                          textAlign: 'center',
+                          lineHeight: '11px',
+                          fontSize: '8px',
+                          color: isAirChecked ? '#ffffff' : '#0a0a1a'
+                        }
+                      }, isAirChecked ? '✓' : ''),
+                      'BY AIR'
+                    ),
+                    React.createElement('div', {
+                      style: {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '9.5px',
+                        fontWeight: '700',
+                        color: '#0a0a1a',
+                        fontFamily: '"Inter", sans-serif'
+                      }
+                    },
+                      React.createElement('span', {
+                        style: {
+                          display: 'inline-block',
+                          width: '13px',
+                          height: '13px',
+                          border: '2px solid #0a0a1a',
+                          background: isSeaChecked ? '#0a0a1a' : 'transparent',
+                          textAlign: 'center',
+                          lineHeight: '11px',
+                          fontSize: '8px',
+                          color: isSeaChecked ? '#ffffff' : '#0a0a1a'
+                        }
+                      }, isSeaChecked ? '✓' : ''),
+                      'BY SEA'
+                    )
+                  )
+                )
+              )
+
+              FieldRow('IMPORTER/EXPORTER NAME', F('importerName'))
+              FieldRow('SUPPLIER NAME', F('supplierName'))
+              FieldRow('LOCATION', F('location'))
+              FieldRow('JOB ORDER NO', F('jobOrderNo'), 'DATE', F('jobOrderDate'))
+              FieldRow('BOE/SB NUMBER', F('boeSbNo'), 'DATE', F('boeSbDate'))
+              FieldRow('MAWB/MBL NUMBER', F('mawbMblNo'), 'DATE', F('mawbMblDate'))
+              FieldRow('HAWB/HBL NUMBER', F('hawbHblNo'), 'DATE', F('hawbHblDate'))
+              FieldRow('NO OF PACKAGES', F('noOfPackages'))
+              FieldRow('GROSS WEIGHT', F('grossWeight'))
+              
+              // Only show IGM for Sea shipments in print
+              if (isSeaShipment) {
+                FieldRow('IGM NUMBER & DT', F('igmNo'), 'DATE', F('igmDate'))
+                FieldRow('GATEWAY IGM', F('gatewayIgmNo'), 'DATE', F('gatewayIgmDate'))
+                FieldRow('LOCAL IGM', F('localIgmNo'), 'DATE', F('localIgmDate'))
+                FieldRow('CONTAINER NO', F('containerNo'))
+              }
+              
+              FieldRow('PORT OF DISCHARGE', F('portOfDischarge'))
+              FieldRow('PORT OF DESTINATION', F('portOfDestination'))
+              FieldRow('CARGO ARRIVAL NOTICE', '', 'DATE', '')
+              FieldRow('DELIVERY ORDER ISSUED DT', F('deliveryOrderDate'))
+              FieldRow('OCC DATE', F('occDate'))
+              FieldRow('GATE PASS DATE', F('gatePassDate'))
+              FieldRow('REMARKS / CONTAINER NO', F('remarks'))
+              
+              // ── FOR ACCOUNTS PURPOSE ── SECTION TITLE ──
+              SectionTitle('FOR ACCOUNTS PURPOSE')
+              
+              FieldRow('AGENT DEBIT NOTE', 'PAS FREIGHT SERVICES')
+              FieldRow('BILLING CURRENCY', F('billingCurrency'))
+              FieldRow('BILL NUMBER', F('billNo'), 'DATE', F('billDate'))
+              FieldRow('BILL TO', F('billTo'))
+              FieldRow('DOCKET NUMBER', F('docketNo'), 'DATE', F('docketDate'))
+              FieldRow('REMARKS', F('additionalRemarks'))
+              FieldRow('GSTIN', '29AALCP2369R1ZD')
 
               return rows
             })()
@@ -324,8 +598,18 @@ export default function ChecklistScanner() {
 
           // ═══ FOOTER ═══
           React.createElement('div', {
-            style: { textAlign: 'center', fontSize: '7px', color: '#9ca3af', marginTop: '16px', borderTop: '1px solid #e5e7eb', paddingTop: '8px' }
-          }, 'PAS Freight Services Pvt Ltd  •  ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) + '  •  Generated by PAS Checklist Scanner')
+            style: {
+              marginTop: '12px',
+              textAlign: 'center',
+              fontSize: '8.5px',
+              color: '#9ca3af',
+              borderTop: '1px solid #e5e7eb',
+              paddingTop: '8px',
+              fontWeight: '500',
+              fontFamily: '"Inter", sans-serif',
+              letterSpacing: '0.5px'
+            }
+          }, 'Page 1 of 1  •  Generated by PAS Checklist Scanner')
         )
       )
     ) : null
