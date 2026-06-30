@@ -184,12 +184,16 @@ export default function Dashboard({ defaultType = '' }) {
   const totalPages = data?.pagination?.totalPages || 0
   const overallTotal = totalStats || totalCount
 
-  // FIX: Export ALL shipments - both active AND archived
+  // FIX: Export ALL shipments - both active AND archived with timeout
   const handleExport = async () => {
     setExporting(true)
     try {
       // REMOVED isArchived parameter to export ALL shipments (active + archived)
-      const res = await api.get('/freight/export', { responseType: 'blob' })
+      // Added 5 minute timeout for large exports
+      const res = await api.get('/freight/export', { 
+        responseType: 'blob',
+        timeout: 300000 // 5 minutes timeout
+      })
       const url = window.URL.createObjectURL(new Blob([res.data]))
       const link = document.createElement('a')
       link.href = url
@@ -200,7 +204,8 @@ export default function Dashboard({ defaultType = '' }) {
       window.URL.revokeObjectURL(url)
       addToast('Export downloaded!', 'success')
     } catch (err) {
-      addToast('Failed to export', 'error')
+      console.error('Export error:', err)
+      addToast('Failed to export. Please try again.', 'error')
     } finally {
       setExporting(false)
     }
