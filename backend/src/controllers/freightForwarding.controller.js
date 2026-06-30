@@ -49,21 +49,138 @@ const deleteAllShipments = async (req, res) => {
   try { await prisma.statusHistory.deleteMany({}); await prisma.freightForwarding.deleteMany({}); await prisma.cHA.deleteMany({}); await prisma.accounts.deleteMany({}); await prisma.shipment.deleteMany({}); res.json({ status: 'success', message: 'All shipments deleted' }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed to delete all' }); }
 };
 
-// EXPORT
+// EXPORT - Include BOTH active and archived shipments in separate sheets
 const exportShipments = async (req, res) => {
   try {
-    const { status, search, isArchived } = req.query;
-    const where = { isArchived: isArchived === 'true' };
-    if (status) where.currentStatus = status;
-    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { freightForwarding: { mawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }, { freightForwarding: { customerName: { contains: search } } }];
-    const totalCount = await prisma.shipment.count({ where });
-    const BATCH_SIZE = 5000; let all = [];
-    for (let skip = 0; skip < totalCount; skip += BATCH_SIZE) {
-      const batch = await prisma.shipment.findMany({ where, select: { refNo: true, currentStatus: true, createdAt: true, shipmentStage: true, remarks: true, shipmentType: true, importExport: true, createdByName: true, freightForwarding: { select: { enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true, agent: true, fromLocation: true, toLocation: true, terms: true, sellingRate: true, weight: true, grossWeight: true, cbm: true, portLocation: true, bookingDate: true, etd: true, eta: true, mawb: true, hawb: true, awbDate: true, customerName: true, vehicleType: true, noOfContainers: true, packageType: true, deliveryDate: true, transportMode: true } }, cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, doCollectionDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, trackingNumber: true, sbNo: true, sbDate: true, leoDate: true, handOverDate: true } }, accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } } }, orderBy: { createdAt: 'desc' }, skip, take: BATCH_SIZE });
-      all = all.concat(batch);
+    const { status, search } = req.query;
+    
+    // Build where clause for active shipments (isArchived: false)
+    const activeWhere = { isArchived: false };
+    if (status) activeWhere.currentStatus = status;
+    if (search) {
+      activeWhere.OR = [
+        { refNo: { contains: search } },
+        { freightForwarding: { consigneeName: { contains: search } } },
+        { freightForwarding: { hawb: { contains: search } } },
+        { freightForwarding: { mawb: { contains: search } } },
+        { cha: { boeNo: { contains: search } } },
+        { cha: { sbNo: { contains: search } } },
+        { accounts: { invoiceNumber: { contains: search } } },
+        { freightForwarding: { customerName: { contains: search } } }
+      ];
     }
-    await exportShipmentsToExcel(all, res);
-  } catch (error) { console.error('Error exporting:', error); res.status(500).json({ status: 'error', message: 'Failed to export' }); }
+    
+    // Build where clause for archived shipments (isArchived: true)
+    const archivedWhere = { isArchived: true };
+    if (status) archivedWhere.currentStatus = status;
+    if (search) {
+      archivedWhere.OR = [
+        { refNo: { contains: search } },
+        { freightForwarding: { consigneeName: { contains: search } } },
+        { freightForwarding: { hawb: { contains: search } } },
+        { freightForwarding: { mawb: { contains: search } } },
+        { cha: { boeNo: { contains: search } } },
+        { cha: { sbNo: { contains: search } } },
+        { accounts: { invoiceNumber: { contains: search } } },
+        { freightForwarding: { customerName: { contains: search } } }
+      ];
+    }
+
+    const BATCH_SIZE = 5000;
+    
+    // Fetch active shipments
+    const activeTotal = await prisma.shipment.count({ where: activeWhere });
+    let activeShipments = [];
+    for (let skip = 0; skip < activeTotal; skip += BATCH_SIZE) {
+      const batch = await prisma.shipment.findMany({
+        where: activeWhere,
+        select: {
+          refNo: true, currentStatus: true, createdAt: true, shipmentStage: true,
+          remarks: true, shipmentType: true, importExport: true, createdByName: true,
+          isArchived: true,
+          freightForwarding: {
+            select: {
+              enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true,
+              agent: true, fromLocation: true, toLocation: true, terms: true,
+              sellingRate: true, weight: true, grossWeight: true, cbm: true,
+              portLocation: true, bookingDate: true, etd: true, eta: true,
+              mawb: true, hawb: true, awbDate: true, customerName: true,
+              vehicleType: true, noOfContainers: true, packageType: true,
+              deliveryDate: true, transportMode: true
+            }
+          },
+          cha: {
+            select: {
+              jobNo: true, checklistDate: true, boeNo: true, boeDate: true,
+              doCollectionDate: true, oocDate: true, gatePassDate: true,
+              deliveryDate: true, trackingNumber: true, sbNo: true, sbDate: true,
+              leoDate: true, handOverDate: true
+            }
+          },
+          accounts: {
+            select: {
+              invoiceNumber: true, invoiceDate: true, sendingDate: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: BATCH_SIZE
+      });
+      activeShipments = activeShipments.concat(batch);
+    }
+
+    // Fetch archived shipments
+    const archivedTotal = await prisma.shipment.count({ where: archivedWhere });
+    let archivedShipments = [];
+    for (let skip = 0; skip < archivedTotal; skip += BATCH_SIZE) {
+      const batch = await prisma.shipment.findMany({
+        where: archivedWhere,
+        select: {
+          refNo: true, currentStatus: true, createdAt: true, shipmentStage: true,
+          remarks: true, shipmentType: true, importExport: true, createdByName: true,
+          isArchived: true,
+          freightForwarding: {
+            select: {
+              enquiryDate: true, noOfPackages: true, consigneeName: true, shipperName: true,
+              agent: true, fromLocation: true, toLocation: true, terms: true,
+              sellingRate: true, weight: true, grossWeight: true, cbm: true,
+              portLocation: true, bookingDate: true, etd: true, eta: true,
+              mawb: true, hawb: true, awbDate: true, customerName: true,
+              vehicleType: true, noOfContainers: true, packageType: true,
+              deliveryDate: true, transportMode: true
+            }
+          },
+          cha: {
+            select: {
+              jobNo: true, checklistDate: true, boeNo: true, boeDate: true,
+              doCollectionDate: true, oocDate: true, gatePassDate: true,
+              deliveryDate: true, trackingNumber: true, sbNo: true, sbDate: true,
+              leoDate: true, handOverDate: true
+            }
+          },
+          accounts: {
+            select: {
+              invoiceNumber: true, invoiceDate: true, sendingDate: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: BATCH_SIZE
+      });
+      archivedShipments = archivedShipments.concat(batch);
+    }
+
+    // Combine both for the "All Shipments" sheet
+    const allShipments = [...activeShipments, ...archivedShipments];
+
+    // Call the updated excel export with all three datasets
+    await exportShipmentsToExcel(allShipments, activeShipments, archivedShipments, res);
+  } catch (error) {
+    console.error('Error exporting:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to export' });
+  }
 };
 
 // GET ALL — ✅ Added sellingRate, cbm, grossWeight for analytics
