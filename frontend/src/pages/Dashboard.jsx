@@ -184,17 +184,26 @@ export default function Dashboard({ defaultType = '' }) {
   const totalPages = data?.pagination?.totalPages || 0
   const overallTotal = totalStats || totalCount
 
+  // FIX: Export ALL shipments - both active AND archived
   const handleExport = async () => {
     setExporting(true)
     try {
-      const res = await api.get('/freight/export', { params: { isArchived: showArchived }, responseType: 'blob' })
+      // REMOVED isArchived parameter to export ALL shipments (active + archived)
+      const res = await api.get('/freight/export', { responseType: 'blob' })
       const url = window.URL.createObjectURL(new Blob([res.data]))
-      const link = document.createElement('a'); link.href = url
+      const link = document.createElement('a')
+      link.href = url
       link.setAttribute('download', `PAS_Shipments_${new Date().toISOString().split('T')[0]}.xlsx`)
-      document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
       addToast('Export downloaded!', 'success')
-    } catch (err) { addToast('Failed to export', 'error') }
-    finally { setExporting(false) }
+    } catch (err) {
+      addToast('Failed to export', 'error')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const archiveMutation = useMutation({
