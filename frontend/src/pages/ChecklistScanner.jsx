@@ -553,8 +553,11 @@ export default function ChecklistScanner() {
                 )
               )
 
-              FieldRow('IMPORTER/EXPORTER NAME', F('importerName'))
+              // ── SEPARATE FIELDS FOR IMPORTER, EXPORTER, SUPPLIER ──
+              FieldRow('IMPORTER NAME', F('importerName'))
+              FieldRow('EXPORTER NAME', F('exporterName'))
               FieldRow('SUPPLIER NAME', F('supplierName'))
+              
               FieldRow('LOCATION', F('location'))
               FieldRow('JOB ORDER NO', F('jobOrderNo'), 'DATE', F('jobOrderDate'))
               FieldRow('BOE/SB NUMBER', F('boeSbNo'), 'DATE', F('boeSbDate'))
@@ -585,7 +588,6 @@ export default function ChecklistScanner() {
               FieldRow('BILL NUMBER', F('billNo'), 'DATE', F('billDate'))
               FieldRow('BILL TO', F('billTo'))
               FieldRow('DOCKET NUMBER', F('docketNo'), 'DATE', F('docketDate'))
-              // FIX: REMARKS should be empty - not showing GSTIN
               FieldRow('REMARKS', '')
               FieldRow('GSTIN', '29AALCP2369R1ZD')
 

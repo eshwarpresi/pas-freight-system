@@ -128,7 +128,7 @@ function parseChecklistUniversal(items) {
 
   function cleanCompanyName(name) {
     if (!name) return '';
-    return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN)\s*$/i, '').trim();
+    return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN|SERVICES)\s*$/i, '').trim();
   }
 
   // ── DETECT SHIPMENT TYPE ──
@@ -160,7 +160,7 @@ function parseChecklistUniversal(items) {
     /Shipment\s*Mode\s*:?\s*(\S)/i
   ], rawText);
 
-  // ── IMPORTER/EXPORTER NAME ──
+  // ── IMPORTER NAME ──
   result.importerName = tryPatterns([
     /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:LIMITED|PRIVATE|INTEGRATORS|TECHNOLOGY|LTD)[\w\s]*?)(?:\s+#|\s{2,}|\s+\d)/i,
     /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT|INC|CORP|CO\.?)(?:[\w\s]*?))(?:\s+#|\s{2,})/i,
@@ -172,17 +172,28 @@ function parseChecklistUniversal(items) {
   ], rawText);
   result.importerName = cleanCompanyName(result.importerName);
 
-  // ── SUPPLIER NAME ──
-  result.supplierName = tryPatterns([
-    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
+  // ── EXPORTER NAME ──
+  result.exporterName = tryPatterns([
+    /Exporter\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
+    /Exporter\s+Details\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
+    /Supplier\s+Details[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
     /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
     /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
     /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
+    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
+  ], rawText);
+  result.exporterName = cleanCompanyName(result.exporterName);
+
+  // ── SUPPLIER NAME ──
+  result.supplierName = tryPatterns([
+    /Supplier\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
     /SUPPLIER\s+DETAILS[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
-    /Supplier\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT)[\w\s]*)/i
+    /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
+    /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
+    /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
+    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
   ], rawText);
   result.supplierName = cleanCompanyName(result.supplierName);
-  result.exporterName = result.supplierName;
 
   // ── LOCATION ──
   result.location = tryPatterns([
