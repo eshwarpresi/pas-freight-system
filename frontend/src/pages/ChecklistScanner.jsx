@@ -110,18 +110,21 @@ export default function ChecklistScanner() {
   var F = function(key) { return (formData && formData[key]) || '' }
   var U = function(key) { return function(e) { updateField(key, e.target.value) } }
 
-  // ── UPDATED SF FUNCTION WITH BOE/SB HANDLING ──
+  // ── FIXED SF FUNCTION ──
   var SF = function(label, key) {
     var val = F(key)
     var isBoeSb = key === 'boeSbNo'
     var isBoeSbDate = key === 'boeSbDate'
+    var hasBoeNo = F('boeSbNo')
     
     // For BOE/SB Date - hide if no BOE/SB Number
-    if (isBoeSbDate && !F('boeSbNo')) {
+    if (isBoeSbDate && !hasBoeNo) {
       return React.createElement('div', { className: 'mb-2' },
         React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
         React.createElement('input', {
-          type: 'text', value: '', onChange: U(key),
+          type: 'text',
+          value: '',
+          onChange: U(key),
           placeholder: 'Waiting for BOE/SB Number',
           className: 'w-full px-3 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400',
           style: { borderColor: '#e5e7eb', color: '#9ca3af', background: '#f9fafb' }
@@ -135,7 +138,9 @@ export default function ChecklistScanner() {
       return React.createElement('div', { className: 'mb-2' },
         React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
         React.createElement('input', {
-          type: 'text', value: val, onChange: U(key),
+          type: 'text',
+          value: val,
+          onChange: U(key),
           placeholder: 'Will appear after filing',
           className: 'w-full px-3 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400',
           style: { borderColor: '#e5e7eb', color: '#0a0a1a', background: '#fff' }
@@ -148,7 +153,9 @@ export default function ChecklistScanner() {
     return React.createElement('div', { className: 'mb-2' },
       React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
       React.createElement('input', {
-        type: 'text', value: val, onChange: U(key),
+        type: 'text',
+        value: val,
+        onChange: U(key),
         placeholder: 'Enter ' + label.toLowerCase(),
         className: 'w-full px-3 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400',
         style: { borderColor: val ? '#10b981' : '#e5e7eb', color: '#0a0a1a', background: val ? '#f0fdf4' : '#fff' }
@@ -263,7 +270,7 @@ export default function ChecklistScanner() {
       ),
 
       // ═══════════════════════════════════════════
-      // FINAL OFFICE DOCKET - PREMIUM GOOGLE/MICROSOFT STYLE
+      // FINAL OFFICE DOCKET - PREMIUM STYLE
       // ═══════════════════════════════════════════
       React.createElement('div', {
         id: 'checklist-print-content',
@@ -658,7 +665,7 @@ export default function ChecklistScanner() {
                 )
               )
 
-              // ── SEPARATE FIELDS FOR IMPORTER, EXPORTER, SUPPLIER ──
+              // ── SEPARATE FIELDS ──
               FieldRow('IMPORTER NAME', F('importerName'))
               FieldRow('EXPORTER NAME', F('exporterName'))
               FieldRow('SUPPLIER NAME', F('supplierName'))
