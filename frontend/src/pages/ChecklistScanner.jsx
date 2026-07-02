@@ -110,8 +110,41 @@ export default function ChecklistScanner() {
   var F = function(key) { return (formData && formData[key]) || '' }
   var U = function(key) { return function(e) { updateField(key, e.target.value) } }
 
+  // ── UPDATED SF FUNCTION WITH BOE/SB HANDLING ──
   var SF = function(label, key) {
     var val = F(key)
+    var isBoeSb = key === 'boeSbNo'
+    var isBoeSbDate = key === 'boeSbDate'
+    
+    // For BOE/SB Date - hide if no BOE/SB Number
+    if (isBoeSbDate && !F('boeSbNo')) {
+      return React.createElement('div', { className: 'mb-2' },
+        React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
+        React.createElement('input', {
+          type: 'text', value: '', onChange: U(key),
+          placeholder: 'Waiting for BOE/SB Number',
+          className: 'w-full px-3 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400',
+          style: { borderColor: '#e5e7eb', color: '#9ca3af', background: '#f9fafb' }
+        }),
+        React.createElement('span', { className: 'text-[9px] text-gray-400 font-semibold mt-0.5 block' }, '⏳ Waiting for BOE/SB Number')
+      )
+    }
+    
+    // For BOE/SB Number - show neutral state if empty
+    if (isBoeSb && !val) {
+      return React.createElement('div', { className: 'mb-2' },
+        React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
+        React.createElement('input', {
+          type: 'text', value: val, onChange: U(key),
+          placeholder: 'Will appear after filing',
+          className: 'w-full px-3 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400',
+          style: { borderColor: '#e5e7eb', color: '#0a0a1a', background: '#fff' }
+        }),
+        React.createElement('span', { className: 'text-[9px] text-gray-400 font-semibold mt-0.5 block' }, '⏳ Not yet filed')
+      )
+    }
+    
+    // Default behavior for all other fields
     return React.createElement('div', { className: 'mb-2' },
       React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
       React.createElement('input', {
@@ -632,7 +665,14 @@ export default function ChecklistScanner() {
               
               FieldRow('LOCATION', F('location'))
               FieldRow('JOB ORDER NO', F('jobOrderNo'), 'DATE', F('jobOrderDate'))
-              FieldRow('BOE/SB NUMBER', F('boeSbNo'), 'DATE', F('boeSbDate'))
+              
+              // ── BOE/SB NUMBER - ONLY SHOW DATE IF NUMBER EXISTS ──
+              (function() {
+                var boeNo = F('boeSbNo');
+                var boeDate = F('boeSbDate');
+                FieldRow('BOE/SB NUMBER', boeNo, boeNo ? 'DATE' : null, boeNo ? boeDate : '')
+              })()
+              
               FieldRow('MAWB/MBL NUMBER', F('mawbMblNo'), 'DATE', F('mawbMblDate'))
               FieldRow('HAWB/HBL NUMBER', F('hawbHblNo'), 'DATE', F('hawbHblDate'))
               FieldRow('NO OF PACKAGES', F('noOfPackages'))

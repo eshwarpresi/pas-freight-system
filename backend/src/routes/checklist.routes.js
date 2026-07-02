@@ -128,7 +128,7 @@ function parseChecklistUniversal(items) {
 
   function cleanCompanyName(name) {
     if (!name) return '';
-    return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN|SERVICES)\s*$/i, '').trim();
+    return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN|SERVICES|CO\.?|LTD|PTE|PVT|PRIVATE|LIMITED)\s*$/i, '').trim();
   }
 
   // ── DETECT SHIPMENT TYPE ──
@@ -184,15 +184,28 @@ function parseChecklistUniversal(items) {
   ], rawText);
   result.exporterName = cleanCompanyName(result.exporterName);
 
-  // ── SUPPLIER NAME ──
+  // ── SUPPLIER NAME ── ENHANCED WITH MULTIPLE FALLBACKS ──
   result.supplierName = tryPatterns([
-    /Supplier\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
-    /SUPPLIER\s+DETAILS[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
+    /Supplier\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*)/i,
+    /SUPPLIER\s+DETAILS[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY|MANUFACTURING|TRADING)[\w\s]*)/i,
     /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
     /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
     /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
-    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
+    /(SAMSUNG\s+ELECTRONICS\s+CO\.?\s*LTD)/i,
+    /(LG\s+ELECTRONICS\s+INC\.?)/i,
+    /(SONY\s+CORPORATION)/i,
+    /(PANASONIC\s+CORPORATION)/i,
+    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY|MANUFACTURING|TRADING)[\w\s]*)/i,
+    /INVOICE\s+DETAILS[\s\S]{0,300}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*?)(?:\s+\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\s+[A-Z]+\s+\d+)/i,
+    /ITEM\s+DETAILS[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*?)(?:\s+\d+\s*[A-Z]{3}|\s+\d+\.\d+)/i,
+    /\b([A-Z][A-Z\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)\s*[A-Z\s]*)(?:\s+[A-Z]{3}|\s+\d+[-\/]\d+)/i,
+    /(?:SUPPLIER|VENDOR)\s*:?\s*([A-Z][\w\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*)/i
   ], rawText);
+  
+  // ── FALLBACK: If supplierName still empty, try to get from exporterName ──
+  if (!result.supplierName && result.exporterName) {
+    result.supplierName = result.exporterName;
+  }
   result.supplierName = cleanCompanyName(result.supplierName);
 
   // ── LOCATION ──
@@ -214,17 +227,32 @@ function parseChecklistUniversal(items) {
   ], rawText);
 
   // ── BOE/SB NUMBER + DATE ──
-  result.boeSbNo = tryPatterns([
+  // Only extract BOE/SB Number if it's a valid number (not just date)
+  var boeSbNo = tryPatterns([
     /B\.?E\s*No[,\s]*Date\s*:\s*(\d+)/i,
     /BOE\s*No\s*:?\s*(\d+)/i,
     /SB\s*No\s*:?\s*(\d+)/i
   ], rawText);
   
-  result.boeSbDate = tryPatterns([
-    /B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Printed\s*On\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /BOE\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-  ], rawText);
+  // Validate: Only set if it's a valid number with at least 3 digits
+  if (boeSbNo && /^\d+$/.test(boeSbNo) && boeSbNo.length >= 3) {
+    result.boeSbNo = boeSbNo;
+  } else {
+    result.boeSbNo = '';
+  }
+  
+  // Only extract BOE/SB Date if we have a valid BOE/SB Number
+  if (result.boeSbNo) {
+    result.boeSbDate = tryPatterns([
+      /B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /Printed\s*On\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /BOE\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /SB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], rawText);
+  } else {
+    result.boeSbDate = '';
+  }
 
   // ── MAWB/MBL NUMBER + DATE (AIR vs SEA specific) ──
   if (isAir) {
@@ -257,20 +285,17 @@ function parseChecklistUniversal(items) {
       /HAWB\s*:?\s*([A-Z0-9]+)/i
     ], rawText);
     
-    // FIX: Better HAWB/HBL date extraction for Air
     if (result.hawbHblNo) {
       var escH = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       var dateH = rawText.match(new RegExp(escH + '[\\s\\S]{0,150}?(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
       if (dateH) {
         result.hawbHblDate = dateH[1];
       } else {
-        // Try direct pattern: HBL/HAWB : OGC2606474 Date : 21/06/2026
         var directDate = rawText.match(/HBL\/\s*HAWB\s*:\s*[A-Z0-9]+\s+Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
         if (directDate) result.hawbHblDate = directDate[1];
       }
     }
     
-    // If still no date, try general patterns
     if (!result.hawbHblDate) {
       result.hawbHblDate = tryPatterns([
         /HAWB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
@@ -360,18 +385,16 @@ function parseChecklistUniversal(items) {
     ], rawText);
   }
 
-  // ── CONTAINER NUMBER (SEA only) - ULTIMATE FIX ──
+  // ── CONTAINER NUMBER (SEA only) ──
   if (isSea) {
     var containerMatch = null;
     var invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
     
-    // Pattern 1: Look for container number near "Signature" or "CHA" patterns
     var signatureMatch = rawText.match(/Signature\s+\b([A-Z]{4}\d{7})\b/i);
     if (signatureMatch && !invalidPrefixes.test(signatureMatch[1])) {
       containerMatch = signatureMatch;
     }
     
-    // Pattern 2: CONTAINER DETAILS section
     if (!containerMatch) {
       var containerSection = rawText.match(/CONTAINER\s+DETAILS[\s\S]{0,500}/i);
       if (containerSection) {
@@ -382,7 +405,6 @@ function parseChecklistUniversal(items) {
       }
     }
     
-    // Pattern 3: IGM SL.NO CHA CONTAINER NO pattern
     if (!containerMatch) {
       var igmMatch = rawText.match(/IGM\s+SL\.?NO\s+CHA[\s\S]{0,300}?\b([A-Z]{4}\d{7})\b/i);
       if (igmMatch && !invalidPrefixes.test(igmMatch[1])) {
@@ -390,7 +412,6 @@ function parseChecklistUniversal(items) {
       }
     }
     
-    // Pattern 4: CONTAINER NO with label
     if (!containerMatch) {
       var labelMatch = rawText.match(/CONTAINER\s+(?:NO\.?|NUMBER)[\s\S]{0,300}?\b([A-Z]{4}\d{7})\b/i);
       if (labelMatch && !invalidPrefixes.test(labelMatch[1])) {
@@ -398,7 +419,6 @@ function parseChecklistUniversal(items) {
       }
     }
     
-    // Pattern 5: Look for specific container prefixes (TLLU, MSCU, TCKU, TWCU, etc.)
     if (!containerMatch) {
       var specificMatch = rawText.match(/\b(TLLU|MSCU|TCKU|OOCU|TRLU|SCZU|MRKU|GESU|HLCU|TGHU|TCLU|TEXU|TRIU|TSLU|TTAU|TTNU|TTSU|TTTU|TTUU|TTVU|TTWU|TTXU|TTYU|TTZU|TWCU)\d{7}\b/i);
       if (specificMatch) {
@@ -406,11 +426,9 @@ function parseChecklistUniversal(items) {
       }
     }
     
-    // Pattern 6: Standalone container number with validation
     if (!containerMatch) {
       var allMatches = rawText.match(/\b([A-Z]{4}\d{7})\b/g);
       if (allMatches) {
-        // Filter out MBL/MAWB numbers
         var validContainers = allMatches.filter(function(c) {
           return !invalidPrefixes.test(c);
         });
@@ -420,10 +438,8 @@ function parseChecklistUniversal(items) {
       }
     }
     
-    // Validate and set container number
     if (containerMatch && containerMatch[1]) {
       var container = containerMatch[1];
-      // Verify it's a valid container format (4 letters + 7 digits)
       if (/^[A-Z]{4}\d{7}$/.test(container) && !invalidPrefixes.test(container)) {
         result.containerNo = container;
       }
@@ -529,7 +545,6 @@ function parseChecklistUniversal(items) {
   ], rawText);
   result.billTo = cleanCompanyName(result.billTo);
   
-  // Fallback: Use importerName if billTo is empty
   if (!result.billTo && result.importerName) {
     result.billTo = result.importerName;
   }
@@ -541,7 +556,6 @@ function parseChecklistUniversal(items) {
     /Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i
   ], rawText);
   
-  // If docketNo is just a number, add prefix
   if (result.docketNo && /^\d+$/.test(result.docketNo)) {
     result.docketNo = 'JOB-' + result.docketNo;
   }
