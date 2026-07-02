@@ -111,7 +111,7 @@ export default function ChecklistScanner() {
   var U = function(key) { return function(e) { updateField(key, e.target.value) } }
 
   // ── FIXED SF FUNCTION ──
-  var SF = function(label, key) {
+  function SF(label, key) {
     var val = F(key)
     var isBoeSb = key === 'boeSbNo'
     var isBoeSbDate = key === 'boeSbDate'
@@ -119,7 +119,9 @@ export default function ChecklistScanner() {
     
     // For BOE/SB Date - hide if no BOE/SB Number
     if (isBoeSbDate && !hasBoeNo) {
-      return React.createElement('div', { className: 'mb-2' },
+      return React.createElement(
+        'div',
+        { className: 'mb-2' },
         React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
         React.createElement('input', {
           type: 'text',
@@ -135,7 +137,9 @@ export default function ChecklistScanner() {
     
     // For BOE/SB Number - show neutral state if empty
     if (isBoeSb && !val) {
-      return React.createElement('div', { className: 'mb-2' },
+      return React.createElement(
+        'div',
+        { className: 'mb-2' },
         React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
         React.createElement('input', {
           type: 'text',
@@ -150,7 +154,9 @@ export default function ChecklistScanner() {
     }
     
     // Default behavior for all other fields
-    return React.createElement('div', { className: 'mb-2' },
+    return React.createElement(
+      'div',
+      { className: 'mb-2' },
       React.createElement('label', { className: 'text-[10px] font-bold uppercase tracking-wider mb-1 block', style: { color: '#666' } }, label),
       React.createElement('input', {
         type: 'text',
