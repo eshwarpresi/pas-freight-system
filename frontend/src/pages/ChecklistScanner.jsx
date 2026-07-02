@@ -95,7 +95,8 @@ export default function ChecklistScanner() {
       const imgData = canvas.toDataURL('image/png')
       const pdf = new jsPDF('p', 'mm', 'a4')
       const pdfWidth = 210
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width
+      // FIX: Changed const to let so we can reassign if needed
+      let pdfHeight = (canvas.height * pdfWidth) / canvas.width
       if (pdfHeight > 297) pdfHeight = 297
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
       pdf.save('PAS_Checklist_' + (F('referenceNumber') || 'Report') + '.pdf')
