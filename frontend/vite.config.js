@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
-import { writeFileSync } from 'fs'
+import { writeFileSync, existsSync, mkdirSync } from 'fs'
 
 export default defineConfig({
   plugins: [
@@ -11,7 +11,19 @@ export default defineConfig({
     {
       name: 'render-redirect',
       closeBundle() {
-        writeFileSync(resolve(__dirname, 'dist', '_redirects'), '/*    /index.html   200\n')
+        try {
+          // Ensure dist directory exists
+          const distDir = resolve(__dirname, 'dist')
+          if (!existsSync(distDir)) {
+            mkdirSync(distDir, { recursive: true })
+          }
+          // Write _redirects file
+          const redirectPath = resolve(distDir, '_redirects')
+          writeFileSync(redirectPath, '/*    /index.html   200\n')
+          console.log('✅ _redirects file created for Render SPA routing')
+        } catch (err) {
+          console.warn('⚠️ Could not create _redirects file:', err.message)
+        }
       }
     }
   ],
