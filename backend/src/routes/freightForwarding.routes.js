@@ -2,76 +2,58 @@ const express = require('express');
 const router = express.Router();
 const freightController = require('../controllers/freightForwarding.controller');
 
-// CREATE - New Shipment Enquiry
+// ─── CREATE ───
 router.post('/shipments', freightController.createShipment);
 
-// GET - Export to Excel (MUST be before /:id route)
+// ─── EXPORT (MUST be before /:id route) ───
 router.get('/export', freightController.exportShipments);
 
-// GET - All Shipments (with filters)
+// ─── GET ALL SHIPMENTS (with filters) ───
 router.get('/shipments', freightController.getAllShipments);
 
-// GET - Single Shipment by ID
+// ─── GET BIN (DELETED) SHIPMENTS ───
+router.get('/shipments/bin', freightController.getBinShipments);
+
+// ─── GET BIN COUNT ───
+router.get('/shipments/bin/count', freightController.getBinCount);
+
+// ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);
 
-// DELETE - Single Shipment
+// ─── SOFT DELETE (MOVE TO BIN) ───
+router.delete('/shipments/:id/delete', freightController.softDeleteShipment);
+
+// ─── RESTORE FROM BIN ───
+router.put('/shipments/:id/restore', freightController.restoreShipment);
+
+// ─── BULK RESTORE FROM BIN ───
+router.put('/shipments/bin/restore-bulk', freightController.bulkRestoreShipments);
+
+// ─── DELETE SINGLE (Original - keeping for backward compatibility) ───
+// This is a hard delete - use with caution or remove entirely
 router.delete('/shipments/:id', freightController.deleteShipment);
 
-// DELETE - All Shipments
+// ─── DELETE ALL ───
 router.delete('/shipments', freightController.deleteAllShipments);
 
-// UPDATE - Reference Number
+// ─── UPDATE ROUTES ───
 router.put('/shipments/:id/refno', freightController.updateRefNo);
-
-// UPDATE - Rates
 router.put('/shipments/:id/rates', freightController.updateRates);
-
-// UPDATE - CBM
 router.put('/shipments/:id/cbm', freightController.updateCBM);
-
-// UPDATE - Nomination
 router.put('/shipments/:id/nomination', freightController.updateNomination);
-
-// UPDATE - Booking
 router.put('/shipments/:id/booking', freightController.updateBooking);
-
-// UPDATE - Schedule (ETD/ETA)
 router.put('/shipments/:id/schedule', freightController.updateSchedule);
-
-// UPDATE - AWB Details
 router.put('/shipments/:id/awb', freightController.updateAWB);
-
-// UPDATE - Shipment Stage
 router.put('/shipments/:id/stage', freightController.updateStage);
-
-// UPDATE - Remarks
 router.put('/shipments/:id/remarks', freightController.updateRemarks);
-
-// UPDATE - From Location
 router.put('/shipments/:id/fromlocation', freightController.updateFromLocation);
-
-// UPDATE - To Location
 router.put('/shipments/:id/tolocation', freightController.updateToLocation);
-
-// UPDATE - Terms
 router.put('/shipments/:id/terms', freightController.updateTerms);
-
-// UPDATE - Port Location
 router.put('/shipments/:id/portlocation', freightController.updatePortLocation);
-
-// UPDATE - Shipment Type (Mode)
 router.put('/shipments/:id/shipmenttype', freightController.updateShipmentType);
-
-// UPDATE - Import/Export
 router.put('/shipments/:id/importexport', freightController.updateImportExport);
-
-// UPDATE - Consignee
 router.put('/shipments/:id/consignee', freightController.updateConsignee);
-
-// UPDATE - Shipper
 router.put('/shipments/:id/shipper', freightController.updateShipper);
-
-// UPDATE - Agent
 router.put('/shipments/:id/agent', freightController.updateAgent);
 
 module.exports = router;

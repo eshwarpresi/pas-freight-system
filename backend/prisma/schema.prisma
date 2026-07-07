@@ -39,7 +39,12 @@ model Shipment {
   currentStatus String  @default("ENQUIRY") // ShipmentStatus values
   isArchived   Boolean  @default(false)
   
-  // NEW FIELDS
+  // ─── BIN / TRASH FIELDS (NEW) ───
+  isDeleted    Boolean  @default(false) // Soft delete flag
+  deletedAt    DateTime? // When moved to bin
+  deletedBy    String?   // Who deleted it (name or email)
+  
+  // ─── EXISTING FIELDS ───
   shipmentStage String?  // Draft, Created, Confirmed, Booked, Scheduled, In Progress, Completed, Cancelled, On Hold
   remarks       String?  // Manual notes/comments
   shipmentType  String?  // Mode: Air, Sea FCL, Sea LCL, Courier, Transport etc.
