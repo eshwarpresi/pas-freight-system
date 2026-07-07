@@ -96,11 +96,14 @@ export default function Dashboard({ defaultType = '' }) {
     }
   }, [defaultType])
 
-  // ─── TOTAL STATS ───
+  // ─── TOTAL STATS - CORRECT QUERY KEY ───
   const { data: totalStats } = useQuery({
-    queryKey: ['shipments-total-stats'],
+    queryKey: ['shipments-total-stats', showArchived],
     queryFn: async () => {
-      const res = await api.get('/freight/shipments', { params: { isArchived: 'false', page: 1, limit: 1 } })
+      const isArchivedParam = showArchived ? 'true' : 'false'
+      const res = await api.get('/freight/shipments', { 
+        params: { isArchived: isArchivedParam, page: 1, limit: 1 } 
+      })
       return res.data.pagination?.total || 0
     },
     staleTime: 120000,
@@ -321,15 +324,36 @@ export default function Dashboard({ defaultType = '' }) {
     onError: () => addToast('Failed to restore shipments', 'error')
   })
 
-  // ─── ANALYTICS ───
+  // ─── ANALYTICS - FIXED FOR ACTIVE AND ARCHIVE ───
   const analytics = useMemo(() => {
     const d = shipments.filter(s => s.currentStatus === 'DELIVERED' || s.currentStatus === 'HAND_OVER').length
     const t = shipments.filter(s => ['BOOKED','SCHEDULED','AWB_GENERATED'].includes(s.currentStatus)).length
     const c = shipments.filter(s => ['CHECKLIST_APPROVED','BOE_FILED','OOC_DONE'].includes(s.currentStatus)).length
     const p = shipments.filter(s => ['ENQUIRY','RATES_ADDED','NOMINATED'].includes(s.currentStatus)).length
     const i = shipments.filter(s => ['INVOICE_GENERATED','INVOICE_SENT'].includes(s.currentStatus)).length
-    return { delivered: d, inTransit: t, customs: c, pending: p, invoiced: i, deliveryRate: overallTotal > 0 ? Math.round((d / overallTotal) * 100) : 0 }
-  }, [shipments, overallTotal])
+    
+    const delivered = d;
+    const total = shipments.length;
+    
+    // FIX: In Archive view, all shipments are COMPLETED
+    let deliveryRate = 0;
+    if (showArchived) {
+      // All archived shipments are completed
+      deliveryRate = total > 0 ? 100 : 0;
+    } else {
+      // Active view: calculate based on delivered / total
+      deliveryRate = total > 0 ? Math.round((delivered / total) * 100) : 0;
+    }
+    
+    return { 
+      delivered: d, 
+      inTransit: t, 
+      customs: c, 
+      pending: p, 
+      invoiced: i, 
+      deliveryRate: deliveryRate 
+    }
+  }, [shipments, showArchived])
 
   const toggleSelectAll = () => { if (selected.length === shipments.length) setSelected([]); else setSelected(shipments.map(s => s.id)) }
   const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -357,9 +381,18 @@ export default function Dashboard({ defaultType = '' }) {
   const hasFilters = search||statusFilter||shipmentTypeFilter; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
+  
+  // ─── STAT CARDS - FIXED FOR ARCHIVE VIEW ───
   const statCards = [
     { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments' },
-    { label: 'In Progress', value: analytics.pending + analytics.inTransit + analytics.customs, icon: Clock, gradient: statGradients[1], desc: 'Enquiry to Customs' },
+    // FIX: In Archive view, "In Progress" should be 0
+    { 
+      label: showArchived ? 'Completed' : 'In Progress', 
+      value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pending + analytics.inTransit + analytics.customs, 
+      icon: showArchived ? CheckCircle2 : Clock, 
+      gradient: showArchived ? statGradients[2] : statGradients[1], 
+      desc: showArchived ? 'All archived shipments' : 'Enquiry to Customs' 
+    },
     { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed' },
     { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent' },
   ]
@@ -469,7 +502,7 @@ export default function Dashboard({ defaultType = '' }) {
             <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-2 overflow-hidden">
               <div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700 animate-pulse-glow" style={{width:`${analytics.deliveryRate}%`}}/>
             </div>
-            <p className="text-[10px] text-[var(--text-muted)] mt-1.5">{analytics.delivered} of {overallTotal} shipments delivered / handed over</p>
+            <p className="text-[10px] text-[var(--text-muted)] mt-1.5">{analytics.delivered} of {shipments.length} shipments delivered / handed over</p>
           </div>
         </>
       )}
@@ -509,7 +542,6 @@ export default function Dashboard({ defaultType = '' }) {
                 <button onClick={() => bulkRestoreMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg">
                   <RotateIcon size={13}/> Restore Selected
                 </button>
-                {/* ❌ REMOVED: Permanent Delete button */}
               </>
             ) : (
               <>
@@ -642,7 +674,6 @@ export default function Dashboard({ defaultType = '' }) {
                               <button onClick={() => restoreMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5">
                                 <RotateIcon size={12}/> Restore
                               </button>
-                              {/* ❌ REMOVED: Permanent Delete button */}
                             </>
                           ) : (
                             <>
@@ -726,7 +757,6 @@ export default function Dashboard({ defaultType = '' }) {
                         <button onClick={() => restoreMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5">
                           <RotateIcon size={12}/> Restore
                         </button>
-                        {/* ❌ REMOVED: Permanent Delete button */}
                       </>
                     ) : (
                       <>

@@ -7,15 +7,46 @@ router.put('/shipments/:id/archive', async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Get shipment with all related data
+    const existing = await prisma.shipment.findUnique({
+      where: { id },
+      include: {
+        accounts: true,
+        freightForwarding: true,
+        cha: true
+      }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Shipment not found' });
+    }
+
+    // ─── VALIDATE: Only INVOICE_SENT or INVOICE_GENERATED can be archived ───
+    const allowedStatuses = ['INVOICE_SENT', 'INVOICE_GENERATED'];
+    const isAllowed = allowedStatuses.includes(existing.currentStatus);
+    
+    if (!isAllowed) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: `Cannot archive shipment with status: ${existing.currentStatus}. Only INVOICE_SENT or INVOICE_GENERATED shipments can be archived.`,
+        currentStatus: existing.currentStatus,
+        allowedStatuses: allowedStatuses
+      });
+    }
+
+    // ─── SET ORIGINAL STATUS BEFORE ARCHIVING ───
+    const originalStatus = existing.currentStatus;
+
     const shipment = await prisma.shipment.update({
       where: { id },
       data: {
         isArchived: true,
-        isDeleted: false, // Ensure not in bin
+        isDeleted: false,
+        currentStatus: 'COMPLETED',
         statusHistory: {
           create: {
             status: 'COMPLETED',
-            remarks: 'Shipment archived'
+            remarks: `Shipment archived (Original status: ${originalStatus} | Invoice: ${existing.accounts?.invoiceNumber || 'N/A'})`
           }
         }
       },
@@ -27,7 +58,11 @@ router.put('/shipments/:id/archive', async (req, res) => {
       }
     });
 
-    res.json({ status: 'success', data: shipment });
+    res.json({ 
+      status: 'success', 
+      data: shipment,
+      message: 'Shipment archived successfully'
+    });
   } catch (error) {
     console.error('Error archiving shipment:', error);
     res.status(500).json({ status: 'error', message: 'Failed to archive' });
@@ -40,11 +75,52 @@ router.put('/shipments/:id/unarchive', async (req, res) => {
   try {
     const { id } = req.params;
     
+    const existing = await prisma.shipment.findUnique({
+      where: { id },
+      include: {
+        statusHistory: {
+          orderBy: { createdAt: 'desc' },
+          take: 10
+        }
+      }
+    });
+
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Shipment not found' });
+    }
+
+    // Find the status before COMPLETED (original status)
+    let originalStatus = 'ENQUIRY';
+    const history = existing.statusHistory || [];
+    
+    // Find the last status before 'COMPLETED'
+    for (let i = 0; i < history.length; i++) {
+      if (history[i].status === 'COMPLETED' && i + 1 < history.length) {
+        originalStatus = history[i + 1].status || 'ENQUIRY';
+        break;
+      }
+    }
+    
+    // If no previous status found, try to find any non-COMPLETED status
+    if (originalStatus === 'COMPLETED' || originalStatus === 'ENQUIRY') {
+      const nonCompletedStatus = history.find(h => h.status !== 'COMPLETED' && h.status !== 'ARCHIVED');
+      if (nonCompletedStatus) {
+        originalStatus = nonCompletedStatus.status;
+      }
+    }
+
     const shipment = await prisma.shipment.update({
       where: { id },
       data: { 
         isArchived: false,
-        isDeleted: false // Remove from bin if restored
+        isDeleted: false,
+        currentStatus: originalStatus,
+        statusHistory: {
+          create: {
+            status: 'RESTORED',
+            remarks: `Shipment restored from archive (Restored to: ${originalStatus})`
+          }
+        }
       },
       include: {
         freightForwarding: true,
@@ -54,7 +130,11 @@ router.put('/shipments/:id/unarchive', async (req, res) => {
       }
     });
 
-    res.json({ status: 'success', data: shipment });
+    res.json({ 
+      status: 'success', 
+      data: shipment,
+      message: 'Shipment restored from archive'
+    });
   } catch (error) {
     console.error('Error unarchiving shipment:', error);
     res.status(500).json({ status: 'error', message: 'Failed to unarchive' });
@@ -67,11 +147,9 @@ router.put('/shipments/:id/delete', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Get user info from request
     const user = req.user || {};
     const deletedByName = user.name || user.email || 'Unknown';
     
-    // Get shipment before updating to store original status
     const existing = await prisma.shipment.findUnique({
       where: { id }
     });
@@ -80,7 +158,6 @@ router.put('/shipments/:id/delete', async (req, res) => {
       return res.status(404).json({ status: 'error', message: 'Shipment not found' });
     }
 
-    // Check if already in bin
     if (existing.isDeleted) {
       return res.status(400).json({ 
         status: 'error', 
@@ -92,10 +169,9 @@ router.put('/shipments/:id/delete', async (req, res) => {
       where: { id },
       data: {
         isDeleted: true,
-        isArchived: false, // Remove from archive
+        isArchived: false,
         deletedAt: new Date(),
         deletedBy: deletedByName,
-        // Store original status before deletion
         statusHistory: {
           create: {
             status: 'DELETED',
@@ -131,7 +207,6 @@ router.put('/shipments/:id/restore', async (req, res) => {
     const user = req.user || {};
     const restoredByName = user.name || user.email || 'Unknown';
     
-    // Get shipment to check original status
     const existing = await prisma.shipment.findUnique({
       where: { id },
       include: {
@@ -153,11 +228,9 @@ router.put('/shipments/:id/restore', async (req, res) => {
       });
     }
 
-    // Find the original status before deletion
     let originalStatus = 'ENQUIRY';
     const history = existing.statusHistory || [];
     
-    // Find the last status before 'DELETED'
     for (let i = 0; i < history.length; i++) {
       if (history[i].status === 'DELETED' && i + 1 < history.length) {
         originalStatus = history[i + 1].status || 'ENQUIRY';
@@ -165,7 +238,6 @@ router.put('/shipments/:id/restore', async (req, res) => {
       }
     }
     
-    // If no previous status found, try to find any non-DELETED status
     if (originalStatus === 'DELETED' || originalStatus === 'ENQUIRY') {
       const nonDeletedStatus = history.find(h => h.status !== 'DELETED');
       if (nonDeletedStatus) {
@@ -173,7 +245,6 @@ router.put('/shipments/:id/restore', async (req, res) => {
       }
     }
 
-    // Determine if it should be archived or active
     const wasArchived = existing.isArchived || false;
     const wasCompleted = ['COMPLETED', 'DELIVERED'].includes(originalStatus);
 
@@ -247,7 +318,7 @@ router.get('/shipments/bin', async (req, res) => {
           createdByName: true,
           createdAt: true,
           deletedAt: true,
-          deletedBy: true, // ✅ Who deleted it
+          deletedBy: true,
           isArchived: true,
           freightForwarding: {
             select: {
