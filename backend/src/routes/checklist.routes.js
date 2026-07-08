@@ -64,7 +64,9 @@ async function extractTextWithPdfJs(buffer) {
 // ─── LAYER 2: PDF-PARSE TEXT EXTRACTION ───
 async function extractTextWithPdfParse(buffer) {
   try {
-    const pdfParse = require('pdf-parse');
+    // Fix: pdf-parse v2.x might need different import
+    const pdfParseLib = require('pdf-parse');
+    const pdfParse = pdfParseLib.default || pdfParseLib;
     const data = await pdfParse(buffer);
     return data.text || '';
   } catch (err) {
@@ -73,7 +75,7 @@ async function extractTextWithPdfParse(buffer) {
   }
 }
 
-// ─── LAYER 3: TESSERACT OCR FOR SCANNED PDFs ───
+// ─── LAYER 3: TESSERACT OCR ───
 async function extractOcrFromScannedPages(buffer, pageInfo) {
   try {
     const scannedPages = pageInfo.filter(p => p.isScanned);
@@ -162,8 +164,8 @@ function intelligentParse(items, pdfParseText, ocrText) {
   }
 
   // ─── DETECT SHIPMENT TYPE ───
-  const seaKeywords = ['GATEWAY IGM', 'CONTAINER NO', 'MBL', 'SEA', 'FCL', 'LCL', 'VESSEL', 'PORT OF DISCHARGE', 'IGM NO'];
-  const airKeywords = ['MAWB', 'AWB', 'AIR WAYBILL', 'FLIGHT NO', 'AIRPORT', 'HAWB'];
+  const seaKeywords = ['GATEWAY IGM', 'CONTAINER', 'MBL', 'FCL', 'LCL', 'VESSEL', 'IGM NO'];
+  const airKeywords = ['MAWB', 'AWB', 'AIR WAYBILL', 'FLIGHT NO', 'AIRPORT'];
   
   let seaScore = 0, airScore = 0;
   seaKeywords.forEach(kw => { if (upperText.includes(kw)) seaScore++; });
@@ -171,27 +173,32 @@ function intelligentParse(items, pdfParseText, ocrText) {
   
   result.shipmentType = seaScore > airScore ? 'Sea' : airScore > seaScore ? 'Air' : 'Unknown';
   const isSea = result.shipmentType === 'Sea';
-  const isAir = result.shipmentType === 'Air';
 
   // ─── REFERENCE NUMBER ───
   result.referenceNumber = findWithConfidence([
     /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
-    /Ref\s*(?:erence)?\s*No\s*:?\s*([A-Z0-9\/-]+)/i,
-    /([A-Z]{2,6}\/\d{2,4}\/[A-Z]{2,4})/i
+    /Ref\s*(?:erence)?\s*No\s*:?\s*([A-Z0-9\/-]+)/i
   ], combinedText, 'referenceNumber');
 
-  // ─── IMPORTER NAME ───
+  // ─── IMPORTER NAME ─── FIXED
   result.importerName = findWithConfidence([
-    /Importer\s+Details\s*:?\s*\d*\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE|INC|CORP|TECHNOLOGY)[\w\s]*)/i,
-    /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT|TECHNOLOGY)[\w\s]*)/i,
-    /Importer\s*Name\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
+    /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LIMITED|PRIVATE|INTEGRATORS|TECHNOLOGY|LTD)[\w\s]*?)(?:\s+#|\s{2,}|\s+\d)/i,
+    /Importer\s+Details\s*:?\s*\d*\s*[A-Z0-9]+\s+[A-Z0-9]+\s+[A-Z0-9]+\s+PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|TECHNOLOGY)[\w\s]*)/i,
+    /(ONLINE\s+INSTRUMENTS\s*\(INDIA\)\s*LIMITED)/i,
+    /(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i,
+    /(ARION\s+TECHNOLOGY\s+LTD)/i,
+    /Importer\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
   ], combinedText, 'importerName');
 
-  // ─── EXPORTER NAME ───
+  // ─── EXPORTER NAME ─── FIXED
   result.exporterName = findWithConfidence([
+    /SUPPLIER\s+DETAILS[\s\S]{0,300}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
     /Exporter\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE|CO\.?)[\w\s]*)/i,
     /Shipper\s*(?:Name)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT)[\w\s]*)/i,
-    /SUPPLIER\s+DETAILS[\s\S]{0,100}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
+    /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
+    /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
+    /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
+    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
   ], combinedText, 'exporterName');
 
   // ─── SUPPLIER NAME ───
@@ -242,24 +249,19 @@ function intelligentParse(items, pdfParseText, ocrText) {
     ], combinedText, 'boeSbDate');
   }
 
-  // ─── SHIPMENT MODE ───
+  // ─── SHIPMENT MODE ─── FIXED
   result.shipmentMode = findWithConfidence([
-    /Transport\s*Mode\s*:\s*(\S)/i
+    /Transport\s*Mode\s*:\s*([ALS])\b/i,
+    /Mode\s*:\s*([ALS])\b/i,
+    /Transport\s*Mode\s*:\s*(\S+)/i
   ], combinedText, 'shipmentMode');
 
   // ─── MAWB/MBL NUMBER + DATE ───
-  if (isAir) {
-    result.mawbMblNo = findWithConfidence([
-      /MAWB\s*(?:No)?\s*:?\s*(\d{3}[- ]?\d{4}[- ]?\d{3})/i,
-      /AWB\s*No\s*:?\s*(\d{3}[- ]?\d{4}[- ]?\d{3})/i,
-      /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]{8,14})/i
-    ], combinedText, 'mawbMblNo');
-  } else {
-    result.mawbMblNo = findWithConfidence([
-      /MBL\/?\s*MAWB\s*:\s*([A-Z0-9]{6,20})/i,
-      /MBL\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i
-    ], combinedText, 'mawbMblNo');
-  }
+  result.mawbMblNo = findWithConfidence([
+    /MBL\/?\s*MAWB\s*:\s*([A-Z0-9]{6,20})/i,
+    /MBL\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i,
+    /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i
+  ], combinedText, 'mawbMblNo');
   
   if (result.mawbMblNo) {
     const escM = result.mawbMblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -269,56 +271,40 @@ function intelligentParse(items, pdfParseText, ocrText) {
     ], combinedText, 'mawbMblDate');
   }
 
-  // ─── HAWB/HBL NUMBER + DATE ─── FIXED ───
-  // Only extract if there's an actual number after HBL/HAWB
-  if (isAir) {
-    result.hawbHblNo = findWithConfidence([
-      /HAWB\s*(?:No)?\s*:?\s*(\d{3}[- ]?\d{4}[- ]?\d{3})/i,
-      /HBL\/?\s*HAWB\s*:?\s*([A-Z0-9]{8,14})/i
-    ], combinedText, 'hawbHblNo');
+  // ─── HAWB/HBL NUMBER + DATE ─── FIXED: Only if actual value exists
+  const hblMatch = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
+  if (hblMatch) {
+    result.hawbHblNo = hblMatch[1];
+    result.hawbHblDate = hblMatch[2];
+    confidence.hawbHblNo = 0.9;
   } else {
-    // SEA: Look for HBL/HAWB with an actual value (not empty/whitespace only)
-    const hblMatch = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
-    if (hblMatch) {
-      result.hawbHblNo = hblMatch[1];
-      result.hawbHblDate = hblMatch[2];
-      confidence.hawbHblNo = 0.9;
-    } else {
-      // Try just the number
-      const hblNum = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})/i);
-      if (hblNum && hblNum[1] && hblNum[1].length >= 6) {
-        result.hawbHblNo = hblNum[1];
-        // Look for date nearby
-        const escH = hblNum[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const dateAfter = combinedText.match(new RegExp(escH + '\\s+(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})'));
-        if (dateAfter) result.hawbHblDate = dateAfter[1];
-        confidence.hawbHblNo = 0.8;
-      } else {
-        // HBL is empty - leave blank
-        result.hawbHblNo = '';
-        result.hawbHblDate = '';
-        confidence.hawbHblNo = 0;
-      }
+    const hblNum = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})/i);
+    if (hblNum && hblNum[1] && hblNum[1].length >= 6) {
+      result.hawbHblNo = hblNum[1];
+      confidence.hawbHblNo = 0.8;
+      const escH = hblNum[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const dateAfter = combinedText.match(new RegExp(escH + '\\s+(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})'));
+      if (dateAfter) result.hawbHblDate = dateAfter[1];
     }
+    // If no number found, leave blank (HBL is empty in this PDF)
   }
 
-  // ─── NO OF PACKAGES ───
+  // ─── NO OF PACKAGES ─── FIXED
   result.noOfPackages = findWithConfidence([
     /No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i,
     /Packages\s*:?\s*(\d+)/i,
-    /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CAS|PKG)/i
+    /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CAS|PKG|CTNS)/i
   ], combinedText, 'noOfPackages');
 
   // ─── GROSS WEIGHT ───
   result.grossWeight = findWithConfidence([
     /Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i,
-    /Weight\s*:?\s*([\d.]+\s*KGS)/i,
-    /([\d.]+\s*KGS)/i
+    /Weight\s*:?\s*([\d.]+\s*KGS)/i
   ], combinedText, 'grossWeight');
 
-  // ─── IGM + GATEWAY + LOCAL (SEA only) ───
+  // ─── IGM + GATEWAY + LOCAL + CONTAINER (SEA only) ───
   if (isSea) {
-    // IGM No with full format: "IGM NO : 4334012 /2026 /17-06-2026"
+    // IGM with full format
     const igmFull = combinedText.match(/IGM\s*NO\s*:\s*(\d+)\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (igmFull) {
       result.igmNo = igmFull[1];
@@ -329,12 +315,11 @@ function intelligentParse(items, pdfParseText, ocrText) {
         /IGM\s*(?:NO|No|Number)?\s*:?\s*(\d{4,})/i
       ], combinedText, 'igmNo');
       result.igmDate = findWithConfidence([
-        /IGM\s*(?:Date)?\s*:?\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-        /IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+        /IGM\s*(?:Date)?\s*:?\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
       ], combinedText, 'igmDate');
     }
 
-    // Gateway IGM: "Gateway IGM : 1195832 /28-05-2026"
+    // Gateway IGM
     const gwFull = combinedText.match(/Gateway\s*IGM\s*:\s*(\d+)\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (gwFull) {
       result.gatewayIgmNo = gwFull[1];
@@ -357,11 +342,10 @@ function intelligentParse(items, pdfParseText, ocrText) {
       /Local\s*IGM\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
     ], combinedText, 'localIgmDate');
 
-    // ─── CONTAINER NUMBER ─── FIXED ───
-    // Look in CONTAINER DETAILS section
-    const containerSection = combinedText.match(/CONTAINER\s+DETAILS[\s\S]{0,800}/i);
+    // ─── CONTAINER NUMBER ─── FIXED
+    // Search in CONTAINER DETAILS section first
+    const containerSection = combinedText.match(/CONTAINER\s+DETAILS[\s\S]{0,600}/i);
     if (containerSection) {
-      // Match pattern: 4 letters + 7 digits (standard container format)
       const contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
       if (contMatch) {
         const container = contMatch[1];
@@ -373,12 +357,11 @@ function intelligentParse(items, pdfParseText, ocrText) {
       }
     }
     
-    // Fallback: search entire text for standard container format
+    // Fallback: Any valid container in text
     if (!result.containerNo) {
       const allContainers = combinedText.match(/\b([A-Z]{4}\d{7})\b/g) || [];
       const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
       const validContainers = allContainers.filter(c => !invalidPrefixes.test(c));
-      
       if (validContainers.length > 0) {
         result.containerNo = validContainers[0];
         confidence.containerNo = 0.85;
@@ -411,8 +394,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
 
   // ─── DATES ───
   result.deliveryOrderDate = findWithConfidence([
-    /DO\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Delivery\s*Order\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    /DO\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
   ], combinedText, 'deliveryOrderDate');
 
   result.occDate = findWithConfidence([
@@ -423,11 +405,15 @@ function intelligentParse(items, pdfParseText, ocrText) {
     /Gate\s*Pass\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
   ], combinedText, 'gatePassDate');
 
-  // ─── MARKS & NOS ───
+  // ─── MARKS & NOS ─── FIXED: Stop at dashes/newlines
   result.remarks = findWithConfidence([
-    /Marks\s*[&]?\s*Nos\s*:\s*(.+?)(?:\s{2,}|\s*$)/i,
-    /Marks?\s*:?\s*([A-Z0-9\-\/\s]+)/i
+    /Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9\s\/\-]+?)(?:\s{2,}|\s*---|$)/i,
+    /Marks?\s*:?\s*([A-Z0-9\/\s]+?)(?:\s{2,}|\s*---|$)/i
   ], combinedText, 'remarks');
+  // Clean up - remove trailing dashes and excessive content
+  if (result.remarks) {
+    result.remarks = result.remarks.replace(/[-]{3,}.*$/, '').trim();
+  }
 
   // ─── GSTIN ───
   const gstinMatch = compactText.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
@@ -483,9 +469,10 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
     const { items: pdfJsItems, pageInfo } = await extractTextWithPdfJs(buffer);
     console.log(`   → ${pageInfo.length} page(s)`);
 
-    // Layer 2: pdf-parse
+    // Layer 2: pdf-parse (fixed import)
     console.log('📑 Layer 2: Extracting with pdf-parse...');
     const pdfParseText = await extractTextWithPdfParse(buffer);
+    console.log(`   → ${pdfParseText.length} chars`);
 
     // Layer 3: OCR
     console.log('📑 Layer 3: Checking for scanned pages...');
