@@ -61,13 +61,15 @@ async function extractTextWithPdfJs(buffer) {
   }
 }
 
-// ─── LAYER 2: PDF-PARSE TEXT EXTRACTION (FIXED) ───
+// ─── LAYER 2: PDF-PARSE (FIXED - uses getText()) ───
 async function extractTextWithPdfParse(buffer) {
   try {
     const { PDFParse } = require('pdf-parse');
     const pdfParse = new PDFParse(buffer);
-    const data = await pdfParse.parse();
-    return data.text || '';
+    await pdfParse.load();
+    const pages = await pdfParse.getText();
+    const text = Array.isArray(pages) ? pages.join('\n') : (pages || '');
+    return text;
   } catch (err) {
     console.error('pdf-parse extraction error:', err.message);
     return '';
@@ -136,9 +138,16 @@ function intelligentParse(items, pdfParseText, ocrText) {
   const page1Items = items.filter(i => i.page === 1);
   const sortedByPosition = [...page1Items].sort((a, b) => a.y - b.y || a.x - b.x);
   const digitalText = sortedByPosition.map(i => i.text).join(' ');
-  const combinedText = mergeTexts(digitalText, ocrText || pdfParseText || '');
+  
+  // Use digitalText directly (not mergeTexts which might strip content)
+  const combinedText = [digitalText, ocrText, pdfParseText].filter(t => t && t.length > 10).join(' |SEPARATOR| ');
   const compactText = combinedText.replace(/\s+/g, '');
   const upperText = combinedText.toUpperCase();
+
+  // Debug: log key sections
+  console.log('DEBUG combinedText length:', combinedText.length);
+  console.log('DEBUG Transport Mode in text:', /Transport\s*Mode/i.test(combinedText));
+  console.log('DEBUG No of Pkgs in text:', /No\.?\s*of\s*Pkgs/i.test(combinedText));
 
   function findWithConfidence(patterns, text, fieldName) {
     for (let i = 0; i < patterns.length; i++) {
@@ -196,8 +205,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
     /Shipper\s*(?:Name)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT)[\w\s]*)/i,
     /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
     /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
-    /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
-    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
+    /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i
   ], combinedText, 'exporterName');
 
   // ─── SUPPLIER NAME ───
@@ -248,13 +256,12 @@ function intelligentParse(items, pdfParseText, ocrText) {
     ], combinedText, 'boeSbDate');
   }
 
-  // ─── SHIPMENT MODE (FIXED - case insensitive) ───
+  // ─── SHIPMENT MODE ───
   result.shipmentMode = findWithConfidence([
     /Transport\s*Mode\s*:\s*([ALSals])\b/i,
     /Transport\s*Mode\s*:\s*(\S+)/i,
     /Mode\s*:\s*([ALSals])\b/i
   ], combinedText, 'shipmentMode');
-  // Uppercase the result
   if (result.shipmentMode) result.shipmentMode = result.shipmentMode.toUpperCase();
 
   // ─── MAWB/MBL NUMBER + DATE ───
@@ -272,7 +279,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
     ], combinedText, 'mawbMblDate');
   }
 
-  // ─── HAWB/HBL NUMBER + DATE (only if value exists) ───
+  // ─── HAWB/HBL NUMBER + DATE ───
   const hblMatch = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
   if (hblMatch) {
     result.hawbHblNo = hblMatch[1];
@@ -289,12 +296,13 @@ function intelligentParse(items, pdfParseText, ocrText) {
     }
   }
 
-  // ─── NO OF PACKAGES (FIXED - handles "1 CAS") ───
+  // ─── NO OF PACKAGES ───
   result.noOfPackages = findWithConfidence([
     /No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i,
     /Packages\s*:?\s*(\d+)/i,
     /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CAS|PKG|CTNS|NOS)/i
   ], combinedText, 'noOfPackages');
+  console.log('DEBUG noOfPackages result:', result.noOfPackages);
 
   // ─── GROSS WEIGHT ───
   result.grossWeight = findWithConfidence([
@@ -304,83 +312,61 @@ function intelligentParse(items, pdfParseText, ocrText) {
 
   // ─── IGM + GATEWAY + LOCAL + CONTAINER (SEA only) ───
   if (isSea) {
-    // IGM with full format
     const igmFull = combinedText.match(/IGM\s*NO\s*:\s*(\d+)\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (igmFull) {
       result.igmNo = igmFull[1];
       result.igmDate = igmFull[2];
       confidence.igmNo = 0.95;
     } else {
-      result.igmNo = findWithConfidence([
-        /IGM\s*(?:NO|No|Number)?\s*:?\s*(\d{4,})/i
-      ], combinedText, 'igmNo');
-      result.igmDate = findWithConfidence([
-        /IGM\s*(?:Date)?\s*:?\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-      ], combinedText, 'igmDate');
+      result.igmNo = findWithConfidence([/IGM\s*(?:NO|No|Number)?\s*:?\s*(\d{4,})/i], combinedText, 'igmNo');
+      result.igmDate = findWithConfidence([/IGM\s*(?:Date)?\s*:?\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'igmDate');
     }
 
-    // Gateway IGM
     const gwFull = combinedText.match(/Gateway\s*IGM\s*:\s*(\d+)\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (gwFull) {
       result.gatewayIgmNo = gwFull[1];
       result.gatewayIgmDate = gwFull[2];
       confidence.gatewayIgmNo = 0.95;
     } else {
-      result.gatewayIgmNo = findWithConfidence([
-        /Gateway\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i
-      ], combinedText, 'gatewayIgmNo');
-      result.gatewayIgmDate = findWithConfidence([
-        /Gateway\s*IGM\s*:?\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-      ], combinedText, 'gatewayIgmDate');
+      result.gatewayIgmNo = findWithConfidence([/Gateway\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i], combinedText, 'gatewayIgmNo');
+      result.gatewayIgmDate = findWithConfidence([/Gateway\s*IGM\s*:?\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'gatewayIgmDate');
     }
 
-    result.localIgmNo = findWithConfidence([
-      /Local\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i
-    ], combinedText, 'localIgmNo');
-    
-    result.localIgmDate = findWithConfidence([
-      /Local\s*IGM\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], combinedText, 'localIgmDate');
+    result.localIgmNo = findWithConfidence([/Local\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i], combinedText, 'localIgmNo');
+    result.localIgmDate = findWithConfidence([/Local\s*IGM\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'localIgmDate');
 
-    // ─── CONTAINER NUMBER (FIXED - searches entire text) ───
-    // Search for standard container format: 4 letters + 7 digits
+    // ─── CONTAINER NUMBER ───
+    const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
+    
+    // Tier 1: CONTAINER DETAILS section
     const containerSection = combinedText.match(/CONTAINER\s+DETAILS[\s\S]{0,800}/i);
     if (containerSection) {
       const contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
-      if (contMatch) {
-        const container = contMatch[1];
-        const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
-        if (!invalidPrefixes.test(container)) {
-          result.containerNo = container;
-          confidence.containerNo = 0.95;
-        }
+      if (contMatch && !invalidPrefixes.test(contMatch[1])) {
+        result.containerNo = contMatch[1];
+        confidence.containerNo = 0.95;
       }
     }
     
-    // Fallback: find ANY valid container format in the entire text
+    // Tier 2: Near CONTAINER label
     if (!result.containerNo) {
-      // Try near "CONTAINER" label
-      const nearContainerLabel = combinedText.match(/CONTAINER\s+(?:NO\.?|NUMBER)?[\s\S]{0,200}?\b([A-Z]{4}\d{7})\b/i);
-      if (nearContainerLabel) {
-        const container = nearContainerLabel[1];
-        const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
-        if (!invalidPrefixes.test(container)) {
-          result.containerNo = container;
-          confidence.containerNo = 0.9;
-        }
+      const nearLabel = combinedText.match(/CONTAINER\s+(?:NO\.?|NUMBER)?[\s\S]{0,200}?\b([A-Z]{4}\d{7})\b/i);
+      if (nearLabel && !invalidPrefixes.test(nearLabel[1])) {
+        result.containerNo = nearLabel[1];
+        confidence.containerNo = 0.9;
       }
     }
     
-    // Last resort: any valid container anywhere
+    // Tier 3: Any valid container format
     if (!result.containerNo) {
       const allContainers = combinedText.match(/\b([A-Z]{4}\d{7})\b/g) || [];
-      const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
       const validContainers = allContainers.filter(c => !invalidPrefixes.test(c));
       if (validContainers.length > 0) {
         result.containerNo = validContainers[0];
         confidence.containerNo = 0.8;
       }
     }
+    console.log('DEBUG containerNo result:', result.containerNo);
   }
 
   // ─── PORTS ───
@@ -477,30 +463,24 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
     const buffer = req.file.buffer;
     console.log(`\n📄 Scanning: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
 
-    // Layer 1: Digital text
     console.log('📑 Layer 1: Extracting digital text...');
     const { items: pdfJsItems, pageInfo } = await extractTextWithPdfJs(buffer);
     console.log(`   → ${pageInfo.length} page(s)`);
 
-    // Layer 2: pdf-parse (FIXED)
     console.log('📑 Layer 2: Extracting with pdf-parse...');
     const pdfParseText = await extractTextWithPdfParse(buffer);
     console.log(`   → ${pdfParseText.length} chars`);
 
-    // Layer 3: OCR
     console.log('📑 Layer 3: Checking for scanned pages...');
     const ocrText = await extractOcrFromScannedPages(buffer, pageInfo);
 
-    // Merge
     const sortedItems = pdfJsItems.filter(i => i.page === 1).sort((a, b) => a.y - b.y || a.x - b.x);
     const digitalText = sortedItems.map(i => i.text).join(' ');
-    const mergedText = mergeTexts(digitalText, ocrText || pdfParseText || '');
+    const mergedText = [digitalText, ocrText, pdfParseText].filter(t => t && t.length > 10).join('\n---PAGE BREAK---\n');
 
-    // Parse
     console.log('🧠 Parsing fields...');
     const parsed = intelligentParse(pdfJsItems, pdfParseText, ocrText);
 
-    // Accuracy
     const confidenceValues = Object.values(parsed.confidence).filter(v => v > 0);
     const overallAccuracy = confidenceValues.length > 0
       ? Math.round((confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length) * 100)
