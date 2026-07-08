@@ -61,13 +61,12 @@ async function extractTextWithPdfJs(buffer) {
   }
 }
 
-// ─── LAYER 2: PDF-PARSE TEXT EXTRACTION ───
+// ─── LAYER 2: PDF-PARSE TEXT EXTRACTION (FIXED) ───
 async function extractTextWithPdfParse(buffer) {
   try {
-    // Fix: pdf-parse v2.x might need different import
-    const pdfParseLib = require('pdf-parse');
-    const pdfParse = pdfParseLib.default || pdfParseLib;
-    const data = await pdfParse(buffer);
+    const { PDFParse } = require('pdf-parse');
+    const pdfParse = new PDFParse(buffer);
+    const data = await pdfParse.parse();
     return data.text || '';
   } catch (err) {
     console.error('pdf-parse extraction error:', err.message);
@@ -180,7 +179,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
     /Ref\s*(?:erence)?\s*No\s*:?\s*([A-Z0-9\/-]+)/i
   ], combinedText, 'referenceNumber');
 
-  // ─── IMPORTER NAME ─── FIXED
+  // ─── IMPORTER NAME ───
   result.importerName = findWithConfidence([
     /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LIMITED|PRIVATE|INTEGRATORS|TECHNOLOGY|LTD)[\w\s]*?)(?:\s+#|\s{2,}|\s+\d)/i,
     /Importer\s+Details\s*:?\s*\d*\s*[A-Z0-9]+\s+[A-Z0-9]+\s+[A-Z0-9]+\s+PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|TECHNOLOGY)[\w\s]*)/i,
@@ -190,7 +189,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
     /Importer\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
   ], combinedText, 'importerName');
 
-  // ─── EXPORTER NAME ─── FIXED
+  // ─── EXPORTER NAME ───
   result.exporterName = findWithConfidence([
     /SUPPLIER\s+DETAILS[\s\S]{0,300}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
     /Exporter\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE|CO\.?)[\w\s]*)/i,
@@ -249,12 +248,14 @@ function intelligentParse(items, pdfParseText, ocrText) {
     ], combinedText, 'boeSbDate');
   }
 
-  // ─── SHIPMENT MODE ─── FIXED
+  // ─── SHIPMENT MODE (FIXED - case insensitive) ───
   result.shipmentMode = findWithConfidence([
-    /Transport\s*Mode\s*:\s*([ALS])\b/i,
-    /Mode\s*:\s*([ALS])\b/i,
-    /Transport\s*Mode\s*:\s*(\S+)/i
+    /Transport\s*Mode\s*:\s*([ALSals])\b/i,
+    /Transport\s*Mode\s*:\s*(\S+)/i,
+    /Mode\s*:\s*([ALSals])\b/i
   ], combinedText, 'shipmentMode');
+  // Uppercase the result
+  if (result.shipmentMode) result.shipmentMode = result.shipmentMode.toUpperCase();
 
   // ─── MAWB/MBL NUMBER + DATE ───
   result.mawbMblNo = findWithConfidence([
@@ -271,7 +272,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
     ], combinedText, 'mawbMblDate');
   }
 
-  // ─── HAWB/HBL NUMBER + DATE ─── FIXED: Only if actual value exists
+  // ─── HAWB/HBL NUMBER + DATE (only if value exists) ───
   const hblMatch = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
   if (hblMatch) {
     result.hawbHblNo = hblMatch[1];
@@ -286,14 +287,13 @@ function intelligentParse(items, pdfParseText, ocrText) {
       const dateAfter = combinedText.match(new RegExp(escH + '\\s+(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})'));
       if (dateAfter) result.hawbHblDate = dateAfter[1];
     }
-    // If no number found, leave blank (HBL is empty in this PDF)
   }
 
-  // ─── NO OF PACKAGES ─── FIXED
+  // ─── NO OF PACKAGES (FIXED - handles "1 CAS") ───
   result.noOfPackages = findWithConfidence([
     /No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i,
     /Packages\s*:?\s*(\d+)/i,
-    /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CAS|PKG|CTNS)/i
+    /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CAS|PKG|CTNS|NOS)/i
   ], combinedText, 'noOfPackages');
 
   // ─── GROSS WEIGHT ───
@@ -342,9 +342,9 @@ function intelligentParse(items, pdfParseText, ocrText) {
       /Local\s*IGM\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
     ], combinedText, 'localIgmDate');
 
-    // ─── CONTAINER NUMBER ─── FIXED
-    // Search in CONTAINER DETAILS section first
-    const containerSection = combinedText.match(/CONTAINER\s+DETAILS[\s\S]{0,600}/i);
+    // ─── CONTAINER NUMBER (FIXED - searches entire text) ───
+    // Search for standard container format: 4 letters + 7 digits
+    const containerSection = combinedText.match(/CONTAINER\s+DETAILS[\s\S]{0,800}/i);
     if (containerSection) {
       const contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
       if (contMatch) {
@@ -357,14 +357,28 @@ function intelligentParse(items, pdfParseText, ocrText) {
       }
     }
     
-    // Fallback: Any valid container in text
+    // Fallback: find ANY valid container format in the entire text
+    if (!result.containerNo) {
+      // Try near "CONTAINER" label
+      const nearContainerLabel = combinedText.match(/CONTAINER\s+(?:NO\.?|NUMBER)?[\s\S]{0,200}?\b([A-Z]{4}\d{7})\b/i);
+      if (nearContainerLabel) {
+        const container = nearContainerLabel[1];
+        const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
+        if (!invalidPrefixes.test(container)) {
+          result.containerNo = container;
+          confidence.containerNo = 0.9;
+        }
+      }
+    }
+    
+    // Last resort: any valid container anywhere
     if (!result.containerNo) {
       const allContainers = combinedText.match(/\b([A-Z]{4}\d{7})\b/g) || [];
       const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
       const validContainers = allContainers.filter(c => !invalidPrefixes.test(c));
       if (validContainers.length > 0) {
         result.containerNo = validContainers[0];
-        confidence.containerNo = 0.85;
+        confidence.containerNo = 0.8;
       }
     }
   }
@@ -405,12 +419,11 @@ function intelligentParse(items, pdfParseText, ocrText) {
     /Gate\s*Pass\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
   ], combinedText, 'gatePassDate');
 
-  // ─── MARKS & NOS ─── FIXED: Stop at dashes/newlines
+  // ─── MARKS & NOS ───
   result.remarks = findWithConfidence([
     /Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9\s\/\-]+?)(?:\s{2,}|\s*---|$)/i,
     /Marks?\s*:?\s*([A-Z0-9\/\s]+?)(?:\s{2,}|\s*---|$)/i
   ], combinedText, 'remarks');
-  // Clean up - remove trailing dashes and excessive content
   if (result.remarks) {
     result.remarks = result.remarks.replace(/[-]{3,}.*$/, '').trim();
   }
@@ -469,7 +482,7 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
     const { items: pdfJsItems, pageInfo } = await extractTextWithPdfJs(buffer);
     console.log(`   → ${pageInfo.length} page(s)`);
 
-    // Layer 2: pdf-parse (fixed import)
+    // Layer 2: pdf-parse (FIXED)
     console.log('📑 Layer 2: Extracting with pdf-parse...');
     const pdfParseText = await extractTextWithPdfParse(buffer);
     console.log(`   → ${pdfParseText.length} chars`);
