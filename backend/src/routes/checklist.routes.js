@@ -103,7 +103,7 @@ async function extractOcrFromScannedPages(buffer, pageInfo) {
   } catch (err) { return ''; }
 }
 
-// ─── SIMPLE MERGE (preserves spaces) ───
+// ─── SIMPLE MERGE ───
 function simpleMerge(texts) {
   return texts.filter(t => t && t.length > 5).join('\n');
 }
@@ -126,11 +126,14 @@ function intelligentParse(items, pdfParseText, ocrText) {
 
   const confidence = {};
   
-  const sortedItems = items.filter(i => i.page === 1).sort((a, b) => a.y - b.y || a.x - b.x);
-  const digitalText = sortedItems.map(i => i.text).join(' ');
+  // 🔥 FIX: Use ALL pages for container/search, but Page 1 for structured data
+  const allItemsSorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  const allPagesText = allItemsSorted.map(i => i.text).join(' ');
   
-  // SIMPLE merge - don't strip duplicates
-  const combinedText = simpleMerge([digitalText, pdfParseText, ocrText]);
+  const page1Items = items.filter(i => i.page === 1).sort((a, b) => a.y - b.y || a.x - b.x);
+  const digitalText = page1Items.map(i => i.text).join(' ');
+  
+  const combinedText = simpleMerge([allPagesText, pdfParseText, ocrText]);
   const compactText = combinedText.replace(/\s+/g, '');
   const upperText = combinedText.toUpperCase();
 
@@ -161,9 +164,8 @@ function intelligentParse(items, pdfParseText, ocrText) {
 
   // ─── REFERENCE NUMBER ───
   result.referenceNumber = findWithConfidence([
-    /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
-    /Ref\s*(?:erence)?\s*No\s*:?\s*([A-Z0-9\/-]+)/i
-  ], combinedText, 'referenceNumber');
+    /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i
+  ], digitalText, 'referenceNumber');
 
   // ─── IMPORTER NAME ───
   result.importerName = findWithConfidence([
@@ -172,7 +174,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
     /(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i,
     /(ONLINE\s+INSTRUMENTS\s*\(INDIA\)\s*LIMITED)/i,
     /Importer\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
-  ], combinedText, 'importerName');
+  ], digitalText, 'importerName');
 
   // ─── EXPORTER NAME ───
   result.exporterName = findWithConfidence([
@@ -190,65 +192,56 @@ function intelligentParse(items, pdfParseText, ocrText) {
   if (!result.supplierName && result.exporterName) { result.supplierName = result.exporterName; confidence.supplierName = 0.7; }
 
   // ─── LOCATION ───
-  result.location = findWithConfidence([
-    /Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i
-  ], combinedText, 'location');
+  result.location = findWithConfidence([/Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i], digitalText, 'location');
 
   // ─── JOB ORDER NO + DATE ───
-  result.jobOrderNo = findWithConfidence([/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i], combinedText, 'jobOrderNo');
-  result.jobOrderDate = findWithConfidence([/Job\s*No\s*[&]?\s*Date\s*:\s*\d+\s*[&]?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'jobOrderDate');
+  result.jobOrderNo = findWithConfidence([/Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i], digitalText, 'jobOrderNo');
+  result.jobOrderDate = findWithConfidence([/Job\s*No\s*[&]?\s*Date\s*:\s*\d+\s*[&]?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], digitalText, 'jobOrderDate');
 
   // ─── BOE/SB ───
-  const boeSbNo = findWithConfidence([/B\.?E\s*No[,\s]*Date\s*:\s*(\d{3,})/i, /BOE\s*No\s*:?\s*(\d{3,})/i, /SB\s*No\s*:?\s*(\d{3,})/i], combinedText, 'boeSbNo');
+  const boeSbNo = findWithConfidence([/B\.?E\s*No[,\s]*Date\s*:\s*(\d{3,})/i, /BOE\s*No\s*:?\s*(\d{3,})/i, /SB\s*No\s*:?\s*(\d{3,})/i], digitalText, 'boeSbNo');
   if (boeSbNo && /^\d{3,}$/.test(boeSbNo)) result.boeSbNo = boeSbNo;
-  if (result.boeSbNo) result.boeSbDate = findWithConfidence([/B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i, /Printed\s*On\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'boeSbDate');
+  if (result.boeSbNo) result.boeSbDate = findWithConfidence([/B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i, /Printed\s*On\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], digitalText, 'boeSbDate');
 
-  // ─── SHIPMENT MODE - FIXED: No \b, just grab first non-space after "Transport Mode :" ───
+  // ─── SHIPMENT MODE ───
   const modeMatch = digitalText.match(/Transport\s*Mode\s*:\s*(\S)/i);
-  if (modeMatch && modeMatch[1]) {
-    result.shipmentMode = modeMatch[1].toUpperCase();
-    confidence.shipmentMode = 0.9;
-  }
+  if (modeMatch && modeMatch[1]) { result.shipmentMode = modeMatch[1].toUpperCase(); confidence.shipmentMode = 0.9; }
 
   // ─── MAWB/MBL ───
-  result.mawbMblNo = findWithConfidence([/MBL\/?\s*MAWB\s*:\s*([A-Z0-9]{6,20})/i, /MBL\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i], combinedText, 'mawbMblNo');
-  if (result.mawbMblNo) result.mawbMblDate = findWithConfidence([new RegExp(result.mawbMblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s\\S]{0,80}?(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})')], combinedText, 'mawbMblDate');
+  result.mawbMblNo = findWithConfidence([/MBL\/?\s*MAWB\s*:\s*([A-Z0-9]{6,20})/i, /MBL\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i], digitalText, 'mawbMblNo');
+  if (result.mawbMblNo) result.mawbMblDate = findWithConfidence([new RegExp(result.mawbMblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s\\S]{0,80}?(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})')], digitalText, 'mawbMblDate');
 
   // ─── HAWB/HBL ───
   const hblNum = digitalText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})/i);
   if (hblNum && hblNum[1] && hblNum[1].length >= 6) {
-    result.hawbHblNo = hblNum[1];
-    confidence.hawbHblNo = 0.8;
+    result.hawbHblNo = hblNum[1]; confidence.hawbHblNo = 0.8;
     const dA = digitalText.match(new RegExp(hblNum[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})'));
     if (dA) result.hawbHblDate = dA[1];
   }
 
-  // ─── NO OF PACKAGES - FIXED: Direct match on digitalText ───
+  // ─── NO OF PACKAGES ───
   const pkgMatch = digitalText.match(/No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i);
-  if (pkgMatch) {
-    result.noOfPackages = pkgMatch[1];
-    confidence.noOfPackages = 0.9;
-  }
+  if (pkgMatch) { result.noOfPackages = pkgMatch[1]; confidence.noOfPackages = 0.9; }
 
   // ─── GROSS WEIGHT ───
-  result.grossWeight = findWithConfidence([/Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i, /Weight\s*:?\s*([\d.]+\s*KGS)/i], combinedText, 'grossWeight');
+  result.grossWeight = findWithConfidence([/Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i], digitalText, 'grossWeight');
 
-  // ─── IGM + GATEWAY + LOCAL + CONTAINER ───
+  // ─── IGM + GATEWAY + LOCAL + CONTAINER (SEA) ───
   if (isSea) {
     const igmFull = digitalText.match(/IGM\s*NO\s*:\s*(\d+)\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (igmFull) { result.igmNo = igmFull[1]; result.igmDate = igmFull[2]; confidence.igmNo = 0.95; }
-    else { result.igmNo = findWithConfidence([/IGM\s*(?:NO|No)?\s*:?\s*(\d{4,})/i], combinedText, 'igmNo'); }
+    else { result.igmNo = findWithConfidence([/IGM\s*(?:NO|No)?\s*:?\s*(\d{4,})/i], digitalText, 'igmNo'); }
 
     const gwFull = digitalText.match(/Gateway\s*IGM\s*:\s*(\d+)\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
     if (gwFull) { result.gatewayIgmNo = gwFull[1]; result.gatewayIgmDate = gwFull[2]; confidence.gatewayIgmNo = 0.95; }
-    else { result.gatewayIgmNo = findWithConfidence([/Gateway\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i], combinedText, 'gatewayIgmNo'); }
+    else { result.gatewayIgmNo = findWithConfidence([/Gateway\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i], digitalText, 'gatewayIgmNo'); }
 
     result.localIgmNo = findWithConfidence([/Local\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i], combinedText, 'localIgmNo');
     result.localIgmDate = findWithConfidence([/Local\s*IGM\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'localIgmDate');
 
-    // ─── CONTAINER - FIXED: Direct search on digitalText ───
+    // 🔥 CONTAINER - SEARCH ALL PAGES (not just page 1)
     const invalidPfx = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
-    const contMatch = digitalText.match(/\b([A-Z]{4}\d{7})\b/g);
+    const contMatch = allPagesText.match(/\b([A-Z]{4}\d{7})\b/g);
     if (contMatch) {
       const valid = contMatch.filter(c => !invalidPfx.test(c));
       if (valid.length > 0) { result.containerNo = valid[0]; confidence.containerNo = 0.85; }
@@ -256,12 +249,12 @@ function intelligentParse(items, pdfParseText, ocrText) {
   }
 
   // ─── PORTS ───
-  result.portOfDischarge = findWithConfidence([/Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i], combinedText, 'portOfDischarge');
-  result.portOfDestination = findWithConfidence([/Port\s*(?:Shipment|Origin)\s*:\s*([A-Z]+-[A-Z]+)/i, /Port\s*(?:Of)?\s*Destination\s*:?\s*([A-Z0-9]+-[A-Z]+)/i], combinedText, 'portOfDestination');
+  result.portOfDischarge = findWithConfidence([/Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i], digitalText, 'portOfDischarge');
+  result.portOfDestination = findWithConfidence([/Port\s*(?:Shipment|Origin)\s*:\s*([A-Z]+-[A-Z]+)/i, /Port\s*(?:Of)?\s*Destination\s*:?\s*([A-Z0-9]+-[A-Z]+)/i], digitalText, 'portOfDestination');
 
   // ─── INVOICE ───
-  result.invoiceNo = findWithConfidence([/Inv\.?\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i], combinedText, 'invoiceNo');
-  result.invoiceDate = findWithConfidence([/Inv\.?\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'invoiceDate');
+  result.invoiceNo = findWithConfidence([/Inv\.?\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i], digitalText, 'invoiceNo');
+  result.invoiceDate = findWithConfidence([/Inv\.?\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], digitalText, 'invoiceDate');
 
   // ─── DATES ───
   result.deliveryOrderDate = findWithConfidence([/DO\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'deliveryOrderDate');
@@ -269,7 +262,7 @@ function intelligentParse(items, pdfParseText, ocrText) {
   result.gatePassDate = findWithConfidence([/Gate\s*Pass\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i], combinedText, 'gatePassDate');
 
   // ─── MARKS & NOS ───
-  result.remarks = findWithConfidence([/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9\s\/\-]+?)(?:\s{2,}|\s*---|$)/i], combinedText, 'remarks');
+  result.remarks = findWithConfidence([/Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9\s\/\-]+?)(?:\s{2,}|\s*---|$)/i], digitalText, 'remarks');
   if (result.remarks) result.remarks = result.remarks.replace(/[-]{3,}.*$/, '').trim();
 
   // ─── GSTIN ───
@@ -309,9 +302,10 @@ router.post('/scan', upload.single('checklist'), async function(req, res) {
     const pdfParseText = await extractTextWithPdfParse(buffer);
     const ocrText = await extractOcrFromScannedPages(buffer, pageInfo);
 
-    const sortedItems = items.filter(i => i.page === 1).sort((a, b) => a.y - b.y || a.x - b.x);
-    const digitalText = sortedItems.map(i => i.text).join(' ');
-    const mergedText = simpleMerge([digitalText, pdfParseText, ocrText]);
+    // Build text from ALL pages
+    const allItemsSorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+    const allPagesText = allItemsSorted.map(i => i.text).join(' ');
+    const mergedText = simpleMerge([allPagesText, pdfParseText, ocrText]);
 
     const parsed = intelligentParse(items, pdfParseText, ocrText);
 
