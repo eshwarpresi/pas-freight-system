@@ -1,455 +1,500 @@
+// backend/src/routes/checklist.routes.js
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const { ocrPdfFromImages, mergeTexts } = require('../services/ocrService');
 
-// ─── ARCHIVE SHIPMENT ───
-router.put('/shipments/:id/archive', async (req, res) => {
-  const prisma = require('../utils/prisma');
-  try {
-    const { id } = req.params;
-    
-    // Get shipment with all related data
-    const existing = await prisma.shipment.findUnique({
-      where: { id },
-      include: {
-        accounts: true,
-        freightForwarding: true,
-        cha: true
-      }
-    });
-
-    if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Shipment not found' });
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: function(req, file, cb) {
+    if (file.mimetype === 'application/pdf' || file.originalname.endsWith('.pdf')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'));
     }
+  }
+});
 
-    // ─── VALIDATE: Only INVOICE_SENT or INVOICE_GENERATED can be archived ───
-    const allowedStatuses = ['INVOICE_SENT', 'INVOICE_GENERATED'];
-    const isAllowed = allowedStatuses.includes(existing.currentStatus);
+// ─── LAYER 1: PDF-JS DIGITAL TEXT EXTRACTION ───
+async function extractTextWithPdfJs(buffer) {
+  try {
+    const pdfjsLib = await import('pdfjs-dist');
+    const uint8Array = new Uint8Array(buffer);
+    const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+    const pdfDocument = await loadingTask.promise;
+
+    const allItems = [];
+    const pageInfo = [];
     
-    if (!isAllowed) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: `Cannot archive shipment with status: ${existing.currentStatus}. Only INVOICE_SENT or INVOICE_GENERATED shipments can be archived.`,
-        currentStatus: existing.currentStatus,
-        allowedStatuses: allowedStatuses
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum);
+      const content = await page.getTextContent();
+      const viewport = page.getViewport({ scale: 1 });
+      
+      let pageTextLength = 0;
+      content.items.forEach(function(item) {
+        allItems.push({
+          text: item.str.trim(),
+          x: Math.round(item.transform[4]),
+          y: Math.round(viewport.height - item.transform[5]),
+          page: pageNum,
+          width: item.width || 0,
+          height: item.height || 0,
+          fontName: item.fontName || ''
+        });
+        pageTextLength += item.str.replace(/\s+/g, '').length;
+      });
+      
+      pageInfo.push({
+        pageNum,
+        textLength: pageTextLength,
+        isScanned: pageTextLength < 50
       });
     }
-
-    // ─── SET ORIGINAL STATUS BEFORE ARCHIVING ───
-    const originalStatus = existing.currentStatus;
-
-    const shipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        isArchived: true,
-        isDeleted: false,
-        currentStatus: 'COMPLETED',
-        statusHistory: {
-          create: {
-            status: 'COMPLETED',
-            remarks: `Shipment archived (Original status: ${originalStatus} | Invoice: ${existing.accounts?.invoiceNumber || 'N/A'})`
-          }
-        }
-      },
-      include: {
-        freightForwarding: true,
-        cha: true,
-        accounts: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({ 
-      status: 'success', 
-      data: shipment,
-      message: 'Shipment archived successfully'
-    });
-  } catch (error) {
-    console.error('Error archiving shipment:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to archive' });
+    
+    return { items: allItems, pageInfo };
+  } catch (err) {
+    console.error('PDF.js extraction error:', err.message);
+    return { items: [], pageInfo: [] };
   }
-});
+}
 
-// ─── UNARCHIVE SHIPMENT ───
-router.put('/shipments/:id/unarchive', async (req, res) => {
-  const prisma = require('../utils/prisma');
+// ─── LAYER 2: PDF-PARSE TEXT EXTRACTION ───
+async function extractTextWithPdfParse(buffer) {
   try {
-    const { id } = req.params;
-    
-    const existing = await prisma.shipment.findUnique({
-      where: { id },
-      include: {
-        statusHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
-        }
-      }
-    });
-
-    if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Shipment not found' });
-    }
-
-    // Find the status before COMPLETED (original status)
-    let originalStatus = 'ENQUIRY';
-    const history = existing.statusHistory || [];
-    
-    // Find the last status before 'COMPLETED'
-    for (let i = 0; i < history.length; i++) {
-      if (history[i].status === 'COMPLETED' && i + 1 < history.length) {
-        originalStatus = history[i + 1].status || 'ENQUIRY';
-        break;
-      }
-    }
-    
-    // If no previous status found, try to find any non-COMPLETED status
-    if (originalStatus === 'COMPLETED' || originalStatus === 'ENQUIRY') {
-      const nonCompletedStatus = history.find(h => h.status !== 'COMPLETED' && h.status !== 'ARCHIVED');
-      if (nonCompletedStatus) {
-        originalStatus = nonCompletedStatus.status;
-      }
-    }
-
-    const shipment = await prisma.shipment.update({
-      where: { id },
-      data: { 
-        isArchived: false,
-        isDeleted: false,
-        currentStatus: originalStatus,
-        statusHistory: {
-          create: {
-            status: 'RESTORED',
-            remarks: `Shipment restored from archive (Restored to: ${originalStatus})`
-          }
-        }
-      },
-      include: {
-        freightForwarding: true,
-        cha: true,
-        accounts: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({ 
-      status: 'success', 
-      data: shipment,
-      message: 'Shipment restored from archive'
-    });
-  } catch (error) {
-    console.error('Error unarchiving shipment:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to unarchive' });
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(buffer);
+    return data.text || '';
+  } catch (err) {
+    console.error('pdf-parse extraction error:', err.message);
+    return '';
   }
-});
+}
 
-// ─── SOFT DELETE (MOVE TO BIN) ───
-router.put('/shipments/:id/delete', async (req, res) => {
-  const prisma = require('../utils/prisma');
+// ─── LAYER 3: TESSERACT OCR FOR SCANNED PDFs ───
+async function extractOcrFromScannedPages(buffer, pageInfo) {
   try {
-    const { id } = req.params;
-    
-    const user = req.user || {};
-    const deletedByName = user.name || user.email || 'Unknown';
-    
-    const existing = await prisma.shipment.findUnique({
-      where: { id }
-    });
-
-    if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Shipment not found' });
+    const scannedPages = pageInfo.filter(p => p.isScanned);
+    if (scannedPages.length === 0) {
+      console.log('✅ All pages have digital text, skipping OCR');
+      return '';
     }
 
-    if (existing.isDeleted) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'Shipment is already in bin' 
-      });
-    }
+    console.log(`🔍 ${scannedPages.length} scanned page(s) detected, running OCR...`);
 
-    const shipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        isDeleted: true,
-        isArchived: false,
-        deletedAt: new Date(),
-        deletedBy: deletedByName,
-        statusHistory: {
-          create: {
-            status: 'DELETED',
-            remarks: `Shipment moved to bin by ${deletedByName} (Original status: ${existing.currentStatus})`
-          }
-        }
-      },
-      include: {
-        freightForwarding: true,
-        cha: true,
-        accounts: true,
-        statusHistory: true
-      }
-    });
+    // Convert PDF pages to images using pdfjs
+    const pdfjsLib = await import('pdfjs-dist');
+    const uint8Array = new Uint8Array(buffer);
+    const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+    const pdfDocument = await loadingTask.promise;
 
-    res.json({ 
-      status: 'success', 
-      data: shipment,
-      message: 'Shipment moved to bin successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting shipment:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to move to bin' });
-  }
-});
-
-// ─── RESTORE FROM BIN ───
-router.put('/shipments/:id/restore', async (req, res) => {
-  const prisma = require('../utils/prisma');
-  try {
-    const { id } = req.params;
-    
-    const user = req.user || {};
-    const restoredByName = user.name || user.email || 'Unknown';
-    
-    const existing = await prisma.shipment.findUnique({
-      where: { id },
-      include: {
-        statusHistory: {
-          orderBy: { createdAt: 'desc' },
-          take: 10
-        }
-      }
-    });
-
-    if (!existing) {
-      return res.status(404).json({ status: 'error', message: 'Shipment not found' });
-    }
-
-    if (!existing.isDeleted) {
-      return res.status(400).json({ 
-        status: 'error', 
-        message: 'Shipment is not in bin' 
-      });
-    }
-
-    let originalStatus = 'ENQUIRY';
-    const history = existing.statusHistory || [];
-    
-    for (let i = 0; i < history.length; i++) {
-      if (history[i].status === 'DELETED' && i + 1 < history.length) {
-        originalStatus = history[i + 1].status || 'ENQUIRY';
-        break;
-      }
-    }
-    
-    if (originalStatus === 'DELETED' || originalStatus === 'ENQUIRY') {
-      const nonDeletedStatus = history.find(h => h.status !== 'DELETED');
-      if (nonDeletedStatus) {
-        originalStatus = nonDeletedStatus.status;
-      }
-    }
-
-    const wasArchived = existing.isArchived || false;
-    const wasCompleted = ['COMPLETED', 'DELIVERED'].includes(originalStatus);
-
-    const shipment = await prisma.shipment.update({
-      where: { id },
-      data: {
-        isDeleted: false,
-        deletedAt: null,
-        deletedBy: null,
-        isArchived: wasArchived || wasCompleted,
-        currentStatus: originalStatus,
-        statusHistory: {
-          create: {
-            status: 'RESTORED',
-            remarks: `Shipment restored from bin by ${restoredByName} (Restored to: ${originalStatus})`
-          }
-        }
-      },
-      include: {
-        freightForwarding: true,
-        cha: true,
-        accounts: true,
-        statusHistory: true
-      }
-    });
-
-    res.json({ 
-      status: 'success', 
-      data: shipment,
-      message: 'Shipment restored successfully'
-    });
-  } catch (error) {
-    console.error('Error restoring shipment:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to restore' });
-  }
-});
-
-// ─── GET BIN (Deleted) SHIPMENTS ───
-router.get('/shipments/bin', async (req, res) => {
-  const prisma = require('../utils/prisma');
-  try {
-    const { page = 1, limit = 25, search } = req.query;
-    const p = Math.max(1, parseInt(page));
-    const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
-
-    const where = { isDeleted: true };
-    
-    if (search) {
-      where.OR = [
-        { refNo: { contains: search } },
-        { freightForwarding: { consigneeName: { contains: search } } },
-        { freightForwarding: { hawb: { contains: search } } },
-        { freightForwarding: { mawb: { contains: search } } },
-        { cha: { boeNo: { contains: search } } },
-        { cha: { sbNo: { contains: search } } },
-        { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } }
-      ];
-    }
-
-    const [shipments, total] = await Promise.all([
-      prisma.shipment.findMany({
-        where,
-        select: {
-          id: true,
-          refNo: true,
-          currentStatus: true,
-          shipmentStage: true,
-          shipmentType: true,
-          importExport: true,
-          createdByName: true,
-          createdAt: true,
-          deletedAt: true,
-          deletedBy: true,
-          isArchived: true,
-          freightForwarding: {
-            select: {
-              consigneeName: true,
-              hawb: true,
-              mawb: true,
-              agent: true,
-              customerName: true,
-              transportMode: true,
-              weight: true,
-              grossWeight: true,
-              cbm: true,
-              sellingRate: true,
-              fromLocation: true,
-              toLocation: true,
-              deliveryDate: true
-            }
-          },
-          cha: { select: { boeNo: true, sbNo: true } },
-          accounts: { select: { invoiceNumber: true, invoiceDate: true } }
-        },
-        orderBy: { deletedAt: 'desc' },
-        skip: (p - 1) * l,
-        take: l
-      }),
-      prisma.shipment.count({ where })
-    ]);
-
-    res.json({
-      status: 'success',
-      data: shipments,
-      pagination: {
-        total,
-        page: p,
-        limit: l,
-        totalPages: Math.ceil(total / l)
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching bin shipments:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to fetch bin' });
-  }
-});
-
-// ─── BULK RESTORE FROM BIN ───
-router.put('/shipments/bin/restore-bulk', async (req, res) => {
-  const prisma = require('../utils/prisma');
-  try {
-    const { ids } = req.body;
-    const user = req.user || {};
-    const restoredByName = user.name || user.email || 'Unknown';
-    
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ status: 'error', message: 'No shipment IDs provided' });
-    }
-
-    const results = [];
-    for (const id of ids) {
+    const imageBuffers = [];
+    for (const pageInfoItem of scannedPages) {
+      const page = await pdfDocument.getPage(pageInfoItem.pageNum);
+      const viewport = page.getViewport({ scale: 2.5 }); // High resolution for OCR
+      
+      // Dynamic import canvas (only needed for OCR)
+      let canvas, ctx;
       try {
-        const existing = await prisma.shipment.findUnique({
-          where: { id },
-          include: {
-            statusHistory: {
-              orderBy: { createdAt: 'desc' },
-              take: 10
-            }
-          }
-        });
-
-        if (!existing || !existing.isDeleted) continue;
-
-        let originalStatus = 'ENQUIRY';
-        const history = existing.statusHistory || [];
-        for (let i = 0; i < history.length; i++) {
-          if (history[i].status === 'DELETED' && i + 1 < history.length) {
-            originalStatus = history[i + 1].status || 'ENQUIRY';
-            break;
-          }
+        const { createCanvas } = require('canvas');
+        canvas = createCanvas(viewport.width, viewport.height);
+        ctx = canvas.getContext('2d');
+      } catch (e) {
+        // Fallback: use node-canvas or skip
+        console.warn('Canvas module not available, trying alternative...');
+        try {
+          const { createCanvas: cc } = await import('canvas');
+          canvas = cc(viewport.width, viewport.height);
+          ctx = canvas.getContext('2d');
+        } catch (e2) {
+          console.error('Cannot render PDF pages for OCR:', e2.message);
+          return '';
         }
-        if (originalStatus === 'DELETED') {
-          const nonDeletedStatus = history.find(h => h.status !== 'DELETED');
-          if (nonDeletedStatus) originalStatus = nonDeletedStatus.status;
-        }
+      }
+      
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const imageBuffer = canvas.toBuffer('image/png');
+      imageBuffers.push(imageBuffer);
+    }
 
-        const wasArchived = existing.isArchived || false;
-        const wasCompleted = ['COMPLETED', 'DELIVERED'].includes(originalStatus);
+    const ocrText = await ocrPdfFromImages(imageBuffers);
+    return ocrText;
+  } catch (err) {
+    console.error('OCR extraction failed:', err.message);
+    return '';
+  }
+}
 
-        await prisma.shipment.update({
-          where: { id },
-          data: {
-            isDeleted: false,
-            deletedAt: null,
-            deletedBy: null,
-            isArchived: wasArchived || wasCompleted,
-            currentStatus: originalStatus,
-            statusHistory: {
-              create: {
-                status: 'RESTORED',
-                remarks: `Shipment restored from bin by ${restoredByName}`
-              }
-            }
-          }
-        });
-        results.push({ id, success: true });
-      } catch (err) {
-        results.push({ id, success: false, error: err.message });
+// ─── INTELLIGENT PARSER WITH CONFIDENCE SCORING ───
+function intelligentParse(items, pdfParseText, ocrText) {
+  const result = {
+    referenceNumber: '', shipmentMode: '', importerName: '', exporterName: '',
+    supplierName: '', location: '', jobOrderNo: '', jobOrderDate: '',
+    boeSbNo: '', boeSbDate: '', mawbMblNo: '', mawbMblDate: '',
+    hawbHblNo: '', hawbHblDate: '', noOfPackages: '', grossWeight: '',
+    igmNo: '', igmDate: '', portOfDischarge: '', portOfDestination: '',
+    cargoArrivalNotice: '', cargoArrivalDate: '', deliveryOrderDate: '',
+    occDate: '', gatePassDate: '', remarks: '', invoiceNo: '', invoiceDate: '',
+    agentDebitNote: '', billingCurrency: '', billNo: '', billDate: '',
+    billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: '',
+    gatewayIgmNo: '', gatewayIgmDate: '', localIgmNo: '', localIgmDate: '',
+    containerNo: '', shipmentType: '', gstin: ''
+  };
+
+  const confidence = {};
+  
+  // Combine ALL text sources (digital + OCR)
+  const page1Items = items.filter(i => i.page === 1);
+  const sortedByPosition = [...page1Items].sort((a, b) => a.y - b.y || a.x - b.x);
+  const digitalText = sortedByPosition.map(i => i.text).join(' ');
+  const ocrTextClean = ocrText || '';
+  
+  // Merge texts, preferring digital but filling gaps with OCR
+  const combinedText = mergeTexts(digitalText, ocrTextClean || pdfParseText || '');
+  const compactText = combinedText.replace(/\s+/g, '');
+  const upperText = combinedText.toUpperCase();
+
+  // ─── HELPER: Multi-pattern matcher with confidence ───
+  function findWithConfidence(patterns, text, fieldName) {
+    for (let i = 0; i < patterns.length; i++) {
+      const match = text.match(patterns[i]);
+      if (match && match[1] && match[1].trim().length > 1) {
+        const value = match[1].trim();
+        const conf = Math.max(0.5, 1 - (i * 0.05));
+        confidence[fieldName] = conf;
+        return value;
       }
     }
+    confidence[fieldName] = 0;
+    return '';
+  }
+
+  function cleanCompanyName(name) {
+    if (!name) return '';
+    return name
+      .replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN|SERVICES|CO\.?|LTD|PTE|PVT|PRIVATE|LIMITED)\s*$/i, '')
+      .replace(/^\s*(PAS\s*FREIGHT\s*SERVICES?\s*)/i, '')
+      .trim();
+  }
+
+  // ─── DETECT SHIPMENT TYPE ───
+  const seaKeywords = ['GATEWAY IGM', 'CONTAINER NO', 'MBL', 'SEA', 'FCL', 'LCL', 'VESSEL', 'PORT OF DISCHARGE'];
+  const airKeywords = ['MAWB', 'AWB', 'AIR WAYBILL', 'FLIGHT NO', 'AIRPORT', 'HAWB'];
+  
+  let seaScore = 0, airScore = 0;
+  seaKeywords.forEach(kw => { if (upperText.includes(kw)) seaScore++; });
+  airKeywords.forEach(kw => { if (upperText.includes(kw)) airScore++; });
+  
+  result.shipmentType = seaScore > airScore ? 'Sea' : airScore > seaScore ? 'Air' : 'Unknown';
+
+  // ─── REFERENCE NUMBER ───
+  result.referenceNumber = findWithConfidence([
+    /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
+    /Ref\s*(?:erence)?\s*No\s*:?\s*([A-Z0-9\/-]+)/i,
+    /ONLINE[-\s]*(\d+)/i,
+    /([A-Z]{2,4}\/\d{2,4}\/[A-Z]{2,4})/i
+  ], combinedText, 'referenceNumber');
+
+  // ─── IMPORTER NAME ───
+  result.importerName = findWithConfidence([
+    /Importer\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE|INC|CORP)[\w\s]*)/i,
+    /Consignee\s*(?:Name)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i,
+    /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT)[\w\s]*)/i
+  ], combinedText, 'importerName');
+
+  // ─── EXPORTER NAME ───
+  result.exporterName = findWithConfidence([
+    /Exporter\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
+    /Shipper\s*(?:Name)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT)[\w\s]*)/i
+  ], combinedText, 'exporterName');
+
+  // ─── SUPPLIER NAME ───
+  result.supplierName = findWithConfidence([
+    /Supplier\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
+    /Vendor\s*(?:Name)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT)[\w\s]*)/i
+  ], combinedText, 'supplierName');
+  
+  if (!result.supplierName && result.exporterName) {
+    result.supplierName = result.exporterName;
+    confidence.supplierName = 0.7;
+  }
+
+  // ─── LOCATION ───
+  result.location = findWithConfidence([
+    /Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i,
+    /Location\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z\s]+)/i
+  ], combinedText, 'location');
+
+  // ─── JOB ORDER NO + DATE ───
+  result.jobOrderNo = findWithConfidence([
+    /Job\s*(?:Order)?\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i,
+    /Job\s*No\s*:?\s*(\d{3,})/i
+  ], combinedText, 'jobOrderNo');
+  
+  result.jobOrderDate = findWithConfidence([
+    /Job\s*(?:Order)?\s*No\s*[&]?\s*Date\s*:\s*\d+\s*[&\/]?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /Job\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'jobOrderDate');
+
+  // ─── BOE/SB NUMBER + DATE ───
+  const boeSbNo = findWithConfidence([
+    /B\.?E\s*No[,\s]*Date\s*:\s*(\d{3,})/i,
+    /BOE\s*No\s*:?\s*(\d{3,})/i,
+    /SB\s*No\s*:?\s*(\d{3,})/i,
+    /B\/E\s*No\s*:?\s*(\d{3,})/i,
+    /Shipping\s*Bill\s*No\s*:?\s*(\d{3,})/i
+  ], combinedText, 'boeSbNo');
+  
+  if (boeSbNo && /^\d{3,}$/.test(boeSbNo)) {
+    result.boeSbNo = boeSbNo;
+  }
+  
+  if (result.boeSbNo) {
+    result.boeSbDate = findWithConfidence([
+      /B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /BOE\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /SB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /Printed\s*On\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'boeSbDate');
+  }
+
+  // ─── MAWB/MBL NUMBER + DATE ───
+  const isAir = result.shipmentType === 'Air';
+  
+  result.mawbMblNo = findWithConfidence([
+    isAir 
+      ? /MAWB\s*(?:No)?\s*:?\s*(\d{3}[- ]?\d{4}[- ]?\d{3})/i 
+      : /MBL\/?\s*MAWB\s*:?\s*([A-Z0-9]{6,20})/i,
+    /(?:MAWB|MBL)\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i
+  ], combinedText, 'mawbMblNo');
+  
+  if (result.mawbMblNo) {
+    result.mawbMblDate = findWithConfidence([
+      /(?:MAWB|MBL)\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'mawbMblDate');
+  }
+
+  // ─── HAWB/HBL NUMBER + DATE ───
+  result.hawbHblNo = findWithConfidence([
+    /(?:HAWB|HBL)\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i,
+    /HBL\/?\s*HAWB\s*:?\s*(\d{7,12})/i
+  ], combinedText, 'hawbHblNo');
+  
+  if (result.hawbHblNo) {
+    result.hawbHblDate = findWithConfidence([
+      /(?:HAWB|HBL)\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'hawbHblDate');
+  }
+
+  // ─── NO OF PACKAGES ───
+  result.noOfPackages = findWithConfidence([
+    /No\.?\s*of\s*Pkgs\s*:?\s*(\d+)/i,
+    /Packages\s*:?\s*(\d+)/i,
+    /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CTNS|CAS)/i
+  ], combinedText, 'noOfPackages');
+
+  // ─── GROSS WEIGHT ───
+  result.grossWeight = findWithConfidence([
+    /Gross\s*Weight\s*:?\s*([\d,]+\s*\.?\d*\s*KGS?)/i,
+    /Weight\s*:?\s*([\d,]+\s*\.?\d*\s*KGS?)/i,
+    /([\d,]+\s*\.?\d*\s*KGS?)/i
+  ], combinedText, 'grossWeight');
+
+  // ─── IGM + CONTAINER (SEA only) ───
+  if (!isAir) {
+    result.igmNo = findWithConfidence([
+      /IGM\s*(?:NO|No|Number)?\s*:?\s*(\d{4,})/i
+    ], combinedText, 'igmNo');
+    
+    result.igmDate = findWithConfidence([
+      /IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'igmDate');
+
+    result.gatewayIgmNo = findWithConfidence([
+      /Gateway\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i
+    ], combinedText, 'gatewayIgmNo');
+    
+    result.gatewayIgmDate = findWithConfidence([
+      /Gateway\s*IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'gatewayIgmDate');
+
+    result.localIgmNo = findWithConfidence([
+      /Local\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i
+    ], combinedText, 'localIgmNo');
+    
+    result.localIgmDate = findWithConfidence([
+      /Local\s*IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'localIgmDate');
+
+    // ─── CONTAINER NUMBER ───
+    const containerMatches = combinedText.match(/\b([A-Z]{4}\d{7})\b/g) || [];
+    const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
+    const validContainers = containerMatches.filter(c => !invalidPrefixes.test(c));
+    
+    if (validContainers.length > 0) {
+      const containerLabelIndex = combinedText.search(/CONTAINER/i);
+      if (containerLabelIndex >= 0) {
+        const nearContainer = validContainers.find(c => {
+          const idx = combinedText.indexOf(c);
+          return Math.abs(idx - containerLabelIndex) < 200;
+        });
+        result.containerNo = nearContainer || validContainers[0];
+      } else {
+        result.containerNo = validContainers[0];
+      }
+      confidence.containerNo = 0.85;
+    }
+  }
+
+  // ─── PORTS ───
+  result.portOfDischarge = findWithConfidence([
+    /Port\s*Of\s*Discharge\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z\s]+)/i
+  ], combinedText, 'portOfDischarge');
+
+  result.portOfDestination = findWithConfidence([
+    /(?:Port\s*(?:Of)?\s*Destination|Final\s*Destination)\s*:?\s*([A-Z0-9\-]+)/i
+  ], combinedText, 'portOfDestination');
+
+  // ─── INVOICE ───
+  result.invoiceNo = findWithConfidence([
+    /Inv\.?\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i,
+    /Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i
+  ], combinedText, 'invoiceNo');
+  
+  result.invoiceDate = findWithConfidence([
+    /Inv\.?\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /Invoice\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'invoiceDate');
+
+  // ─── DATES ───
+  result.deliveryOrderDate = findWithConfidence([
+    /DO\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /Delivery\s*Order\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'deliveryOrderDate');
+
+  result.occDate = findWithConfidence([
+    /O[OC]C\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'occDate');
+
+  result.gatePassDate = findWithConfidence([
+    /Gate\s*Pass\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'gatePassDate');
+
+  // ─── MARKS & NOS / REMARKS ───
+  result.remarks = findWithConfidence([
+    /Marks\s*[&]?\s*Nos\s*:?\s*(.+?)(?:\s{2,}|\s*$)/i,
+    /Remarks\s*:?\s*(.+?)(?:\s{2,}|\s*$)/i
+  ], combinedText, 'remarks');
+
+  // ─── GSTIN ───
+  const gstinMatch = compactText.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
+  if (gstinMatch) {
+    result.gstin = gstinMatch[1].toUpperCase();
+    result.additionalRemarks = 'GSTIN: ' + result.gstin;
+    confidence.gstin = 0.95;
+  }
+
+  // ─── BILLING ───
+  result.billingCurrency = findWithConfidence([
+    /Currency\s*:?\s*([A-Z]{3})/i,
+    /Inv\.?\s*Value\s*:?\s*[\d.,]+\s*([A-Z]{3})/i
+  ], combinedText, 'billingCurrency');
+
+  result.billTo = findWithConfidence([
+    /Bill\s*To\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
+  ], combinedText, 'billTo');
+  if (!result.billTo && result.importerName) {
+    result.billTo = result.importerName;
+    confidence.billTo = 0.7;
+  }
+
+  // ─── DOCKET + AGENT ───
+  result.docketNo = result.jobOrderNo || result.referenceNumber || '';
+  result.docketDate = result.jobOrderDate || new Date().toISOString().split('T')[0];
+  result.agentDebitNote = 'PAS FREIGHT SERVICES';
+
+  // ─── CLEAN ───
+  result.importerName = cleanCompanyName(result.importerName);
+  result.exporterName = cleanCompanyName(result.exporterName);
+  result.supplierName = cleanCompanyName(result.supplierName);
+  result.billTo = cleanCompanyName(result.billTo);
+
+  if (!result.cargoArrivalNotice) result.cargoArrivalNotice = result.gatewayIgmNo;
+  if (!result.cargoArrivalDate) result.cargoArrivalDate = result.gatewayIgmDate;
+
+  return { data: result, confidence };
+}
+
+// ─── MAIN ROUTE ───
+router.post('/scan', upload.single('checklist'), async function(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
+    }
+
+    const buffer = req.file.buffer;
+    console.log(`\n📄 Scanning: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
+
+    // Layer 1: Extract digital text with pdfjs (position-aware)
+    console.log('📑 Layer 1: Extracting digital text...');
+    const { items: pdfJsItems, pageInfo } = await extractTextWithPdfJs(buffer);
+    const digitalChars = pdfJsItems.reduce((s, i) => s + i.text.length, 0);
+    console.log(`   → ${digitalChars} characters across ${pageInfo.length} page(s)`);
+
+    // Layer 2: Extract with pdf-parse (better formatting)
+    console.log('📑 Layer 2: Extracting with pdf-parse...');
+    const pdfParseText = await extractTextWithPdfParse(buffer);
+    console.log(`   → ${pdfParseText.length} characters`);
+
+    // Layer 3: OCR for scanned pages
+    console.log('📑 Layer 3: Checking for scanned pages...');
+    const scannedCount = pageInfo.filter(p => p.isScanned).length;
+    const ocrText = await extractOcrFromScannedPages(buffer, pageInfo);
+    if (ocrText) {
+      console.log(`   → OCR extracted ${ocrText.length} characters`);
+    } else if (scannedCount === 0) {
+      console.log('   → No scanned pages detected, skipping OCR');
+    }
+
+    // Merge all text
+    const sortedItems = pdfJsItems
+      .filter(i => i.page === 1)
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    const digitalText = sortedItems.map(i => i.text).join(' ');
+    const mergedText = mergeTexts(digitalText, ocrText || pdfParseText || '');
+
+    // Layer 4: Intelligent parsing
+    console.log('🧠 Layer 4: Parsing fields...');
+    const parsed = intelligentParse(pdfJsItems, pdfParseText, ocrText);
+
+    // Calculate accuracy
+    const confidenceValues = Object.values(parsed.confidence).filter(v => v > 0);
+    const overallAccuracy = confidenceValues.length > 0
+      ? Math.round((confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length) * 100)
+      : 0;
+
+    const scanMethod = ocrText ? 'OCR (scanned PDF)' : 'Digital extraction';
+    console.log(`✅ Done: ${overallAccuracy}% accuracy • ${confidenceValues.length} fields • ${scanMethod}\n`);
 
     res.json({
       status: 'success',
-      data: results,
-      message: `Restored ${results.filter(r => r.success).length} of ${ids.length} shipments`
+      data: parsed.data,
+      rawText: mergedText || 'No text extracted',
+      confidence: parsed.confidence,
+      accuracy: overallAccuracy,
+      fieldsDetected: confidenceValues.length,
+      totalFields: Object.keys(parsed.confidence).length,
+      scanMethod
     });
+    
   } catch (error) {
-    console.error('Error bulk restoring:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to restore shipments' });
-  }
-});
-
-// ─── GET BIN COUNT ───
-router.get('/shipments/bin/count', async (req, res) => {
-  const prisma = require('../utils/prisma');
-  try {
-    const count = await prisma.shipment.count({
-      where: { isDeleted: true }
+    console.error('❌ PDF scan error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to scan PDF: ' + error.message
     });
-    res.json({ status: 'success', data: { count } });
-  } catch (error) {
-    console.error('Error getting bin count:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to get bin count' });
   }
 });
 

@@ -9,7 +9,8 @@ import {
   Box, RefreshCw, Truck, FileCheck, FileText, Ship,
   ClipboardList, Target, Activity, Award, Zap, Calendar,
   ArrowUpRight, ArrowDownRight, Medal, Download, DollarSign,
-  Route, ArrowRight, TrendingDown, Filter, Hash, Weight
+  Route, ArrowRight, TrendingDown, Filter, Hash, Weight,
+  FileSpreadsheet, Printer, IndianRupee
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────
@@ -63,7 +64,7 @@ function DonutChart({ data = [], size = 180, centerLabel = 'Total' }) {
 
   const outerR = 40
   const innerR = 22
-  const gap = 2 // degrees gap between segments
+  const gap = 2
 
   return (
     <div className="relative flex items-center justify-center">
@@ -90,7 +91,7 @@ function DonutChart({ data = [], size = 180, centerLabel = 'Total' }) {
               fill={d.color}
               stroke="var(--bg-primary)"
               strokeWidth="1.5"
-              className="transition-all duration-300 hover:opacity-80"
+              className="transition-all duration-300 hover:opacity-80 cursor-pointer"
             >
               <title>{d.name}: {d.value} ({(d.pct * 100).toFixed(1)}%)</title>
             </path>
@@ -129,7 +130,6 @@ function BarChartSVG({ data = [], height = 260, color = '#6366f1', showValues = 
         preserveAspectRatio="xMidYMid meet"
         style={{ overflow: 'visible', minWidth: totalW }}
       >
-        {/* Grid lines */}
         {[0, 25, 50, 75, 100].map(pct => {
           const y = height - botP - ((max * pct / 100) / max) * (height - topP - botP)
           return (
@@ -148,8 +148,7 @@ function BarChartSVG({ data = [], height = 260, color = '#6366f1', showValues = 
           const y = height - botP - barH
 
           return (
-            <g key={i} className="group">
-              {/* Bar */}
+            <g key={i} className="group cursor-pointer">
               <rect
                 x={x}
                 y={y}
@@ -159,8 +158,9 @@ function BarChartSVG({ data = [], height = 260, color = '#6366f1', showValues = 
                 rx="4"
                 opacity="0.85"
                 className="transition-all duration-300 hover:opacity-100"
-              />
-              {/* Value label */}
+              >
+                <title>{d.label}: {d.value}</title>
+              </rect>
               {showValues && d.value > 0 && (
                 <text
                   x={x + barW / 2}
@@ -173,7 +173,6 @@ function BarChartSVG({ data = [], height = 260, color = '#6366f1', showValues = 
                   {d.value}
                 </text>
               )}
-              {/* X-axis label */}
               <text
                 x={x + barW / 2}
                 y={height - 12}
@@ -195,12 +194,12 @@ function BarChartSVG({ data = [], height = 260, color = '#6366f1', showValues = 
 // CONSTANTS
 // ─────────────────────────────────────────────
 const COLORS = {
-  freight: '#6366f1',      // Indigo
-  ffOnly: '#8b5cf6',       // Violet
-  chaImport: '#10b981',    // Emerald
-  chaExport: '#059669',    // Dark Emerald
-  transport: '#3b82f6',    // Blue
-  doRelease: '#06b6d4',    // Cyan
+  freight: '#6366f1',
+  ffOnly: '#8b5cf6',
+  chaImport: '#10b981',
+  chaExport: '#059669',
+  transport: '#3b82f6',
+  doRelease: '#06b6d4',
   delivered: '#10b981',
   customs: '#f59e0b',
   booked: '#6366f1',
@@ -219,7 +218,7 @@ const SHIPMENT_TYPE_CONFIG = {
 }
 
 const STATUS_GROUPS = {
-  'Enquiry': { statuses: ['ENQUIRY'], icon: '🔍', color: COLORS.enquiry },
+  'Enquiry': { statuses: ['ENQUIRY', 'RATES_ADDED'], icon: '🔍', color: COLORS.enquiry },
   'Booked': { statuses: ['BOOKED', 'SCHEDULED', 'AWB_GENERATED', 'NOMINATED', 'CONFIRMED'], icon: '📋', color: COLORS.booked },
   'In Customs': { statuses: ['CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'SB_FILED', 'OOC_DONE', 'GATE_PASS', 'LEO_DONE', 'CUSTOMS_HOLD'], icon: '🛃', color: COLORS.customs },
   'In Transit': { statuses: ['IN_TRANSIT', 'SHIPPED', 'ON_BOARD', 'ARRIVED'], icon: '🚚', color: '#3b82f6' },
@@ -227,6 +226,15 @@ const STATUS_GROUPS = {
   'Invoiced': { statuses: ['INVOICE_GENERATED', 'INVOICE_SENT', 'PAYMENT_RECEIVED'], icon: '💰', color: COLORS.invoiced },
   'Cancelled': { statuses: ['CANCELLED', 'ON_HOLD'], icon: '❌', color: COLORS.cancelled },
 }
+
+const SHIPMENT_TYPE_FILTERS = [
+  { value: 'all', label: 'All Types', icon: Layers, color: '#6366f1' },
+  { value: 'freight', label: 'Freight', icon: Ship, color: COLORS.freight },
+  { value: 'ff-only', label: 'FF Only', icon: FileText, color: COLORS.ffOnly },
+  { value: 'cha', label: 'CHA', icon: FileCheck, color: COLORS.chaImport },
+  { value: 'transport', label: 'Transport', icon: Truck, color: COLORS.transport },
+  { value: 'do-release', label: 'DO Release', icon: ClipboardList, color: COLORS.doRelease },
+]
 
 // ─────────────────────────────────────────────
 // MAIN ANALYTICS COMPONENT
@@ -383,16 +391,16 @@ export default function Analytics() {
     typeFiltered.forEach(s => {
       const name = s.freightForwarding?.consigneeName || s.freightForwarding?.customerName || s.freightForwarding?.shipperName || 'Unknown'
       if (!customerMap[name]) {
-        customerMap[name] = { name, shipments: 0, delivered: 0, revenue: 0 }
+        customerMap[name] = { name, shipments: 0, delivered: 0, revenue: 0, weight: 0 }
       }
       customerMap[name].shipments++
       if (['DELIVERED', 'HAND_OVER'].includes(s.currentStatus)) {
         customerMap[name].delivered++
       }
-      // Estimate revenue from freight forwarding data
       const rate = parseFloat(s.freightForwarding?.sellingRate) || 0
-      const weight = parseFloat(s.freightForwarding?.weight) || 0
-      customerMap[name].revenue += rate * weight || rate || 0
+      const weight = parseFloat(s.freightForwarding?.grossWeight) || parseFloat(s.freightForwarding?.weight) || 0
+      customerMap[name].revenue += rate
+      customerMap[name].weight += weight
     })
     const topCustomers = Object.values(customerMap)
       .sort((a, b) => b.shipments - a.shipments)
@@ -406,10 +414,11 @@ export default function Analytics() {
       const to = s.freightForwarding?.toLocation || 'Unknown Destination'
       const key = `${from} → ${to}`
       if (!routeMap[key]) {
-        routeMap[key] = { from, to, key, shipments: 0, weight: 0 }
+        routeMap[key] = { from, to, key, shipments: 0, weight: 0, revenue: 0 }
       }
       routeMap[key].shipments++
-      routeMap[key].weight += parseFloat(s.freightForwarding?.weight) || 0
+      routeMap[key].weight += parseFloat(s.freightForwarding?.grossWeight) || parseFloat(s.freightForwarding?.weight) || 0
+      routeMap[key].revenue += parseFloat(s.freightForwarding?.sellingRate) || 0
     })
     const topRoutes = Object.values(routeMap)
       .sort((a, b) => b.shipments - a.shipments)
@@ -438,26 +447,53 @@ export default function Analytics() {
       .sort((a, b) => b.shipments - a.shipments)
     const maxTeam = Math.max(...team.map(t => t.shipments), 1)
 
-    // ── Revenue Estimate ──
+    // ── Revenue ──
     const totalRevenue = typeFiltered.reduce((sum, s) => {
-      const rate = parseFloat(s.freightForwarding?.sellingRate) || 0
-      const weight = parseFloat(s.freightForwarding?.weight) || 1
-      return sum + (rate * weight || rate)
+      return sum + (parseFloat(s.freightForwarding?.sellingRate) || 0)
     }, 0)
     const revenueThisMonth = typeFiltered
       .filter(s => new Date(s.createdAt).getMonth() === thisMonth)
-      .reduce((sum, s) => {
-        const rate = parseFloat(s.freightForwarding?.sellingRate) || 0
-        const weight = parseFloat(s.freightForwarding?.weight) || 1
-        return sum + (rate * weight || rate)
-      }, 0)
+      .reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0)
+    const revenueLastMonth = typeFiltered
+      .filter(s => new Date(s.createdAt).getMonth() === thisMonth - 1)
+      .reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0)
+    const revenueGrowth = revenueLastMonth > 0
+      ? (((revenueThisMonth - revenueLastMonth) / revenueLastMonth) * 100).toFixed(1)
+      : '0'
+    const revenueGrowthPositive = Number(revenueGrowth) >= 0
+
+    // ── Revenue by Shipment Type ──
+    const revenueByType = [
+      { name: 'Freight', value: typeFiltered.filter(s => s.shipmentType === 'Freight').reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0), color: COLORS.freight, ...SHIPMENT_TYPE_CONFIG['Freight'] },
+      { name: 'FF Only', value: typeFiltered.filter(s => s.shipmentType === 'FF Only').reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0), color: COLORS.ffOnly, ...SHIPMENT_TYPE_CONFIG['FF Only'] },
+      { name: 'CHA Import', value: typeFiltered.filter(s => s.shipmentType === 'CHA Import').reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0), color: COLORS.chaImport, ...SHIPMENT_TYPE_CONFIG['CHA Import'] },
+      { name: 'CHA Export', value: typeFiltered.filter(s => s.shipmentType === 'CHA Export').reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0), color: COLORS.chaExport, ...SHIPMENT_TYPE_CONFIG['CHA Export'] },
+      { name: 'Transport', value: typeFiltered.filter(s => s.shipmentType === 'Transport').reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0), color: COLORS.transport, ...SHIPMENT_TYPE_CONFIG['Transport'] },
+      { name: 'DO Release', value: typeFiltered.filter(s => s.shipmentType === 'DO Release').reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0), color: COLORS.doRelease, ...SHIPMENT_TYPE_CONFIG['DO Release'] },
+    ].filter(d => d.value > 0).sort((a, b) => b.value - a.value)
+
+    // ── Monthly Revenue Trend ──
+    const monthlyRevenue = []
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const rev = typeFiltered.filter(s => {
+        const sd = new Date(s.createdAt)
+        return sd.getMonth() === d.getMonth() && sd.getFullYear() === d.getFullYear()
+      }).reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.sellingRate) || 0), 0)
+      monthlyRevenue.push({
+        label: d.toLocaleString('default', { month: 'short' }),
+        value: Math.round(rev / 1000),
+        color: rev > 0 ? '#f43f5e' : '#cbd5e1',
+      })
+    }
 
     // ── Additional metrics ──
     const totalDays = Math.max(1, monthsToInclude * 30)
     const avgPerDay = total > 0 ? (total / totalDays).toFixed(1) : '0'
     const busiestDay = weekly.reduce((a, b) => (a.value > b.value ? a : b), weekly[0] || { label: '-', value: 0 })
-    const totalWeight = typeFiltered.reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.weight) || parseFloat(s.freightForwarding?.grossWeight) || 0), 0)
+    const totalWeight = typeFiltered.reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.grossWeight) || parseFloat(s.freightForwarding?.weight) || 0), 0)
     const avgWeight = total > 0 ? (totalWeight / total).toFixed(1) : '0'
+    const avgRevenue = total > 0 ? totalRevenue / total : 0
 
     return {
       total,
@@ -482,10 +518,16 @@ export default function Analytics() {
       maxTeam,
       totalRevenue,
       revenueThisMonth,
+      revenueLastMonth,
+      revenueGrowth,
+      revenueGrowthPositive,
+      revenueByType,
+      monthlyRevenue,
       avgPerDay,
       busiestDay,
       totalWeight: totalWeight.toFixed(1),
       avgWeight,
+      avgRevenue,
     }
   }, [shipments, dateRange, selectedType])
 
@@ -521,13 +563,62 @@ export default function Analytics() {
     }, 500)
   }, [])
 
+  const handleExportCSV = useCallback(() => {
+    setExporting(true)
+    const headers = ['Metric', 'Value', 'Details'].join(',')
+    const rows = [
+      ['Total Shipments', a.total, `${a.imp} Import / ${a.exp} Export`],
+      ['Active Shipments', a.active, `${a.cancelled} cancelled`],
+      ['Delivered', a.delivered, `${a.completionRate}% completion rate`],
+      ['Total Revenue', `₹${(a.totalRevenue / 100000).toFixed(2)}L`, `₹${(a.revenueThisMonth / 1000).toFixed(0)}K this month`],
+      ['Revenue Growth', `${a.revenueGrowth}%`, a.revenueGrowthPositive ? 'Growing' : 'Declining'],
+      ['Monthly Growth', `${a.growth}%`, a.growthPositive ? 'Growing' : 'Declining'],
+      ['Avg Daily Volume', a.avgPerDay, 'shipments/day'],
+      ['Avg Revenue/Shipment', `₹${Math.round(a.avgRevenue).toLocaleString('en-IN')}`, 'per shipment'],
+      ['Total Weight', `${a.totalWeight} kg`, `Avg ${a.avgWeight} kg`],
+      ['Team Members', a.team.length, 'active members'],
+      ['', '', ''],
+      ['SHIPMENT TYPE BREAKDOWN', '', ''],
+      ...a.typeBreakdown.map(t => [t.name, t.value, `${a.total > 0 ? ((t.value/a.total)*100).toFixed(0) : 0}%`]),
+      ['', '', ''],
+      ['REVENUE BY TYPE', '', ''],
+      ...a.revenueByType.map(t => [t.name, `₹${Math.round(t.value).toLocaleString('en-IN')}`, `${a.totalRevenue > 0 ? ((t.value/a.totalRevenue)*100).toFixed(1) : 0}%`]),
+      ['', '', ''],
+      ['TOP CUSTOMERS', '', ''],
+      ...a.topCustomers.map((c, i) => [`${i+1}. ${c.name}`, c.shipments, `${c.delivered} delivered, ₹${Math.round(c.revenue).toLocaleString('en-IN')}`]),
+      ['', '', ''],
+      ['TOP ROUTES', '', ''],
+      ...a.topRoutes.map((r, i) => [`${i+1}. ${r.from} → ${r.to}`, r.shipments, `${r.weight.toFixed(1)} kg, ₹${Math.round(r.revenue).toLocaleString('en-IN')}`]),
+    ].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n')
+    
+    const csv = headers + '\n' + rows
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `PAS_Analytics_Report_${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+    window.URL.revokeObjectURL(url)
+    setExporting(false)
+  }, [])
+
   // ── LOADING STATE ──
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <div className="w-14 h-14 border-[3px] border-indigo-200 border-t-indigo-600 rounded-full animate-spin shadow-lg" />
-        <p className="text-sm font-medium text-indigo-500">Loading analytics dashboard...</p>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Fetching shipment data</p>
+      <div className="space-y-6 animate-pulse">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="glass rounded-xl p-4 border" style={{ borderColor: 'var(--glass-border)' }}>
+              <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 mb-3" />
+              <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-20 mb-2" />
+              <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-16" />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 glass rounded-xl border h-72" style={{ borderColor: 'var(--glass-border)' }} />
+          <div className="glass rounded-xl border h-72" style={{ borderColor: 'var(--glass-border)' }} />
+        </div>
       </div>
     )
   }
@@ -567,6 +658,27 @@ export default function Analytics() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Shipment Type Filter */}
+          <div className="flex glass rounded-lg p-0.5 border overflow-x-auto" style={{ borderColor: 'var(--border-color)' }}>
+            {SHIPMENT_TYPE_FILTERS.map(opt => {
+              const Icon = opt.icon
+              const isActive = selectedType === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => setSelectedType(opt.value)}
+                  className={`px-3 py-2 rounded-md text-[11px] font-semibold whitespace-nowrap flex items-center gap-1.5 transition-all ${
+                    isActive ? 'bg-white dark:bg-slate-700 shadow-sm' : ''
+                  }`}
+                  style={isActive ? { color: opt.color } : { color: 'var(--text-secondary)' }}
+                >
+                  <Icon size={12} />
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+
           {/* Date Range Selector */}
           <div className="flex glass rounded-lg p-0.5 border" style={{ borderColor: 'var(--border-color)' }}>
             {[
@@ -605,6 +717,16 @@ export default function Analytics() {
             />
           </button>
 
+          {/* Export CSV Button */}
+          <button
+            onClick={handleExportCSV}
+            disabled={exporting}
+            className="px-3.5 py-2.5 glass border rounded-lg text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+            style={{ borderColor: 'var(--border-color)' }}
+          >
+            <FileSpreadsheet size={14} /> CSV
+          </button>
+
           {/* Export PDF Button */}
           <button
             onClick={handleExportPDF}
@@ -612,40 +734,40 @@ export default function Analytics() {
             className="px-3.5 py-2.5 glass border rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
             style={{ borderColor: 'var(--border-color)' }}
           >
-            <Download size={14} /> Export PDF
+            <Printer size={14} /> PDF
           </button>
         </div>
       </div>
 
       {/* ──────────────────────────────────────
-          KPI CARDS ROW
+          KPI CARDS ROW (7 cards)
           ────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
         {[
-          { icon: Package, color: 'text-blue-500', bgGrad: 'from-blue-500 to-indigo-600', value: a.total, label: 'Total Shipments', sub: `${a.imp} Imp / ${a.exp} Exp` },
+          { icon: Package, color: 'text-blue-500', bgGrad: 'from-blue-500 to-indigo-600', value: a.total, label: 'Total', sub: `${a.imp} Imp / ${a.exp} Exp` },
           { icon: Clock, color: 'text-amber-500', bgGrad: 'from-amber-500 to-orange-600', value: a.active, label: 'In Progress', sub: `${a.cancelled} cancelled` },
           { icon: CheckCircle2, color: 'text-emerald-500', bgGrad: 'from-emerald-500 to-teal-600', value: a.delivered, label: 'Delivered', sub: `${a.completionRate}% rate` },
           { icon: Target, color: 'text-violet-500', bgGrad: 'from-violet-500 to-purple-600', value: `${a.completionRate}%`, label: 'Completion', sub: 'delivery rate' },
-          { icon: DollarSign, color: 'text-rose-500', bgGrad: 'from-rose-500 to-pink-600', value: `₹${(a.revenueThisMonth / 100000).toFixed(1)}L`, label: 'Revenue (Est.)', sub: 'this month' },
-          { icon: Activity, color: 'text-cyan-500', bgGrad: 'from-cyan-500 to-blue-600', value: `${a.growthPositive ? '+' : ''}${a.growth}%`, label: 'vs Last Month', sub: a.growthPositive ? 'Growth ↑' : 'Decline ↓', growth: true, gp: a.growthPositive },
+          { icon: IndianRupee, color: 'text-rose-500', bgGrad: 'from-rose-500 to-pink-600', value: `₹${(a.totalRevenue / 100000).toFixed(1)}L`, label: 'Total Revenue', sub: 'all time' },
+          { icon: DollarSign, color: 'text-emerald-500', bgGrad: 'from-emerald-500 to-teal-600', value: `₹${(a.revenueThisMonth / 1000).toFixed(0)}K`, label: 'Rev This Month', sub: `${a.revenueGrowthPositive ? '+' : ''}${a.revenueGrowth}%` },
+          { icon: Activity, color: 'text-cyan-500', bgGrad: 'from-cyan-500 to-blue-600', value: `${a.growthPositive ? '+' : ''}${a.growth}%`, label: 'Shipment Growth', sub: a.growthPositive ? 'vs Last Month ↑' : 'vs Last Month ↓', growth: true, gp: a.growthPositive },
         ].map((card, i) => {
           const Icon = card.icon
           return (
             <div
               key={i}
               className="glass rounded-xl p-4 border hover-lift group relative overflow-hidden animate-scale-in"
-              style={{ borderColor: 'var(--glass-border)', animationDelay: `${i * 60}ms` }}
+              style={{ borderColor: 'var(--glass-border)', animationDelay: `${i * 50}ms` }}
             >
-              {/* Gradient blob */}
               <div
                 className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${card.bgGrad} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity duration-300`}
               />
               <Icon size={16} className={`${card.color} mb-2 relative z-10`} />
-              <p className="text-2xl font-bold flex items-center gap-1 relative z-10" style={{ color: 'var(--text-primary)' }}>
+              <p className="text-xl font-bold flex items-center gap-1 relative z-10" style={{ color: 'var(--text-primary)' }}>
                 {card.growth && (
                   card.gp
-                    ? <ArrowUpRight size={14} className="text-emerald-500" />
-                    : <TrendingDown size={14} className="text-red-500" />
+                    ? <ArrowUpRight size={12} className="text-emerald-500" />
+                    : <TrendingDown size={12} className="text-red-500" />
                 )}
                 {card.value}
               </p>
@@ -664,7 +786,7 @@ export default function Analytics() {
           MONTHLY TREND + TYPE BREAKDOWN
           ────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Monthly Trend Chart */}
+        {/* Monthly Shipment Trend */}
         <div className="lg:col-span-2 glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
@@ -675,7 +797,7 @@ export default function Analytics() {
               Total: {a.total}
             </span>
           </div>
-          <BarChartSVG data={a.monthly} height={260} color="#6366f1" />
+          <BarChartSVG data={a.monthly} height={220} color="#6366f1" />
         </div>
 
         {/* Shipment Type Donut */}
@@ -684,16 +806,16 @@ export default function Analytics() {
             <PieChartIcon size={16} className="text-indigo-500" />
             Shipment Mix
           </h3>
-          <DonutChart data={a.typeBreakdown} size={170} centerLabel="Total" />
-          <div className="space-y-2 mt-4">
+          <DonutChart data={a.typeBreakdown} size={160} centerLabel="Total" />
+          <div className="space-y-1.5 mt-3">
             {a.typeBreakdown.map((item, i) => {
               const Icon = item.icon || Package
               const pct = a.total > 0 ? ((item.value / a.total) * 100).toFixed(0) : '0'
               return (
                 <div key={i} className="flex items-center justify-between text-xs">
                   <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                    <Icon size={12} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                    <Icon size={11} className="flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                     <span className="font-medium truncate" style={{ color: 'var(--text-secondary)' }}>{item.name}</span>
                   </div>
                   <span className="font-bold tabular-nums ml-2 flex-shrink-0" style={{ color: 'var(--text-primary)' }}>
@@ -707,6 +829,65 @@ export default function Analytics() {
       </div>
 
       {/* ──────────────────────────────────────
+          REVENUE TREND + REVENUE BY TYPE
+          ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Monthly Revenue Trend */}
+        <div className="lg:col-span-2 glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <IndianRupee size={16} className="text-rose-500" />
+              Monthly Revenue Trend (₹K)
+            </h3>
+            <span className="text-[10px] bg-rose-100 dark:bg-rose-900/30 px-2 py-0.5 rounded-full text-rose-600 dark:text-rose-400 font-semibold">
+              Total: ₹{(a.totalRevenue / 100000).toFixed(1)}L
+            </span>
+          </div>
+          <BarChartSVG data={a.monthlyRevenue} height={220} color="#f43f5e" />
+        </div>
+
+        {/* Revenue by Shipment Type */}
+        <div className="glass rounded-xl border p-5 hover-lift" style={{ borderColor: 'var(--glass-border)' }}>
+          <h3 className="text-sm font-bold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <DollarSign size={16} className="text-indigo-500" />
+            Revenue by Type
+          </h3>
+          <div className="space-y-3">
+            {a.revenueByType.length === 0 && (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>No revenue data available</p>
+            )}
+            {a.revenueByType.map((item, i) => {
+              const Icon = item.icon || Package
+              const pct = a.totalRevenue > 0 ? ((item.value / a.totalRevenue) * 100).toFixed(1) : '0'
+              return (
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <Icon size={12} style={{ color: item.color }} />
+                      <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{item.name}</span>
+                    </div>
+                    <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
+                      ₹{Math.round(item.value).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <ProgressBar value={item.value} max={a.totalRevenue || 1} color={item.color} height={8} />
+                  <span className="text-[9px]" style={{ color: 'var(--text-muted)' }}>{pct}% of total revenue</span>
+                </div>
+              )
+            })}
+          </div>
+          {a.totalRevenue > 0 && (
+            <div className="mt-4 pt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
+              <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Total Revenue</span>
+              <span className="text-base font-bold text-indigo-600 dark:text-indigo-400">
+                ₹{(a.totalRevenue / 100000).toFixed(2)}L
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ──────────────────────────────────────
           STATUS PIPELINE + WEEKLY PERFORMANCE
           ────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -716,7 +897,10 @@ export default function Analytics() {
             <Layers size={16} className="text-indigo-500" />
             Shipment Status Pipeline
           </h3>
-          <div className="space-y-4">
+          <div className="space-y-3">
+            {a.statusDistribution.length === 0 && (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>No status data available</p>
+            )}
             {a.statusDistribution.map((s, i) => (
               <div key={i}>
                 <div className="flex items-center justify-between mb-1.5">
@@ -792,13 +976,13 @@ export default function Analytics() {
                   <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }} title={c.name}>
                     {c.name}
                   </p>
-                  <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="flex items-center gap-2 text-[10px] flex-wrap" style={{ color: 'var(--text-muted)' }}>
                     <span>{c.shipments} shipments</span>
                     {c.delivered > 0 && (
                       <span className="text-emerald-500 font-medium">• {c.delivered} delivered</span>
                     )}
                     {c.revenue > 0 && (
-                      <span className="text-indigo-500 font-medium">• ₹{(c.revenue / 1000).toFixed(0)}K</span>
+                      <span className="text-indigo-500 font-medium">• ₹{Math.round(c.revenue).toLocaleString('en-IN')}</span>
                     )}
                   </div>
                 </div>
@@ -843,9 +1027,12 @@ export default function Analytics() {
                   <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
                     {r.from} <ArrowRight size={10} className="inline mx-1" style={{ color: 'var(--text-muted)' }} /> {r.to}
                   </p>
-                  <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                  <div className="flex items-center gap-2 text-[10px] flex-wrap" style={{ color: 'var(--text-muted)' }}>
                     <span>{r.shipments} shipments</span>
                     <span>• {r.weight.toFixed(1)} kg</span>
+                    {r.revenue > 0 && (
+                      <span className="text-indigo-500 font-medium">• ₹{Math.round(r.revenue).toLocaleString('en-IN')}</span>
+                    )}
                   </div>
                 </div>
                 <div className="w-16 flex-shrink-0">
@@ -868,7 +1055,6 @@ export default function Analytics() {
             Operational Insights
           </h3>
           <div className="space-y-3">
-            {/* Monthly shipments */}
             <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center flex-shrink-0 shadow-md">
                 <Calendar size={18} className="text-white" />
@@ -884,7 +1070,6 @@ export default function Analytics() {
               </div>
             </div>
 
-            {/* Delivery performance */}
             <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800/30">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0 shadow-md">
                 <CheckCircle2 size={18} className="text-white" />
@@ -903,25 +1088,23 @@ export default function Analytics() {
               </div>
             </div>
 
-            {/* Revenue estimate */}
             <div className="flex items-center gap-3 p-3 rounded-xl bg-rose-50/50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center flex-shrink-0 shadow-md">
-                <DollarSign size={18} className="text-white" />
+                <IndianRupee size={18} className="text-white" />
               </div>
               <div className="flex-1">
                 <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Revenue Estimate (All Time)
+                  Revenue This Month
                 </p>
                 <p className="text-lg font-bold text-rose-600 dark:text-rose-400">
-                  ₹{(a.totalRevenue / 100000).toFixed(2)}L
+                  ₹{(a.revenueThisMonth / 1000).toFixed(0)}K
                 </p>
                 <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                  Based on selling rate × weight
+                  {a.revenueGrowthPositive ? '↑' : '↓'} {Math.abs(Number(a.revenueGrowth))}% vs last month
                 </p>
               </div>
             </div>
 
-            {/* Average daily volume */}
             <div className="flex items-center gap-3 p-3 rounded-xl bg-violet-50/50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-800/30">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
                 <Activity size={18} className="text-white" />
@@ -976,6 +1159,9 @@ export default function Analytics() {
             By Shipment Type
           </h3>
           <div className="space-y-3">
+            {a.typeBreakdown.length === 0 && (
+              <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>No data available</p>
+            )}
             {a.typeBreakdown.map((item, i) => {
               const Icon = item.icon || Package
               const pct = a.total > 0 ? ((item.value / a.total) * 100).toFixed(0) : '0'
@@ -1029,6 +1215,13 @@ export default function Analytics() {
               </tr>
             </thead>
             <tbody>
+              {a.team.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    No team data available
+                  </td>
+                </tr>
+              )}
               {a.team.map((m, i) => {
                 const rateNum = Number(m.completionRate)
                 const rateClass = rateNum >= 75
@@ -1124,7 +1317,7 @@ export default function Analytics() {
           FOOTER
           ────────────────────────────────────── */}
       <div
-        className="flex items-center justify-between text-[10px] py-3 border-t"
+        className="flex items-center justify-between text-[10px] py-3 border-t flex-wrap gap-2"
         style={{ color: 'var(--text-muted)', borderColor: 'var(--border-color)' }}
       >
         <div className="flex items-center gap-2">

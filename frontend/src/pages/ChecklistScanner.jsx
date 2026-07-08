@@ -1,6 +1,7 @@
+// frontend/src/pages/ChecklistScanner.jsx
 import React, { useState, useRef, useEffect } from 'react'
 import api from '../lib/api'
-import { Upload, FileText, Download, RefreshCw, Search, FileUp, X, Image, Copy, CheckCircle2, Eye, EyeOff, Anchor, Loader2 } from 'lucide-react'
+import { Upload, FileText, Download, RefreshCw, Search, FileUp, X, Image, Copy, CheckCircle2, Eye, EyeOff, Anchor, Loader2, ShieldCheck, AlertTriangle, Target } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 
@@ -17,6 +18,10 @@ export default function ChecklistScanner() {
   const [isSeaChecked, setIsSeaChecked] = useState(false)
   const [isAirChecked, setIsAirChecked] = useState(false)
   const [detectedShipmentType, setDetectedShipmentType] = useState('')
+  const [accuracy, setAccuracy] = useState(0)
+  const [confidence, setConfidence] = useState({})
+  const [fieldsDetected, setFieldsDetected] = useState(0)
+  const [totalFields, setTotalFields] = useState(0)
   const fileInputRef = useRef(null)
   const pdfRef = useRef(null)
 
@@ -46,6 +51,14 @@ export default function ChecklistScanner() {
       setRawText(res.data.rawText || '')
       setShowRawPanel(true)
       
+      // Set accuracy and confidence data
+      if (res.data.accuracy !== undefined) {
+        setAccuracy(res.data.accuracy)
+        setConfidence(res.data.confidence || {})
+        setFieldsDetected(res.data.fieldsDetected || 0)
+        setTotalFields(res.data.totalFields || 0)
+      }
+      
       if (res.data.data && res.data.data.shipmentType) {
         const detected = res.data.data.shipmentType
         setDetectedShipmentType(detected)
@@ -59,7 +72,9 @@ export default function ChecklistScanner() {
           setIsSeaChecked(false)
         }
       }
-    } catch (err) { alert('Failed to scan PDF.') }
+    } catch (err) {
+      alert('Failed to scan PDF. Please check the file and try again.')
+    }
     setScanning(false)
   }
 
@@ -95,7 +110,6 @@ export default function ChecklistScanner() {
       const imgData = canvas.toDataURL('image/png')
       const pdf = new jsPDF('p', 'mm', 'a4')
       const pdfWidth = 210
-      // FIX: Changed const to let so we can reassign if needed
       let pdfHeight = (canvas.height * pdfWidth) / canvas.width
       if (pdfHeight > 297) pdfHeight = 297
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
@@ -107,17 +121,39 @@ export default function ChecklistScanner() {
     setDownloading(false)
   }
 
-  const handleReset = () => { setFile(null); setFormData(null); setRawText(''); setShipmentType(''); setIsSeaChecked(false); setIsAirChecked(false); setDetectedShipmentType(''); if (fileInputRef.current) fileInputRef.current.value = '' }
+  const handleReset = () => {
+    setFile(null)
+    setFormData(null)
+    setRawText('')
+    setShipmentType('')
+    setIsSeaChecked(false)
+    setIsAirChecked(false)
+    setDetectedShipmentType('')
+    setAccuracy(0)
+    setConfidence({})
+    setFieldsDetected(0)
+    setTotalFields(0)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   const F = (key) => (formData && formData[key]) || ''
   const U = (key) => (e) => { updateField(key, e.target.value) }
 
-  // ── SIMPLIFIED SF FUNCTION ──
+  const getConfidenceColor = (fieldKey) => {
+    const conf = confidence[fieldKey]
+    if (conf === undefined || conf === 0) return { border: '#e5e7eb', bg: '#fff', text: '#9ca3af', label: '' }
+    if (conf >= 0.8) return { border: '#10b981', bg: '#f0fdf4', text: '#065f46', label: 'High' }
+    if (conf >= 0.5) return { border: '#f59e0b', bg: '#fffbeb', text: '#92400e', label: 'Medium' }
+    return { border: '#ef4444', bg: '#fef2f2', text: '#991b1b', label: 'Low' }
+  }
+
+  // ── ENHANCED SF FUNCTION WITH CONFIDENCE INDICATORS ──
   const SF = (label, key) => {
     const val = F(key)
     const isBoeSb = key === 'boeSbNo'
     const isBoeSbDate = key === 'boeSbDate'
     const hasBoeNo = F('boeSbNo')
+    const conf = getConfidenceColor(key)
     
     if (isBoeSbDate && !hasBoeNo) {
       return (
@@ -155,17 +191,36 @@ export default function ChecklistScanner() {
     
     return (
       <div className="mb-2">
-        <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{ color: '#666' }}>{label}</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-bold uppercase tracking-wider block" style={{ color: '#666' }}>{label}</label>
+          {val && conf.label && (
+            <span
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+              style={{
+                background: conf.label === 'High' ? '#d1fae5' : conf.label === 'Medium' ? '#fef3c7' : '#fee2e2',
+                color: conf.label === 'High' ? '#065f46' : conf.label === 'Medium' ? '#92400e' : '#991b1b'
+              }}
+            >
+              {conf.label === 'High' ? '🟢' : conf.label === 'Medium' ? '🟡' : '🔴'} {conf.label}
+            </span>
+          )}
+        </div>
         <input
           type="text"
           value={val}
           onChange={U(key)}
           placeholder={'Enter ' + label.toLowerCase()}
           className="w-full px-3 py-2.5 rounded-lg border-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-indigo-400"
-          style={{ borderColor: val ? '#10b981' : '#e5e7eb', color: '#0a0a1a', background: val ? '#f0fdf4' : '#fff' }}
+          style={{
+            borderColor: val ? conf.border : '#e5e7eb',
+            color: '#0a0a1a',
+            background: val ? conf.bg : '#fff'
+          }}
         />
         {val ? (
-          <span className="text-[9px] text-emerald-600 font-semibold mt-0.5 block">✓ Auto-detected</span>
+          <span className="text-[9px] text-emerald-600 font-semibold mt-0.5 block">
+            ✓ Auto-detected {conf.label && `(${conf.label} confidence)`}
+          </span>
         ) : (
           <span className="text-[9px] text-amber-500 font-semibold mt-0.5 block">⚠ Manual entry needed</span>
         )}
@@ -173,28 +228,59 @@ export default function ChecklistScanner() {
     )
   }
 
+  const getAccuracyColor = (acc) => {
+    if (acc >= 90) return { bg: '#d1fae5', text: '#065f46', border: '#6ee7b7', icon: ShieldCheck, iconColor: '#10b981' }
+    if (acc >= 70) return { bg: '#fef3c7', text: '#92400e', border: '#fcd34d', icon: Target, iconColor: '#f59e0b' }
+    if (acc >= 50) return { bg: '#fee2e2', text: '#991b1b', border: '#fca5a5', icon: AlertTriangle, iconColor: '#ef4444' }
+    return { bg: '#f3f4f6', text: '#6b7280', border: '#d1d5db', icon: AlertTriangle, iconColor: '#9ca3af' }
+  }
+
+  const accStyle = getAccuracyColor(accuracy)
+  const AccIcon = accStyle.icon
+
   return (
     <div className="space-y-4">
       {/* HEADER */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-lg">
             <FileUp size={18} className="text-white" />
           </div>
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Scan & Fill Checklist</h1>
+            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Upload PDF checklist for automatic data extraction
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="px-3 py-2 glass border rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Accuracy Badge */}
+          {accuracy > 0 && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-xs font-bold"
+              style={{
+                background: accStyle.bg,
+                color: accStyle.text,
+                borderColor: accStyle.border
+              }}
+            >
+              <AccIcon size={14} style={{ color: accStyle.iconColor }} />
+              <span>{accuracy}% Accuracy</span>
+              <span className="font-normal opacity-75">({fieldsDetected}/{totalFields} fields)</span>
+            </div>
+          )}
+          
+          <label className="px-3 py-2 glass border rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors" style={{ borderColor: 'var(--border-color)' }}>
             <Image size={14} /> {logo ? 'Logo ✓' : 'Add Logo'}
             <input type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
           </label>
           {formData ? (
-            <button onClick={handleReset} className="px-3 py-2 glass border rounded-lg text-xs font-semibold" style={{ borderColor: 'var(--border-color)' }}>Clear</button>
+            <button onClick={handleReset} className="px-3 py-2 glass border rounded-lg text-xs font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center gap-1.5" style={{ borderColor: 'var(--border-color)' }}>
+              <X size={13} /> Clear
+            </button>
           ) : null}
           {formData ? (
-            <button onClick={handleDownload} disabled={downloading} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-semibold shadow-lg flex items-center gap-2 hover:bg-indigo-700 transition-colors">
+            <button onClick={handleDownload} disabled={downloading} className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold shadow-lg flex items-center gap-2 hover:from-indigo-700 hover:to-blue-700 transition-all">
               {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               {downloading ? 'Generating...' : 'Download PDF'}
             </button>
@@ -204,7 +290,7 @@ export default function ChecklistScanner() {
 
       {!formData ? (
         <div
-          className="glass rounded-xl border-2 border-dashed p-16 text-center cursor-pointer"
+          className="glass rounded-xl border-2 border-dashed p-16 text-center cursor-pointer transition-all hover:border-indigo-400"
           style={{ borderColor: file ? '#6366f1' : 'var(--border-color)', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -213,18 +299,28 @@ export default function ChecklistScanner() {
           <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleFileSelect} style={{ display: 'none' }} />
           {file ? (
             <>
-              <FileText size={48} className="text-indigo-500 mb-4" />
-              <p className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{file.name}</p>
-              <button onClick={(e) => { e.stopPropagation(); handleScan() }} disabled={scanning} className="mt-4 px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-xl flex items-center gap-2">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-100 dark:from-indigo-900/40 dark:to-blue-900/40 flex items-center justify-center mb-4">
+                <FileText size={36} className="text-indigo-500" />
+              </div>
+              <p className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{file.name}</p>
+              <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                {(file.size / 1024).toFixed(1)} KB • PDF Document
+              </p>
+              <button onClick={(e) => { e.stopPropagation(); handleScan() }} disabled={scanning} className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl text-sm font-bold shadow-xl flex items-center gap-2 hover:from-indigo-700 hover:to-blue-700 transition-all disabled:opacity-50">
                 {scanning ? <RefreshCw size={16} className="animate-spin" /> : <Search size={16} />}
-                {scanning ? 'Scanning...' : 'Scan Checklist'}
+                {scanning ? 'Scanning Document...' : 'Scan Checklist'}
               </button>
             </>
           ) : (
             <>
-              <Upload size={48} className="text-indigo-400 mb-4" />
-              <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Drop PDF Checklist Here</p>
-              <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>or click to browse</p>
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-100 dark:from-indigo-900/40 dark:to-blue-900/40 flex items-center justify-center mb-4">
+                <Upload size={36} className="text-indigo-400" />
+              </div>
+              <p className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Drop PDF Checklist Here</p>
+              <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>or click to browse files</p>
+              <p className="text-[11px] px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-semibold">
+                Supports PDF format • Auto-detects 25+ fields
+              </p>
             </>
           )}
         </div>
@@ -232,9 +328,11 @@ export default function ChecklistScanner() {
 
       {formData ? (
         <div>
-          {/* SHIPMENT TYPE + TOGGLE */}
+          {/* SHIPMENT TYPE + TOGGLE + ACCURACY */}
           <div className="flex items-center gap-3 mb-4 flex-wrap">
-            <div className="px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: '#dbeafe', color: '#1e40af' }}>Shipment Type</div>
+            <div className="px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: '#dbeafe', color: '#1e40af' }}>
+              Shipment Type
+            </div>
             <select
               value={shipmentType}
               onChange={(e) => {
@@ -253,21 +351,65 @@ export default function ChecklistScanner() {
               className="px-3 py-2 border rounded-lg text-sm font-semibold"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--input-bg)' }}
             >
-              <option value="">-- Select --</option>
+              <option value="">-- Select Shipment Type --</option>
               <option value="Air">✈ Air</option>
               <option value="Sea FCL">🚢 Sea FCL</option>
               <option value="Sea LCL">🚢 Sea LCL</option>
               <option value="Sea">🚢 Sea</option>
               <option value="Local Transport">🚛 Local Transport</option>
             </select>
-            {detectedShipmentType ? (
-              <span className="px-3 py-1.5 rounded-full text-xs font-bold" style={{ background: '#d1fae5', color: '#065f46' }}>🔍 Detected: {detectedShipmentType}</span>
-            ) : null}
-            <button onClick={() => { setShowRawPanel(!showRawPanel) }} className="px-3 py-2 glass border rounded-lg text-xs font-semibold flex items-center gap-2" style={{ borderColor: 'var(--border-color)' }}>
+            
+            {detectedShipmentType && (
+              <span className="px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5" style={{ background: '#d1fae5', color: '#065f46' }}>
+                <CheckCircle2 size={12} />
+                Detected: {detectedShipmentType}
+              </span>
+            )}
+            
+            <div className="flex-1" />
+            
+            <button
+              onClick={() => { setShowRawPanel(!showRawPanel) }}
+              className="px-3 py-2 glass border rounded-lg text-xs font-semibold flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+              style={{ borderColor: 'var(--border-color)' }}
+            >
               {showRawPanel ? <EyeOff size={14} /> : <Eye size={14} />}
               {showRawPanel ? 'Hide Raw Text' : 'Show Raw Text'}
             </button>
           </div>
+
+          {/* Confidence Summary */}
+          {accuracy > 0 && (
+            <div className="mb-4 p-3 rounded-xl border" style={{ background: accStyle.bg, borderColor: accStyle.border }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: accStyle.iconColor + '20' }}>
+                  <AccIcon size={20} style={{ color: accStyle.iconColor }} />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-bold" style={{ color: accStyle.text }}>
+                    Scan Accuracy: {accuracy}%
+                  </p>
+                  <p className="text-[11px] opacity-75" style={{ color: accStyle.text }}>
+                    {fieldsDetected} of {totalFields} fields detected automatically
+                    {accuracy >= 90 ? ' • Excellent extraction quality' :
+                     accuracy >= 70 ? ' • Good extraction, review recommended' :
+                     ' • Review and verify all fields'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                    🟢 {Object.values(confidence).filter(c => c >= 0.8).length} High
+                  </span>
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                    🟡 {Object.values(confidence).filter(c => c >= 0.5 && c < 0.8).length} Med
+                  </span>
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">
+                    🔴 {Object.values(confidence).filter(c => c > 0 && c < 0.5).length} Low
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* FORM + RAW TEXT */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -318,16 +460,21 @@ export default function ChecklistScanner() {
             {showRawPanel ? (
               <div className="glass rounded-xl border p-4" style={{ borderColor: 'var(--glass-border)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>📄 Extracted Raw Text</h3>
-                  <button onClick={copyRawText} className="px-3 py-1.5 glass border rounded-lg text-xs font-semibold flex items-center gap-1.5" style={{ borderColor: 'var(--border-color)' }}>
+                  <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                    <FileText size={14} className="text-indigo-500" />
+                    Extracted Raw Text
+                  </h3>
+                  <button onClick={copyRawText} className="px-3 py-1.5 glass border rounded-lg text-xs font-semibold flex items-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors" style={{ borderColor: 'var(--border-color)' }}>
                     {copied ? <CheckCircle2 size={12} className="text-emerald-500" /> : <Copy size={12} />}
                     {copied ? 'Copied!' : 'Copy All'}
                   </button>
                 </div>
-                <div className="flex-1 overflow-auto rounded-lg p-3" style={{ background: '#f8f9fa', fontSize: '12px', lineHeight: '1.6', color: '#333', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', border: '1px solid #e5e7eb' }}>
-                  {rawText || 'No text extracted'}
+                <div className="flex-1 overflow-auto rounded-lg p-3" style={{ background: '#f8f9fa', fontSize: '12px', lineHeight: '1.6', color: '#333', fontFamily: '"JetBrains Mono", "Fira Code", monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word', border: '1px solid #e5e7eb' }}>
+                  {rawText || 'No text extracted from PDF'}
                 </div>
-                <p className="text-[10px] mt-2" style={{ color: 'var(--text-muted)' }}>💡 Tip: Copy values from the raw text and paste into empty fields on the left.</p>
+                <p className="text-[10px] mt-2" style={{ color: 'var(--text-muted)' }}>
+                  💡 Tip: Copy values from the raw text and paste into empty fields on the left.
+                </p>
               </div>
             ) : null}
           </div>
@@ -358,15 +505,16 @@ export default function ChecklistScanner() {
                   top: '50%',
                   left: '50%',
                   transform: 'translate(-50%, -50%)',
-                  opacity: 0.12,
+                  opacity: 0.08,
                   zIndex: 0,
-                  width: '500px',
+                  width: '450px',
                   height: 'auto',
-                  maxHeight: '700px',
+                  maxHeight: '600px',
                   objectFit: 'contain',
                   pointerEvents: 'none',
                   userSelect: 'none'
                 }}
+                alt=""
               />
             ) : null}
 
@@ -826,7 +974,7 @@ export default function ChecklistScanner() {
                   textTransform: 'uppercase'
                 }}
               >
-                PAGE 1 OF 1  •  GENERATED BY PAS CHECKLIST SCANNER
+                PAGE 1 OF 1  •  GENERATED BY PAS CHECKLIST SCANNER {accuracy > 0 ? `• ${accuracy}% ACCURACY` : ''}
               </div>
             </div>
           </div>
