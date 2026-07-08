@@ -1,6 +1,8 @@
+// backend/src/routes/checklist.routes.js
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const { ocrPdfFromImages, mergeTexts } = require('../services/ocrService');
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -15,91 +17,106 @@ const upload = multer({
   }
 });
 
-router.post('/scan', upload.single('checklist'), async function(req, res) {
+// ─── LAYER 1: PDF-JS DIGITAL TEXT EXTRACTION ───
+async function extractTextWithPdfJs(buffer) {
   try {
-    if (!req.file) return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
+    const pdfjsLib = await import('pdfjs-dist');
+    const uint8Array = new Uint8Array(buffer);
+    const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+    const pdfDocument = await loadingTask.promise;
 
-    var pdfjsLib = await import('pdfjs-dist');
-    var uint8Array = new Uint8Array(req.file.buffer);
-    var loadingTask = pdfjsLib.getDocument({ data: uint8Array });
-    var pdfDocument = await loadingTask.promise;
-
-    var allItems = [];
-    for (var pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
-      var page = await pdfDocument.getPage(pageNum);
-      var content = await page.getTextContent();
-      var viewport = page.getViewport({ scale: 1 });
+    const allItems = [];
+    const pageInfo = [];
+    
+    for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum);
+      const content = await page.getTextContent();
+      const viewport = page.getViewport({ scale: 1 });
+      
+      let pageTextLength = 0;
       content.items.forEach(function(item) {
-        allItems.push({ text: item.str, x: Math.round(item.transform[4]), y: Math.round(viewport.height - item.transform[5]), page: pageNum });
+        allItems.push({
+          text: item.str.trim(),
+          x: Math.round(item.transform[4]),
+          y: Math.round(viewport.height - item.transform[5]),
+          page: pageNum,
+          width: item.width || 0,
+          height: item.height || 0,
+          fontName: item.fontName || ''
+        });
+        pageTextLength += item.str.replace(/\s+/g, '').length;
+      });
+      
+      pageInfo.push({
+        pageNum,
+        textLength: pageTextLength,
+        isScanned: pageTextLength < 50
       });
     }
-
-    var parsed = parseChecklistUniversal(allItems);
-    var rawText = allItems.slice().sort(function(a, b) { return a.y - b.y || a.x - b.x; }).map(function(i) { return i.text; }).join(' ');
     
-    // Detect shipment type from raw text
-    var shipmentType = detectShipmentType(rawText);
-    parsed.shipmentType = shipmentType;
-    
-    res.json({ status: 'success', data: parsed, rawText: rawText });
-  } catch (error) {
-    console.error('PDF scan error:', error);
-    res.status(500).json({ status: 'error', message: 'Failed to scan PDF: ' + error.message });
+    return { items: allItems, pageInfo };
+  } catch (err) {
+    console.error('PDF.js extraction error:', err.message);
+    return { items: [], pageInfo: [] };
   }
-});
-
-function detectShipmentType(rawText) {
-  var text = rawText.toUpperCase();
-  
-  var seaIndicators = [
-    'GATEWAY IGM',
-    'CONTAINER NO',
-    'CONTAINER NUMBER',
-    'MBL',
-    'SEA',
-    'FCL',
-    'LCL',
-    'PORT OF DISCHARGE',
-    'VESSEL',
-    'VOYAGE'
-  ];
-  
-  var airIndicators = [
-    'MAWB',
-    'AWB',
-    'AIR WAYBILL',
-    'FLIGHT NO',
-    'AIRPORT',
-    'AIR FREIGHT'
-  ];
-  
-  var seaScore = 0;
-  var airScore = 0;
-  
-  seaIndicators.forEach(function(ind) {
-    if (text.includes(ind)) seaScore++;
-  });
-  
-  airIndicators.forEach(function(ind) {
-    if (text.includes(ind)) airScore++;
-  });
-  
-  if (text.includes('GATEWAY IGM') || text.includes('CONTAINER NO')) {
-    return 'Sea';
-  }
-  
-  if (text.includes('MAWB') && !text.includes('MBL')) {
-    return 'Air';
-  }
-  
-  if (seaScore > airScore) return 'Sea';
-  if (airScore > seaScore) return 'Air';
-  
-  return 'Unknown';
 }
 
-function parseChecklistUniversal(items) {
-  var result = {
+// ─── LAYER 2: PDF-PARSE TEXT EXTRACTION ───
+async function extractTextWithPdfParse(buffer) {
+  try {
+    const pdfParse = require('pdf-parse');
+    const data = await pdfParse(buffer);
+    return data.text || '';
+  } catch (err) {
+    console.error('pdf-parse extraction error:', err.message);
+    return '';
+  }
+}
+
+// ─── LAYER 3: TESSERACT OCR FOR SCANNED PDFs ───
+async function extractOcrFromScannedPages(buffer, pageInfo) {
+  try {
+    const scannedPages = pageInfo.filter(p => p.isScanned);
+    if (scannedPages.length === 0) {
+      console.log('All pages have digital text, skipping OCR');
+      return '';
+    }
+    console.log(`${scannedPages.length} scanned page(s) detected, running OCR...`);
+
+    const pdfjsLib = await import('pdfjs-dist');
+    const uint8Array = new Uint8Array(buffer);
+    const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+    const pdfDocument = await loadingTask.promise;
+
+    const imageBuffers = [];
+    for (const pageInfoItem of scannedPages) {
+      const page = await pdfDocument.getPage(pageInfoItem.pageNum);
+      const viewport = page.getViewport({ scale: 2.5 });
+      
+      let canvas, ctx;
+      try {
+        const { createCanvas } = require('canvas');
+        canvas = createCanvas(viewport.width, viewport.height);
+        ctx = canvas.getContext('2d');
+      } catch (e) {
+        console.warn('Canvas not available, skipping OCR');
+        return '';
+      }
+      
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      imageBuffers.push(canvas.toBuffer('image/png'));
+    }
+
+    return await ocrPdfFromImages(imageBuffers);
+  } catch (err) {
+    console.error('OCR extraction failed:', err.message);
+    return '';
+  }
+}
+
+// ─── INTELLIGENT PARSER ───
+function intelligentParse(items, pdfParseText, ocrText) {
+  const result = {
     referenceNumber: '', shipmentMode: '', importerName: '', exporterName: '',
     supplierName: '', location: '', jobOrderNo: '', jobOrderDate: '',
     boeSbNo: '', boeSbDate: '', mawbMblNo: '', mawbMblDate: '',
@@ -110,479 +127,404 @@ function parseChecklistUniversal(items) {
     agentDebitNote: '', billingCurrency: '', billNo: '', billDate: '',
     billTo: '', billToDate: '', docketNo: '', docketDate: '', additionalRemarks: '',
     gatewayIgmNo: '', gatewayIgmDate: '', localIgmNo: '', localIgmDate: '',
-    containerNo: '', shipmentType: ''
+    containerNo: '', shipmentType: '', gstin: ''
   };
 
-  var page1Items = items.filter(function(i) { return i.page === 1; });
-  var sortedItems = page1Items.slice().sort(function(a, b) { return a.y - b.y || a.x - b.x; });
-  var rawText = sortedItems.map(function(i) { return i.text; }).join(' ');
-  var rawTextCompact = rawText.replace(/\s+/g, '');
+  const confidence = {};
+  
+  const page1Items = items.filter(i => i.page === 1);
+  const sortedByPosition = [...page1Items].sort((a, b) => a.y - b.y || a.x - b.x);
+  const digitalText = sortedByPosition.map(i => i.text).join(' ');
+  const combinedText = mergeTexts(digitalText, ocrText || pdfParseText || '');
+  const compactText = combinedText.replace(/\s+/g, '');
+  const upperText = combinedText.toUpperCase();
 
-  function tryPatterns(patterns, text) {
-    for (var i = 0; i < patterns.length; i++) {
-      var m = text.match(patterns[i]);
-      if (m && m[1] && m[1].trim().length > 0) return m[1].trim();
+  function findWithConfidence(patterns, text, fieldName) {
+    for (let i = 0; i < patterns.length; i++) {
+      const match = text.match(patterns[i]);
+      if (match && match[1] && match[1].trim().length > 1) {
+        const value = match[1].trim();
+        const conf = Math.max(0.5, 1 - (i * 0.05));
+        confidence[fieldName] = conf;
+        return value;
+      }
     }
+    confidence[fieldName] = 0;
     return '';
   }
 
   function cleanCompanyName(name) {
     if (!name) return '';
-    return name.replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN|SERVICES|CO\.?|LTD|PTE|PVT|PRIVATE|LIMITED)\s*$/i, '').trim();
+    return name
+      .replace(/\s+(Inv\.?|SUPPLIER|DETAILS|CHA|Importer|GSTIN|SERVICES|CO\.?|LTD|PTE|PVT|PRIVATE|LIMITED)\s*$/i, '')
+      .replace(/^\s*(PAS\s*FREIGHT\s*SERVICES?\s*)/i, '')
+      .trim();
   }
 
-  // ── DETECT SHIPMENT TYPE ──
-  var isSea = /Gateway\s*IGM|IGM\s*NO|Container|HBL\/\s*HAWB|MBL\/\s*MAWB|SEA|FCL|LCL/i.test(rawText);
-  var isAir = /MAWB|AWB|AIR\s*WAYBILL|FLIGHT|AIRPORT/i.test(rawText);
+  // ─── DETECT SHIPMENT TYPE ───
+  const seaKeywords = ['GATEWAY IGM', 'CONTAINER NO', 'MBL', 'SEA', 'FCL', 'LCL', 'VESSEL', 'PORT OF DISCHARGE', 'IGM NO'];
+  const airKeywords = ['MAWB', 'AWB', 'AIR WAYBILL', 'FLIGHT NO', 'AIRPORT', 'HAWB'];
   
-  if (isSea && !isAir) result.shipmentType = 'Sea';
-  else if (isAir && !isSea) result.shipmentType = 'Air';
-  else if (isSea && isAir) {
-    var seaCount = (rawText.match(/IGM|Container|MBL|SEA|FCL|LCL/gi) || []).length;
-    var airCount = (rawText.match(/MAWB|AWB|AIR|FLIGHT/gi) || []).length;
-    result.shipmentType = seaCount > airCount ? 'Sea' : 'Air';
-  } else {
-    result.shipmentType = 'Unknown';
-  }
+  let seaScore = 0, airScore = 0;
+  seaKeywords.forEach(kw => { if (upperText.includes(kw)) seaScore++; });
+  airKeywords.forEach(kw => { if (upperText.includes(kw)) airScore++; });
+  
+  result.shipmentType = seaScore > airScore ? 'Sea' : airScore > seaScore ? 'Air' : 'Unknown';
+  const isSea = result.shipmentType === 'Sea';
+  const isAir = result.shipmentType === 'Air';
 
-  // ── REFERENCE NUMBER ──
-  result.referenceNumber = tryPatterns([
+  // ─── REFERENCE NUMBER ───
+  result.referenceNumber = findWithConfidence([
     /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
-    /ONLINE[-\s]*(\d+)/i,
-    /Ref\s*No\s*:?\s*([A-Z0-9\/-]+)/i,
-    /([A-Z]+\/\d+\/[A-Z]+)/i
-  ], rawText);
+    /Ref\s*(?:erence)?\s*No\s*:?\s*([A-Z0-9\/-]+)/i,
+    /([A-Z]{2,6}\/\d{2,4}\/[A-Z]{2,4})/i
+  ], combinedText, 'referenceNumber');
 
-  // ── SHIPMENT MODE ──
-  result.shipmentMode = tryPatterns([
-    /Transport\s*Mode\s*:\s*(\S)/i,
-    /Mode\s*:\s*(\S)/i,
-    /Shipment\s*Mode\s*:?\s*(\S)/i
-  ], rawText);
+  // ─── IMPORTER NAME ───
+  result.importerName = findWithConfidence([
+    /Importer\s+Details\s*:?\s*\d*\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE|INC|CORP|TECHNOLOGY)[\w\s]*)/i,
+    /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT|TECHNOLOGY)[\w\s]*)/i,
+    /Importer\s*Name\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
+  ], combinedText, 'importerName');
 
-  // ── IMPORTER NAME ──
-  result.importerName = tryPatterns([
-    /PAS\s+FREIGHT\s+SERVICES\s+([\w\s]+?(?:LIMITED|PRIVATE|INTEGRATORS|TECHNOLOGY|LTD)[\w\s]*?)(?:\s+#|\s{2,}|\s+\d)/i,
-    /PAS\s+FREIGHT\s+SERVICES\s+([A-Z][\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT|INC|CORP|CO\.?)(?:[\w\s]*?))(?:\s+#|\s{2,})/i,
-    /(ONLINE\s+INSTRUMENTS\s*\(INDIA\)\s*LIMITED)/i,
-    /(RESURGENT\s+AV\s+INTEGRATORS\s+PRIVATE\s+LIMITED)/i,
-    /(ARION\s+TECHNOLOGY\s+LTD)/i,
-    /Importer\s+Details\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PRIVATE|PVT)[\w\s]*)/i,
-    /Importer\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
-  ], rawText);
-  result.importerName = cleanCompanyName(result.importerName);
+  // ─── EXPORTER NAME ───
+  result.exporterName = findWithConfidence([
+    /Exporter\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE|CO\.?)[\w\s]*)/i,
+    /Shipper\s*(?:Name)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT)[\w\s]*)/i,
+    /SUPPLIER\s+DETAILS[\s\S]{0,100}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
+  ], combinedText, 'exporterName');
 
-  // ── EXPORTER NAME ──
-  result.exporterName = tryPatterns([
-    /Exporter\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
-    /Exporter\s+Details\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i,
-    /Supplier\s+Details[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
-    /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
-    /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
-    /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
-    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i
-  ], rawText);
-  result.exporterName = cleanCompanyName(result.exporterName);
-
-  // ── SUPPLIER NAME ── ENHANCED WITH MULTIPLE FALLBACKS ──
-  result.supplierName = tryPatterns([
-    /Supplier\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*)/i,
-    /SUPPLIER\s+DETAILS[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY|MANUFACTURING|TRADING)[\w\s]*)/i,
-    /(TCL\s+SMART\s+HOMETECHNOLOGIES\s*CO\.?,?\s*LTD)/i,
-    /(CRESTRON\s+SINGAPORE\s+PTE\s+LTD)/i,
-    /(YUAN\s+HENG\s+TAI\s+WATER\s+TRANSFER\s+PRINTING\s+CO\s+LTD)/i,
-    /(SAMSUNG\s+ELECTRONICS\s+CO\.?\s*LTD)/i,
-    /(LG\s+ELECTRONICS\s+INC\.?)/i,
-    /(SONY\s+CORPORATION)/i,
-    /(PANASONIC\s+CORPORATION)/i,
-    /Inv\.?\s*Sl\.?\s*No\s*:\s*\d+\s+([A-Z][\w\s]+(?:PTE|LTD|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY|MANUFACTURING|TRADING)[\w\s]*)/i,
-    /INVOICE\s+DETAILS[\s\S]{0,300}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*?)(?:\s+\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\s+[A-Z]+\s+\d+)/i,
-    /ITEM\s+DETAILS[\s\S]{0,200}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*?)(?:\s+\d+\s*[A-Z]{3}|\s+\d+\.\d+)/i,
-    /\b([A-Z][A-Z\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)\s*[A-Z\s]*)(?:\s+[A-Z]{3}|\s+\d+[-\/]\d+)/i,
-    /(?:SUPPLIER|VENDOR)\s*:?\s*([A-Z][\w\s]+(?:LTD|LIMITED|PTE|PVT|PRIVATE|INC|CORP|CO\.?)[\w\s]*)/i
-  ], rawText);
+  // ─── SUPPLIER NAME ───
+  result.supplierName = findWithConfidence([
+    /SUPPLIER\s+DETAILS[\s\S]{0,100}?\b([A-Z][\w\s]+(?:LTD|LIMITED|PTE|CO\.?,?\s*LTD|PRINTING|TECHNOLOGY)[\w\s]*)/i,
+    /Supplier\s*(?:Name|Details)?\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PTE|PVT|PRIVATE)[\w\s]*)/i
+  ], combinedText, 'supplierName');
   
-  // ── FALLBACK: If supplierName still empty, try to get from exporterName ──
   if (!result.supplierName && result.exporterName) {
     result.supplierName = result.exporterName;
+    confidence.supplierName = 0.7;
   }
-  result.supplierName = cleanCompanyName(result.supplierName);
 
-  // ── LOCATION ──
-  result.location = tryPatterns([
+  // ─── LOCATION ───
+  result.location = findWithConfidence([
     /Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i,
-    /Port\s*Of\s*Filing\s*:\s*([A-Z0-9]+\s*,?\s*[A-Z]+\s*,?\s*[A-Z\s]+)/i,
     /Location\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z\s]+)/i
-  ], rawText);
+  ], combinedText, 'location');
 
-  // ── JOB ORDER NO + DATE ──
-  result.jobOrderNo = tryPatterns([
+  // ─── JOB ORDER NO + DATE ───
+  result.jobOrderNo = findWithConfidence([
     /Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i,
-    /Job\s*No\s*:?\s*(\d+)/i
-  ], rawText);
+    /Job\s*No\s*:?\s*(\d{3,})/i
+  ], combinedText, 'jobOrderNo');
   
-  result.jobOrderDate = tryPatterns([
+  result.jobOrderDate = findWithConfidence([
     /Job\s*No\s*[&]?\s*Date\s*:\s*\d+\s*[&]?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
     /Job\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-  ], rawText);
+  ], combinedText, 'jobOrderDate');
 
-  // ── BOE/SB NUMBER + DATE ──
-  // Only extract BOE/SB Number if it's a valid number (not just date)
-  var boeSbNo = tryPatterns([
-    /B\.?E\s*No[,\s]*Date\s*:\s*(\d+)/i,
-    /BOE\s*No\s*:?\s*(\d+)/i,
-    /SB\s*No\s*:?\s*(\d+)/i
-  ], rawText);
+  // ─── BOE/SB NUMBER + DATE ───
+  const boeSbNo = findWithConfidence([
+    /B\.?E\s*No[,\s]*Date\s*:\s*(\d{3,})/i,
+    /BOE\s*No\s*:?\s*(\d{3,})/i,
+    /SB\s*No\s*:?\s*(\d{3,})/i,
+    /B\/E\s*No\s*:?\s*(\d{3,})/i
+  ], combinedText, 'boeSbNo');
   
-  // Validate: Only set if it's a valid number with at least 3 digits
-  if (boeSbNo && /^\d+$/.test(boeSbNo) && boeSbNo.length >= 3) {
+  if (boeSbNo && /^\d{3,}$/.test(boeSbNo)) {
     result.boeSbNo = boeSbNo;
-  } else {
-    result.boeSbNo = '';
   }
   
-  // Only extract BOE/SB Date if we have a valid BOE/SB Number
   if (result.boeSbNo) {
-    result.boeSbDate = tryPatterns([
+    result.boeSbDate = findWithConfidence([
       /B\.?E\s*No[,\s]*Date\s*:\s*\d+\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /Printed\s*On\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /BOE\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /SB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], rawText);
-  } else {
-    result.boeSbDate = '';
+      /Printed\s*On\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+      /BOE\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'boeSbDate');
   }
 
-  // ── MAWB/MBL NUMBER + DATE (AIR vs SEA specific) ──
+  // ─── SHIPMENT MODE ───
+  result.shipmentMode = findWithConfidence([
+    /Transport\s*Mode\s*:\s*(\S)/i
+  ], combinedText, 'shipmentMode');
+
+  // ─── MAWB/MBL NUMBER + DATE ───
   if (isAir) {
-    result.mawbMblNo = tryPatterns([
-      /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
-      /Air\s*Waybill\s*No\s*:?\s*([A-Z0-9]+)/i,
-      /AWB\s*No\s*:?\s*([A-Z0-9]+)/i
-    ], rawText);
+    result.mawbMblNo = findWithConfidence([
+      /MAWB\s*(?:No)?\s*:?\s*(\d{3}[- ]?\d{4}[- ]?\d{3})/i,
+      /AWB\s*No\s*:?\s*(\d{3}[- ]?\d{4}[- ]?\d{3})/i,
+      /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]{8,14})/i
+    ], combinedText, 'mawbMblNo');
   } else {
-    result.mawbMblNo = tryPatterns([
-      /MBL\/\s*MAWB\s*:\s*([A-Z0-9]+)/i,
-      /MBL\s*No\s*:?\s*([A-Z0-9]+)/i,
-      /MAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i
-    ], rawText);
+    result.mawbMblNo = findWithConfidence([
+      /MBL\/?\s*MAWB\s*:\s*([A-Z0-9]{6,20})/i,
+      /MBL\s*(?:No)?\s*:?\s*([A-Z0-9]{6,20})/i
+    ], combinedText, 'mawbMblNo');
   }
   
-  result.mawbMblDate = tryPatterns([
-    /MAWB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /MBL\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-  ], rawText);
+  if (result.mawbMblNo) {
+    const escM = result.mawbMblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result.mawbMblDate = findWithConfidence([
+      new RegExp(escM + '[\\s\\S]{0,80}?(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})'),
+      /(?:MAWB|MBL)\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'mawbMblDate');
+  }
 
-  // ── HAWB/HBL NUMBER + DATE (AIR vs SEA specific) ──
+  // ─── HAWB/HBL NUMBER + DATE ─── FIXED ───
+  // Only extract if there's an actual number after HBL/HAWB
   if (isAir) {
-    // AIR: HAWB is the house airway bill
-    result.hawbHblNo = tryPatterns([
-      /HAWB\s*(?:No)?\s*:?\s*([A-Z0-9]+)/i,
-      /House\s*Air\s*Waybill\s*No\s*:?\s*([A-Z0-9]+)/i,
-      /HBL\/\s*HAWB\s*:\s*([A-Z0-9]+)/i,
-      /HAWB\s*:?\s*([A-Z0-9]+)/i
-    ], rawText);
-    
-    if (result.hawbHblNo) {
-      var escH = result.hawbHblNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      var dateH = rawText.match(new RegExp(escH + '[\\s\\S]{0,150}?(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-      if (dateH) {
-        result.hawbHblDate = dateH[1];
-      } else {
-        var directDate = rawText.match(/HBL\/\s*HAWB\s*:\s*[A-Z0-9]+\s+Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
-        if (directDate) result.hawbHblDate = directDate[1];
-      }
-    }
-    
-    if (!result.hawbHblDate) {
-      result.hawbHblDate = tryPatterns([
-        /HAWB\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-        /HBL\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-        /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-      ], rawText);
-    }
+    result.hawbHblNo = findWithConfidence([
+      /HAWB\s*(?:No)?\s*:?\s*(\d{3}[- ]?\d{4}[- ]?\d{3})/i,
+      /HBL\/?\s*HAWB\s*:?\s*([A-Z0-9]{8,14})/i
+    ], combinedText, 'hawbHblNo');
   } else {
-    // SEA: HBL is the house bill of lading
-    var seaM = rawText.match(/HBL\/\s*HAWB\s*:\s*(\d{7,12})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
-    if (seaM) { 
-      result.hawbHblNo = seaM[1]; 
-      result.hawbHblDate = seaM[2]; 
+    // SEA: Look for HBL/HAWB with an actual value (not empty/whitespace only)
+    const hblMatch = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})\s+(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
+    if (hblMatch) {
+      result.hawbHblNo = hblMatch[1];
+      result.hawbHblDate = hblMatch[2];
+      confidence.hawbHblNo = 0.9;
     } else {
-      var seaM2 = rawText.match(/HBL\/\s*HAWB\s*:\s*(\d{7,12})/i);
-      if (seaM2) {
-        result.hawbHblNo = seaM2[1];
-        var dA = rawText.match(new RegExp(seaM2[1] + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-        if (dA) result.hawbHblDate = dA[1];
-      }
-    }
-    if (!result.hawbHblNo) {
-      var hi = rawText.indexOf('HBL');
-      if (hi >= 0) {
-        var nh = rawText.substring(hi, hi + 150).match(/(\d{7,12})/);
-        if (nh) {
-          result.hawbHblNo = nh[1];
-          var dN = rawText.match(new RegExp(nh[1] + '\\s+(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-          if (dN) result.hawbHblDate = dN[1];
-        }
+      // Try just the number
+      const hblNum = combinedText.match(/HBL\/?\s*HAWB\s*:\s*(\d{6,14})/i);
+      if (hblNum && hblNum[1] && hblNum[1].length >= 6) {
+        result.hawbHblNo = hblNum[1];
+        // Look for date nearby
+        const escH = hblNum[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const dateAfter = combinedText.match(new RegExp(escH + '\\s+(\\d{1,2}[-\/]\\d{1,2}[-\/]\\d{2,4})'));
+        if (dateAfter) result.hawbHblDate = dateAfter[1];
+        confidence.hawbHblNo = 0.8;
+      } else {
+        // HBL is empty - leave blank
+        result.hawbHblNo = '';
+        result.hawbHblDate = '';
+        confidence.hawbHblNo = 0;
       }
     }
   }
 
-  // ── NO OF PACKAGES ──
-  result.noOfPackages = tryPatterns([
+  // ─── NO OF PACKAGES ───
+  result.noOfPackages = findWithConfidence([
     /No\.?\s*of\s*Pkgs\s*:\s*(\d+)/i,
-    /Pkgs\s*:\s*(\d+)/i,
     /Packages\s*:?\s*(\d+)/i,
-    /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CAS)/i
-  ], rawText);
+    /(\d+)\s*(?:PKGS|Pkgs|PACKAGES|CAS|PKG)/i
+  ], combinedText, 'noOfPackages');
 
-  // ── GROSS WEIGHT ──
-  result.grossWeight = tryPatterns([
+  // ─── GROSS WEIGHT ───
+  result.grossWeight = findWithConfidence([
     /Gross\s*Weight\s*:\s*([\d.]+\s*KGS)/i,
-    /Weight\s*:\s*([\d.]+\s*KGS)/i,
-    /Gross\s*Weight\s*:?\s*([\d.]+\s*KGS?)/i
-  ], rawText);
+    /Weight\s*:?\s*([\d.]+\s*KGS)/i,
+    /([\d.]+\s*KGS)/i
+  ], combinedText, 'grossWeight');
 
-  // ── IGM NUMBER + DATE (SEA only) ──
+  // ─── IGM + GATEWAY + LOCAL (SEA only) ───
   if (isSea) {
-    result.igmNo = tryPatterns([
-      /IGM\s*NO\s*:\s*(\d+)/i,
-      /IGM\s*No\s*:?\s*(\d+)/i
-    ], rawText);
-    
-    result.igmDate = tryPatterns([
-      /IGM\s*NO\s*:\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /IGM\s*No\s*:?\s*\d+[\s\/]*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], rawText);
-  }
-
-  // ── GATEWAY IGM (SEA only) ──
-  if (isSea) {
-    result.gatewayIgmNo = tryPatterns([
-      /Gateway\s*IGM\s*:\s*(\d+)/i,
-      /Gateway\s*IGM\s*No\s*:?\s*(\d+)/i
-    ], rawText);
-    
-    result.gatewayIgmDate = tryPatterns([
-      /Gateway\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /Gateway\s*IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], rawText);
-  }
-
-  // ── LOCAL IGM (SEA only) ──
-  if (isSea) {
-    result.localIgmNo = tryPatterns([
-      /Local\s*IGM\s*No\s*:?\s*(\d+)/i,
-      /Local\s*IGM\s*:?\s*(\d+)/i
-    ], rawText);
-    
-    result.localIgmDate = tryPatterns([
-      /Local\s*IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /Local\s*IGM\s*:\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], rawText);
-  }
-
-  // ── CONTAINER NUMBER (SEA only) ──
-  if (isSea) {
-    var containerMatch = null;
-    var invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL)/i;
-    
-    var signatureMatch = rawText.match(/Signature\s+\b([A-Z]{4}\d{7})\b/i);
-    if (signatureMatch && !invalidPrefixes.test(signatureMatch[1])) {
-      containerMatch = signatureMatch;
+    // IGM No with full format: "IGM NO : 4334012 /2026 /17-06-2026"
+    const igmFull = combinedText.match(/IGM\s*NO\s*:\s*(\d+)\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
+    if (igmFull) {
+      result.igmNo = igmFull[1];
+      result.igmDate = igmFull[2];
+      confidence.igmNo = 0.95;
+    } else {
+      result.igmNo = findWithConfidence([
+        /IGM\s*(?:NO|No|Number)?\s*:?\s*(\d{4,})/i
+      ], combinedText, 'igmNo');
+      result.igmDate = findWithConfidence([
+        /IGM\s*(?:Date)?\s*:?\s*\d+\s*\/\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+        /IGM\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+      ], combinedText, 'igmDate');
     }
+
+    // Gateway IGM: "Gateway IGM : 1195832 /28-05-2026"
+    const gwFull = combinedText.match(/Gateway\s*IGM\s*:\s*(\d+)\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i);
+    if (gwFull) {
+      result.gatewayIgmNo = gwFull[1];
+      result.gatewayIgmDate = gwFull[2];
+      confidence.gatewayIgmNo = 0.95;
+    } else {
+      result.gatewayIgmNo = findWithConfidence([
+        /Gateway\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i
+      ], combinedText, 'gatewayIgmNo');
+      result.gatewayIgmDate = findWithConfidence([
+        /Gateway\s*IGM\s*:?\s*\d+\s*\/\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+      ], combinedText, 'gatewayIgmDate');
+    }
+
+    result.localIgmNo = findWithConfidence([
+      /Local\s*IGM\s*(?:No)?\s*:?\s*(\d{4,})/i
+    ], combinedText, 'localIgmNo');
     
-    if (!containerMatch) {
-      var containerSection = rawText.match(/CONTAINER\s+DETAILS[\s\S]{0,500}/i);
-      if (containerSection) {
-        var contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
-        if (contMatch && !invalidPrefixes.test(contMatch[1])) {
-          containerMatch = contMatch;
+    result.localIgmDate = findWithConfidence([
+      /Local\s*IGM\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+    ], combinedText, 'localIgmDate');
+
+    // ─── CONTAINER NUMBER ─── FIXED ───
+    // Look in CONTAINER DETAILS section
+    const containerSection = combinedText.match(/CONTAINER\s+DETAILS[\s\S]{0,800}/i);
+    if (containerSection) {
+      // Match pattern: 4 letters + 7 digits (standard container format)
+      const contMatch = containerSection[0].match(/\b([A-Z]{4}\d{7})\b/);
+      if (contMatch) {
+        const container = contMatch[1];
+        const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
+        if (!invalidPrefixes.test(container)) {
+          result.containerNo = container;
+          confidence.containerNo = 0.95;
         }
       }
     }
     
-    if (!containerMatch) {
-      var igmMatch = rawText.match(/IGM\s+SL\.?NO\s+CHA[\s\S]{0,300}?\b([A-Z]{4}\d{7})\b/i);
-      if (igmMatch && !invalidPrefixes.test(igmMatch[1])) {
-        containerMatch = igmMatch;
-      }
-    }
-    
-    if (!containerMatch) {
-      var labelMatch = rawText.match(/CONTAINER\s+(?:NO\.?|NUMBER)[\s\S]{0,300}?\b([A-Z]{4}\d{7})\b/i);
-      if (labelMatch && !invalidPrefixes.test(labelMatch[1])) {
-        containerMatch = labelMatch;
-      }
-    }
-    
-    if (!containerMatch) {
-      var specificMatch = rawText.match(/\b(TLLU|MSCU|TCKU|OOCU|TRLU|SCZU|MRKU|GESU|HLCU|TGHU|TCLU|TEXU|TRIU|TSLU|TTAU|TTNU|TTSU|TTTU|TTUU|TTVU|TTWU|TTXU|TTYU|TTZU|TWCU)\d{7}\b/i);
-      if (specificMatch) {
-        containerMatch = specificMatch;
-      }
-    }
-    
-    if (!containerMatch) {
-      var allMatches = rawText.match(/\b([A-Z]{4}\d{7})\b/g);
-      if (allMatches) {
-        var validContainers = allMatches.filter(function(c) {
-          return !invalidPrefixes.test(c);
-        });
-        if (validContainers.length > 0) {
-          containerMatch = [null, validContainers[0]];
-        }
-      }
-    }
-    
-    if (containerMatch && containerMatch[1]) {
-      var container = containerMatch[1];
-      if (/^[A-Z]{4}\d{7}$/.test(container) && !invalidPrefixes.test(container)) {
-        result.containerNo = container;
+    // Fallback: search entire text for standard container format
+    if (!result.containerNo) {
+      const allContainers = combinedText.match(/\b([A-Z]{4}\d{7})\b/g) || [];
+      const invalidPrefixes = /^(CSBL|JJCSK|SZBGL|OGC|UESZ|MAWB|MBL|HAWB)/i;
+      const validContainers = allContainers.filter(c => !invalidPrefixes.test(c));
+      
+      if (validContainers.length > 0) {
+        result.containerNo = validContainers[0];
+        confidence.containerNo = 0.85;
       }
     }
   }
 
-  // ── CARGO ARRIVAL NOTICE ──
+  // ─── PORTS ───
+  result.portOfDischarge = findWithConfidence([
+    /Port\s*Of\s*Discharge\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z\s]+)/i,
+    /Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i
+  ], combinedText, 'portOfDischarge');
+
+  result.portOfDestination = findWithConfidence([
+    /Port\s*(?:Of)?\s*Destination\s*:?\s*([A-Z0-9]+-[A-Z]+)/i,
+    /Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i,
+    /Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i
+  ], combinedText, 'portOfDestination');
+
+  // ─── INVOICE ───
+  result.invoiceNo = findWithConfidence([
+    /Inv\.?\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i,
+    /Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i
+  ], combinedText, 'invoiceNo');
+  
+  result.invoiceDate = findWithConfidence([
+    /Inv\.?\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /Invoice\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'invoiceDate');
+
+  // ─── DATES ───
+  result.deliveryOrderDate = findWithConfidence([
+    /DO\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
+    /Delivery\s*Order\s*(?:Issued)?\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'deliveryOrderDate');
+
+  result.occDate = findWithConfidence([
+    /O[OC]C\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'occDate');
+
+  result.gatePassDate = findWithConfidence([
+    /Gate\s*Pass\s*(?:Date|DT)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
+  ], combinedText, 'gatePassDate');
+
+  // ─── MARKS & NOS ───
+  result.remarks = findWithConfidence([
+    /Marks\s*[&]?\s*Nos\s*:\s*(.+?)(?:\s{2,}|\s*$)/i,
+    /Marks?\s*:?\s*([A-Z0-9\-\/\s]+)/i
+  ], combinedText, 'remarks');
+
+  // ─── GSTIN ───
+  const gstinMatch = compactText.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
+  if (gstinMatch) {
+    result.gstin = gstinMatch[1].toUpperCase();
+    result.additionalRemarks = 'GSTIN: ' + result.gstin;
+    confidence.gstin = 0.95;
+  }
+
+  // ─── BILLING ───
+  result.billingCurrency = findWithConfidence([
+    /Currency\s*:?\s*([A-Z]{3})/i,
+    /Inv\.?\s*Value\s*:?\s*[\d.,]+\s*([A-Z]{3})/i
+  ], combinedText, 'billingCurrency');
+
+  result.billTo = findWithConfidence([
+    /Bill\s*To\s*:?\s*([A-Z][\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
+  ], combinedText, 'billTo');
+  if (!result.billTo && result.importerName) {
+    result.billTo = result.importerName;
+    confidence.billTo = 0.7;
+  }
+
+  // ─── DOCKET + AGENT ───
+  result.docketNo = result.jobOrderNo || result.referenceNumber || '';
+  result.docketDate = result.jobOrderDate || new Date().toISOString().split('T')[0];
+  result.agentDebitNote = 'PAS FREIGHT SERVICES';
+
+  // ─── CLEAN ───
+  result.importerName = cleanCompanyName(result.importerName);
+  result.exporterName = cleanCompanyName(result.exporterName);
+  result.supplierName = cleanCompanyName(result.supplierName);
+  result.billTo = cleanCompanyName(result.billTo);
+
   if (!result.cargoArrivalNotice) result.cargoArrivalNotice = result.gatewayIgmNo;
   if (!result.cargoArrivalDate) result.cargoArrivalDate = result.gatewayIgmDate;
 
-  // ── PORT OF DISCHARGE ──
-  result.portOfDischarge = tryPatterns([
-    /Port\s*Of\s*Discharge\s*:?\s*([A-Z0-9]+\s*,?\s*[A-Z\s]+)/i,
-    /Port\s*Of\s*Filing\s*:\s*([^,]+,[^,]+)/i
-  ], rawText);
-
-  // ── PORT OF DESTINATION ──
-  result.portOfDestination = tryPatterns([
-    /Port\s*Shipment\s*:\s*([A-Z]+-[A-Z]+)/i,
-    /Destination\s*(?:Port)?\s*:?\s*([A-Z]+-[A-Z]+)/i,
-    /Port\s*Origin\s*:\s*([A-Z]+-[A-Z]+)/i,
-    /Port\s*Of\s*Destination\s*:?\s*([A-Z0-9]+-[A-Z]+)/i
-  ], rawText);
-
-  // ── INVOICE NUMBER + DATE ──
-  result.invoiceNo = tryPatterns([
-    /Inv\.?\s*No\s*:\s*([A-Z0-9]+[-\/]?\d*[A-Z]?[-\/]?\d*)/i,
-    /Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i
-  ], rawText);
-  
-  result.invoiceDate = tryPatterns([
-    /Inv\.?\s*Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Invoice\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-  ], rawText);
-
-  // ── DELIVERY ORDER DATE ──
-  result.deliveryOrderDate = tryPatterns([
-    /DO\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Delivery\s*Order\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-  ], rawText);
-
-  // ── OCC DATE ──
-  result.occDate = tryPatterns([
-    /O[OC]C\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /OOC\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-  ], rawText);
-
-  // ── GATE PASS DATE ──
-  result.gatePassDate = tryPatterns([
-    /Gate\s*Pass\s*(?:Date)?\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-    /Gate\s*Pass\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-  ], rawText);
-
-  // ── REMARKS / MARKS & NOS ──
-  result.remarks = tryPatterns([
-    /Marks\s*[&]?\s*Nos\s*:\s*([A-Z0-9]+[-\/\s]+[A-Z0-9]+)/i,
-    /Marks\s*[&]?\s*Nos\s*:?\s*(.+?)(?:\s{2,}|$)/i,
-    /REMARKS\s*:?\s*([\w\s\/\-]+)/i
-  ], rawText);
-
-  // ── GSTIN ──
-  var gstMatch = rawText.match(/GSTIN\s*:?\s*(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
-  if (!gstMatch) gstMatch = rawTextCompact.match(/(\d{2}[A-Z]{5}\d{4}[A-Z]\dZ[A-Z\d])/i);
-  if (!gstMatch) { 
-    var lm = rawText.match(/\b(\d{2}[A-Z0-9]{13})\b/i); 
-    if (lm && /[A-Z]/.test(lm[1]) && /\d/.test(lm[1].substring(2))) gstMatch = lm; 
-  }
-  if (gstMatch) result.additionalRemarks = 'GSTIN: ' + gstMatch[1].toUpperCase();
-
-  // ── BILLING CURRENCY ──
-  result.billingCurrency = tryPatterns([
-    /Inv\.?\s*Value\s*:\s*[\d.,]+\s*([A-Z]{3})/i,
-    /Invoice\s*Value\s*:?\s*[\d.,]+\s*([A-Z]{3})/i,
-    /Currency\s*:?\s*([A-Z]{3})/i,
-    /Exchange\s*Rate\s*:\s*[\d.]+\s*([A-Z]{3})\s*=/i
-  ], rawText);
-
-  // ── BILL NUMBER ──
-  result.billNo = tryPatterns([
-    /UCR\s*Number\s*:?\s*([A-Z0-9\-]+)/i,
-    /Bill\s*No\s*:?\s*([A-Z0-9\-]+)/i,
-    /Invoice\s*(?:No|Number)\s*:?\s*([A-Z0-9\-]+)/i
-  ], rawText);
-
-  // ── BILL DATE ──
-  if (result.billNo) {
-    var escBill = result.billNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    var dateMatch = rawText.match(new RegExp(escBill + '[\\s\\S]{0,100}?(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-    if (dateMatch) result.billDate = dateMatch[1];
-  }
-  if (!result.billDate) {
-    result.billDate = tryPatterns([
-      /Bill\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /Invoice\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], rawText);
-  }
-
-  // ── BILL TO ──
-  result.billTo = tryPatterns([
-    /Bill\s*To\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE|INC|CORP)[\w\s]*?)(?:\s+#|\s{2,})/i,
-    /Importer\s+Details\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*?)(?:\s+#|\s{2,})/i,
-    /Importer\s*Name\s*:?\s*([\w\s]+?(?:LTD|LIMITED|PVT|PRIVATE)[\w\s]*)/i
-  ], rawText);
-  result.billTo = cleanCompanyName(result.billTo);
-  
-  if (!result.billTo && result.importerName) {
-    result.billTo = result.importerName;
-  }
-
-  // ── DOCKET NUMBER ──
-  result.docketNo = tryPatterns([
-    /File\s*No\s*:\s*([A-Z0-9]+[-\/][A-Z0-9\/-]+)/i,
-    /Docket\s*No\s*:?\s*([A-Z0-9\-]+)/i,
-    /Job\s*No\s*[&]?\s*Date\s*:\s*(\d+)/i
-  ], rawText);
-  
-  if (result.docketNo && /^\d+$/.test(result.docketNo)) {
-    result.docketNo = 'JOB-' + result.docketNo;
-  }
-
-  // ── DOCKET DATE ──
-  if (result.docketNo) {
-    var escDocket = result.docketNo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    var dDateMatch = rawText.match(new RegExp(escDocket + '[\\s\\S]{0,100}?(\\d{1,2}[-\\/]\\d{1,2}[-\\/]\\d{2,4})'));
-    if (dDateMatch) result.docketDate = dDateMatch[1];
-  }
-  if (!result.docketDate) {
-    result.docketDate = tryPatterns([
-      /File\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /Job\s*Date\s*:?\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i,
-      /Date\s*:\s*(\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})/i
-    ], rawText);
-  }
-
-  // ── CLEAN UP ──
-  result.importerName = cleanCompanyName(result.importerName);
-  result.exporterName = cleanCompanyName(result.exporterName);
-  result.supplierName = cleanCompanyName(result.supplierName);
-  
-  // ── AGENT DEBIT NOTE ──
-  result.agentDebitNote = 'PAS FREIGHT SERVICES';
-
-  return result;
+  return { data: result, confidence };
 }
+
+// ─── MAIN ROUTE ───
+router.post('/scan', upload.single('checklist'), async function(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ status: 'error', message: 'Please upload a PDF checklist' });
+    }
+
+    const buffer = req.file.buffer;
+    console.log(`\n📄 Scanning: ${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)`);
+
+    // Layer 1: Digital text
+    console.log('📑 Layer 1: Extracting digital text...');
+    const { items: pdfJsItems, pageInfo } = await extractTextWithPdfJs(buffer);
+    console.log(`   → ${pageInfo.length} page(s)`);
+
+    // Layer 2: pdf-parse
+    console.log('📑 Layer 2: Extracting with pdf-parse...');
+    const pdfParseText = await extractTextWithPdfParse(buffer);
+
+    // Layer 3: OCR
+    console.log('📑 Layer 3: Checking for scanned pages...');
+    const ocrText = await extractOcrFromScannedPages(buffer, pageInfo);
+
+    // Merge
+    const sortedItems = pdfJsItems.filter(i => i.page === 1).sort((a, b) => a.y - b.y || a.x - b.x);
+    const digitalText = sortedItems.map(i => i.text).join(' ');
+    const mergedText = mergeTexts(digitalText, ocrText || pdfParseText || '');
+
+    // Parse
+    console.log('🧠 Parsing fields...');
+    const parsed = intelligentParse(pdfJsItems, pdfParseText, ocrText);
+
+    // Accuracy
+    const confidenceValues = Object.values(parsed.confidence).filter(v => v > 0);
+    const overallAccuracy = confidenceValues.length > 0
+      ? Math.round((confidenceValues.reduce((a, b) => a + b, 0) / confidenceValues.length) * 100)
+      : 0;
+
+    console.log(`✅ Done: ${overallAccuracy}% accuracy • ${confidenceValues.length} fields\n`);
+
+    res.json({
+      status: 'success',
+      data: parsed.data,
+      rawText: mergedText || 'No text extracted',
+      confidence: parsed.confidence,
+      accuracy: overallAccuracy,
+      fieldsDetected: confidenceValues.length,
+      totalFields: Object.keys(parsed.confidence).length
+    });
+    
+  } catch (error) {
+    console.error('❌ PDF scan error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to scan PDF: ' + error.message
+    });
+  }
+});
 
 module.exports = router;
