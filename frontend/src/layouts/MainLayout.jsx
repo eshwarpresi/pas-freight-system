@@ -5,7 +5,7 @@ import {
   Box, Command,
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
-  BarChart3, FileUp
+  BarChart3, FileUp, Receipt
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -94,6 +94,7 @@ export default function MainLayout({ user }) {
   const actionLinks = [
     { path: '/create', icon: Package, label: 'New Shipment', color: 'text-amber-500' },
     { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner', color: 'text-indigo-500' },
+    { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan', color: 'text-orange-500' }, // ✅ NEW
   ]
 
   const handleLogout = async () => {

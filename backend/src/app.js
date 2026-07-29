@@ -201,6 +201,7 @@ const accountsRoutes = require('./routes/accounts.routes');
 const archiveRoutes = require('./routes/archive.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const checklistRoutes = require('./routes/checklist.routes');
+const deliveryChallanRoutes = require('./routes/deliveryChallan.routes'); // ✅ NEW
 
 // Apply auth + tracking middleware to ALL shipment routes
 app.use('/api/freight', authenticateToken, trackUserActivity, freightForwardingRoutes);
@@ -209,6 +210,7 @@ app.use('/api/accounts', authenticateToken, trackUserActivity, accountsRoutes);
 app.use('/api/archive', authenticateToken, trackUserActivity, archiveRoutes);
 app.use('/api/notifications', authenticateToken, notificationRoutes);
 app.use('/api/checklist', authenticateToken, checklistRoutes);
+app.use('/api/delivery-challan', authenticateToken, deliveryChallanRoutes); // ✅ NEW
 
 // ========== ERROR HANDLERS ==========
 app.use((req, res) => {
