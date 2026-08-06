@@ -55,10 +55,10 @@ export default function FreightDashboard() {
   useEffect(() => {
     if (!socket) return
     const handlers = {
-      'shipment:new': (d) => { if (!showArchived) { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) } },
-      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
-      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
-      'shipment:archiveUpdate': (d) => { queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
+      'shipment:new': (d) => { if (!showArchived) { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) } },
+      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:archiveUpdate': (d) => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
     }
     Object.entries(handlers).forEach(([event, handler]) => { socket.on(event, handler); return () => socket.off(event, handler) })
   }, [socket, showArchived, queryClient])
@@ -76,26 +76,44 @@ export default function FreightDashboard() {
     retry: 1, retryDelay: 1000,
   })
 
+  // ─── DATASET-WIDE STATS (NEW) ───
+  // Same filters as the shipment list above, but this counts across ALL
+  // matching shipments (every page), not just the 25 (or whatever perPage
+  // is) currently shown. This is what the stat cards and progress bar use.
+  const { data: statsData } = useQuery({
+    queryKey: ['shipments-stats', search, statusFilter, 'FULL_SHIPMENT', showArchived],
+    queryFn: async () => {
+      const params = { isArchived: showArchived ? 'true' : 'false', shipmentType: 'FULL_SHIPMENT' }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
+      const res = await api.get('/freight/shipments/stats', { params })
+      return res.data?.data
+    },
+    staleTime: 60000,
+  })
+
   const shipments = data?.data || []
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
 
   const analytics = useMemo(() => {
-    const delivered = shipments.filter(s => s.currentStatus === 'DELIVERED' || s.currentStatus === 'HAND_OVER').length
-    const invoiced = shipments.filter(s => ['INVOICE_GENERATED', 'INVOICE_SENT'].includes(s.currentStatus)).length
-    const totalPkgs = shipments.reduce((sum, s) => sum + (s.freightForwarding?.noOfPackages || 0), 0)
-    const totalWt = shipments.reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.grossWeight) || 0), 0)
-    return { delivered, invoiced, totalPkgs, totalWt, deliveryRate: totalCount > 0 ? Math.round((delivered / totalCount) * 100) : 0 }
-  }, [shipments, totalCount])
+    return {
+      delivered: statsData?.delivered ?? 0,
+      invoiced: statsData?.invoiced ?? 0,
+      totalPkgs: statsData?.totalPkgs ?? 0,
+      totalWt: statsData?.totalWt ?? 0,
+      deliveryRate: statsData?.deliveryRate ?? 0
+    }
+  }, [statsData])
 
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Archived', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Archived', 'success') },
     onError: () => addToast('Failed', 'error')
   })
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Restored', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Restored', 'success') },
     onError: () => addToast('Failed', 'error')
   })
 

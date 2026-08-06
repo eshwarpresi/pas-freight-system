@@ -324,7 +324,7 @@ export default function Dashboard({ defaultType = '' }) {
     onError: () => addToast('Failed to restore shipments', 'error')
   })
 
-  // ─── ANALYTICS - FIXED FOR ACTIVE AND ARCHIVE ───
+  // ─── ANALYTICS ───
   const analytics = useMemo(() => {
     const d = shipments.filter(s => s.currentStatus === 'DELIVERED' || s.currentStatus === 'HAND_OVER').length
     const t = shipments.filter(s => ['BOOKED','SCHEDULED','AWB_GENERATED'].includes(s.currentStatus)).length
@@ -334,16 +334,11 @@ export default function Dashboard({ defaultType = '' }) {
     
     const delivered = d;
     const total = shipments.length;
-    
-    // FIX: In Archive view, all shipments are COMPLETED
-    let deliveryRate = 0;
-    if (showArchived) {
-      // All archived shipments are completed
-      deliveryRate = total > 0 ? 100 : 0;
-    } else {
-      // Active view: calculate based on delivered / total
-      deliveryRate = total > 0 ? Math.round((delivered / total) * 100) : 0;
-    }
+
+    // Delivery Progress always reflects actual delivered/handed-over count vs
+    // total, in both Active and Archive views — archived just means the
+    // shipment was archived, not that it was necessarily delivered.
+    const deliveryRate = total > 0 ? Math.round((delivered / total) * 100) : 0;
     
     return { 
       delivered: d, 

@@ -532,6 +532,68 @@ const getAllShipments = async (req, res) => {
   } catch (error) { console.error('Error fetching:', error); res.status(500).json({ status: 'error', message: 'Failed to fetch' }); }
 };
 
+// ─── GET SHIPMENT STATS (NEW) ───
+// Read-only. Returns counts across ALL matching shipments (not just the
+// current page), so progress bars / percentages reflect the whole dataset.
+// Accepts the same filters as getAllShipments (isArchived, shipmentType,
+// status, search) so each dashboard can ask for stats scoped the same way
+// it already scopes its shipment list.
+const getShipmentStats = async (req, res) => {
+  try {
+    const { status, search, isArchived, shipmentType } = req.query;
+
+    const where = {
+      isArchived: isArchived === 'true',
+      isDeleted: false
+    };
+    if (status) where.currentStatus = status;
+    if (shipmentType) {
+      if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
+      else if (shipmentType === 'TRANSPORT') where.shipmentType = 'Transport';
+      else if (shipmentType === 'DO_RELEASE') where.shipmentType = 'DO Release';
+      else if (shipmentType === 'FF_ONLY') where.shipmentType = 'FF Only';
+      else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
+    }
+    if (search) {
+      where.OR = [
+        { refNo: { contains: search } },
+        { freightForwarding: { consigneeName: { contains: search } } },
+        { freightForwarding: { hawb: { contains: search } } },
+        { freightForwarding: { mawb: { contains: search } } },
+        { cha: { boeNo: { contains: search } } },
+        { cha: { sbNo: { contains: search } } },
+        { accounts: { invoiceNumber: { contains: search } } },
+        { freightForwarding: { customerName: { contains: search } } }
+      ];
+    }
+
+    const [total, delivered, invoiced, weightAgg] = await Promise.all([
+      prisma.shipment.count({ where }),
+      prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
+      prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
+      prisma.freightForwarding.aggregate({
+        where: { shipment: where },
+        _sum: { noOfPackages: true, grossWeight: true }
+      })
+    ]);
+
+    res.json({
+      status: 'success',
+      data: {
+        total,
+        delivered,
+        invoiced,
+        deliveryRate: total > 0 ? Math.round((delivered / total) * 100) : 0,
+        totalPkgs: weightAgg._sum.noOfPackages || 0,
+        totalWt: weightAgg._sum.grossWeight || 0
+      }
+    });
+  } catch (error) {
+    console.error('Error getting shipment stats:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get stats' });
+  }
+};
+
 // ─── GET SINGLE ───
 const getShipmentById = async (req, res) => {
   try { const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); if (!s) return res.status(404).json({ status: 'error', message: 'Not found' }); res.json({ status: 'success', data: s }); } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
@@ -647,6 +709,7 @@ module.exports = {
   bulkRestoreShipments,
   exportShipments, 
   getAllShipments, 
+  getShipmentStats, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 
