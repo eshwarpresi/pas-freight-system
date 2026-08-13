@@ -10,6 +10,8 @@ import {
 import api from '../lib/api'
 import { useSocket } from '../App'
 import { useToast } from '../components/Toast'
+import LogisticsBackground from '../components/LogisticsBackground'
+import IndependenceDayBanner from '../components/IndependenceDayBanner'
 
 export default function MainLayout({ user }) {
   const location = useLocation()
@@ -94,7 +96,7 @@ export default function MainLayout({ user }) {
   const actionLinks = [
     { path: '/create', icon: Package, label: 'New Shipment', color: 'text-amber-500' },
     { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner', color: 'text-indigo-500' },
-    { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan', color: 'text-orange-500' }, // ✅ NEW
+    { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan', color: 'text-orange-500' },
   ]
 
   const handleLogout = async () => {
@@ -125,6 +127,7 @@ export default function MainLayout({ user }) {
 
   return (
     <div className="min-h-screen bg-[var(--bg-secondary)]">
+      <LogisticsBackground />
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden transition-all" onClick={() => setSidebarOpen(false)} />
       )}
@@ -134,7 +137,10 @@ export default function MainLayout({ user }) {
           <Link to="/" className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center"><Box size={16} className="text-white" /></div>
             <div className="leading-tight">
-              <h1 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">PAS Freight</h1>
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">PAS Freight</h1>
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-orange-100 to-green-100 text-orange-700 dark:from-orange-900/30 dark:to-green-900/30 dark:text-orange-300">🇮🇳 Aug 15</span>
+              </div>
               <p className="text-[10px] text-[var(--text-muted)] font-medium">Services Pvt Ltd</p>
             </div>
           </Link>
@@ -269,7 +275,10 @@ export default function MainLayout({ user }) {
           <button onClick={handleLogout} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><LogOut size={18} className="text-red-500" /></button>
         </header>
 
-        <main className="p-6 md:p-8 lg:p-10 max-w-[1400px]"><Outlet /></main>
+        <main className="p-6 md:p-8 lg:p-10 max-w-[1400px]">
+          <IndependenceDayBanner userName={displayName} />
+          <Outlet />
+        </main>
       </div>
     </div>
   )

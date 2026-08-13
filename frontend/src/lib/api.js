@@ -1,7 +1,12 @@
 import axios from 'axios';
 
+// Uses the same VITE_API_URL your socket connection (in App.jsx) already
+// reads. Set VITE_API_URL in frontend/.env for local development;
+// falls back to the live Render API if it's not set (e.g. in production).
+const API_BASE = import.meta.env.VITE_API_URL || 'https://pas-freight-api.onrender.com';
+
 const api = axios.create({
-  baseURL: 'https://pas-freight-api.onrender.com/api',
+  baseURL: `${API_BASE}/api`,
   headers: {
     'Content-Type': 'application/json'
   },
