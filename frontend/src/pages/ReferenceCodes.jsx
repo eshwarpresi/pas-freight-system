@@ -3,8 +3,8 @@
 // NEW FILE — standalone, read-only analytics page. Does not modify any
 // shipment data. Groups existing shipments by the code detected at the
 // start of their Ref No (e.g. "RLIM-2026-004" -> RLIM) and shows, per
-// code: total volume, open vs closed, and who's been creating shipments
-// under that code. Also shows an Employee x Code matrix.
+// code: total volume, open vs closed, invoiced count, and who's been
+// creating shipments under that code. Also shows an Employee x Code matrix.
 
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
@@ -115,11 +115,18 @@ export default function ReferenceCodes() {
                 </div>
               </div>
 
-              {c.topHandler && (
-                <p className="text-[10px] text-[var(--text-muted)] mt-2.5 truncate">
-                  Top handler: <span className="font-semibold text-[var(--text-secondary)]">{c.topHandler.name}</span> ({c.topHandler.count})
-                </p>
-              )}
+              <div className="flex items-center gap-3 mt-2.5">
+                {c.topHandler && (
+                  <p className="text-[10px] text-[var(--text-muted)] truncate">
+                    Top: <span className="font-semibold text-[var(--text-secondary)]">{c.topHandler.name}</span> ({c.topHandler.count})
+                  </p>
+                )}
+                {c.invoiced > 0 && (
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 flex-shrink-0">
+                    <TrendingUp size={10} /> {c.invoiced} invoiced
+                  </p>
+                )}
+              </div>
             </button>
           )
         })}
@@ -140,7 +147,7 @@ export default function ReferenceCodes() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
               <p className="text-lg font-bold text-[var(--text-primary)]">{selected.total}</p>
               <p className="text-[10px] text-[var(--text-muted)]">Total</p>
@@ -152,6 +159,10 @@ export default function ReferenceCodes() {
             <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
               <p className="text-lg font-bold text-emerald-600">{selected.closed}</p>
               <p className="text-[10px] text-[var(--text-muted)]">Closed</p>
+            </div>
+            <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
+              <p className="text-lg font-bold text-orange-600">{selected.invoiced}</p>
+              <p className="text-[10px] text-[var(--text-muted)]">Invoiced</p>
             </div>
           </div>
 

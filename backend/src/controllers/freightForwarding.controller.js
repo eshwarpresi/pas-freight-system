@@ -591,15 +591,15 @@ const getShipmentStats = async (req, res) => {
   }
 };
 
-// ─── GET REFERENCE CODE STATS (NEW) ───
-// Read-only, purely derived. Groups every non-bin shipment by the code
-// detected at the start of its refNo (e.g. "RLIM-2026-004" -> "RLIM").
-// Refs that don't follow a letters+number pattern (e.g. a fully worded
-// name like "SINGAPORE CONSOLE SHEET") are grouped by their full,
-// uppercased text instead, since those are reused verbatim across many
-// shipments rather than being a prefix+number scheme.
-// No new fields, no schema change — this reads only refNo, currentStatus,
-// and createdByName, all of which already exist.
+// ─── GET REFERENCE CODE STATS ───
+// Read-only, purely derived. Groups every non-bin shipment (active AND
+// archived) by the code detected at the start of its refNo (e.g.
+// "RLIM-2026-004" -> "RLIM"). Refs that don't follow a letters+number
+// pattern (e.g. a fully worded name like "SINGAPORE CONSOLE SHEET") are
+// grouped by their full, uppercased text instead, since those are reused
+// verbatim across many shipments rather than being a prefix+number scheme.
+// No new fields, no schema change — reads only refNo, currentStatus, and
+// createdByName, all of which already exist.
 function extractReferenceCode(refNo) {
   if (!refNo || !refNo.trim()) return 'UNSPECIFIED';
   const trimmed = refNo.trim();
@@ -609,6 +609,7 @@ function extractReferenceCode(refNo) {
 }
 
 const CLOSED_STATUSES = ['DELIVERED', 'HAND_OVER', 'COMPLETED', 'INVOICE_SENT'];
+const INVOICED_STATUSES = ['INVOICE_GENERATED', 'INVOICE_SENT'];
 
 const getReferenceCodeStats = async (req, res) => {
   try {
@@ -625,12 +626,13 @@ const getReferenceCodeStats = async (req, res) => {
     for (const s of shipments) {
       const code = extractReferenceCode(s.refNo);
       if (!groups[code]) {
-        groups[code] = { code, total: 0, closed: 0, open: 0, employees: {} };
+        groups[code] = { code, total: 0, closed: 0, open: 0, invoiced: 0, employees: {} };
       }
       const g = groups[code];
       g.total += 1;
       if (CLOSED_STATUSES.includes(s.currentStatus)) g.closed += 1;
       else g.open += 1;
+      if (INVOICED_STATUSES.includes(s.currentStatus)) g.invoiced += 1;
 
       const emp = s.createdByName || 'Unknown';
       g.employees[emp] = (g.employees[emp] || 0) + 1;
@@ -646,6 +648,7 @@ const getReferenceCodeStats = async (req, res) => {
           total: g.total,
           open: g.open,
           closed: g.closed,
+          invoiced: g.invoiced, // ✅ NEW
           closedRate: g.total > 0 ? Math.round((g.closed / g.total) * 100) : 0,
           topHandler: employeeBreakdown[0] || null,
           employeeBreakdown
@@ -776,7 +779,7 @@ module.exports = {
   exportShipments, 
   getAllShipments, 
   getShipmentStats,
-  getReferenceCodeStats, // ✅ NEW
+  getReferenceCodeStats,
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 
