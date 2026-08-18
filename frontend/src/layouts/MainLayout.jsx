@@ -135,8 +135,8 @@ export default function MainLayout({ user }) {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden transition-all" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <aside className={`fixed top-0 left-0 h-full w-[260px] border-r z-50 transform transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:translate-x-0 bg-[var(--bg-primary)] border-[var(--border-color)] ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="h-16 flex items-center justify-between px-5 border-b border-[var(--border-color)]">
+      <aside className={`fixed top-0 left-0 h-full w-[260px] border-r z-50 transform transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:translate-x-0 bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex-shrink-0 h-16 flex items-center justify-between px-5 border-b border-[var(--border-color)]">
           <Link to="/" className="flex items-center gap-2.5">
             <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center"><Box size={16} className="text-white" /></div>
             <div className="leading-tight">
@@ -147,7 +147,7 @@ export default function MainLayout({ user }) {
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"><X size={16} className="text-[var(--text-secondary)]" /></button>
         </div>
         
-        <div className="px-4 py-3 border-b border-[var(--border-color)]">
+        <div className="flex-shrink-0 px-4 py-3 border-b border-[var(--border-color)]">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md">{userInitial}</div>
             <div className="flex-1 min-w-0">
@@ -157,7 +157,7 @@ export default function MainLayout({ user }) {
           </div>
         </div>
 
-        <nav className="p-3 space-y-0.5">
+        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5">
           <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">Overview</p>
           {navItems.map((item) => {
             const Icon = item.icon
@@ -216,7 +216,7 @@ export default function MainLayout({ user }) {
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-[var(--border-color)]">
+        <div className="flex-shrink-0 p-4 border-t border-[var(--border-color)]">
           <div className="flex items-center gap-2 px-1"><span className="text-[10px] text-[var(--text-muted)] font-medium">© 2026 PAS Freight</span></div>
         </div>
       </aside>

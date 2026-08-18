@@ -6,7 +6,7 @@
 // code: total volume, open vs closed, invoiced count, and who's been
 // creating shipments under that code. Also shows an Employee x Code matrix.
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
@@ -34,7 +34,6 @@ export default function ReferenceCodes() {
   })
 
   const codes = data || []
-  const selected = codes.find((c) => c.code === selectedCode) || null
 
   // Build an Employee x Code matrix from the same data — no extra request needed
   const matrix = useMemo(() => {
@@ -89,94 +88,95 @@ export default function ReferenceCodes() {
           const gradient = CARD_GRADIENTS[i % CARD_GRADIENTS.length]
           const isSelected = selectedCode === c.code
           return (
-            <button
-              key={c.code}
-              onClick={() => setSelectedCode(isSelected ? null : c.code)}
-              className={`text-left glass rounded-xl p-4 border transition-all hover-lift ${
-                isSelected ? 'border-indigo-400 ring-2 ring-indigo-300/50' : 'border-[var(--glass-border)]'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md`}>
-                  <Hash size={16} className="text-white" />
+            <Fragment key={c.code}>
+              <button
+                onClick={() => setSelectedCode(isSelected ? null : c.code)}
+                className={`text-left glass rounded-xl p-4 border transition-all hover-lift ${
+                  isSelected ? 'border-indigo-400 ring-2 ring-indigo-300/50' : 'border-[var(--glass-border)]'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center shadow-md`}>
+                    <Hash size={16} className="text-white" />
+                  </div>
+                  <span className="text-[10px] text-[var(--text-muted)] font-medium">{c.total} shipments</span>
                 </div>
-                <span className="text-[10px] text-[var(--text-muted)] font-medium">{c.total} shipments</span>
-              </div>
 
-              <p className="text-sm font-bold text-[var(--text-primary)] tracking-wide truncate">{c.code}</p>
+                <p className="text-sm font-bold text-[var(--text-primary)] tracking-wide truncate">{c.code}</p>
 
-              <div className="mt-2.5">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-[var(--text-muted)]">Closed</span>
-                  <span className="text-[10px] font-semibold text-[var(--text-secondary)]">{c.closedRate}%</span>
+                <div className="mt-2.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] text-[var(--text-muted)]">Closed</span>
+                    <span className="text-[10px] font-semibold text-[var(--text-secondary)]">{c.closedRate}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-1.5 overflow-hidden">
+                    <div className={`h-1.5 rounded-full bg-gradient-to-r ${gradient}`} style={{ width: `${c.closedRate}%` }} />
+                  </div>
                 </div>
-                <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-1.5 overflow-hidden">
-                  <div className={`h-1.5 rounded-full bg-gradient-to-r ${gradient}`} style={{ width: `${c.closedRate}%` }} />
-                </div>
-              </div>
 
-              <div className="flex items-center gap-3 mt-2.5">
-                {c.topHandler && (
-                  <p className="text-[10px] text-[var(--text-muted)] truncate">
-                    Top: <span className="font-semibold text-[var(--text-secondary)]">{c.topHandler.name}</span> ({c.topHandler.count})
-                  </p>
-                )}
-                {c.invoiced > 0 && (
-                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 flex-shrink-0">
-                    <TrendingUp size={10} /> {c.invoiced} invoiced
-                  </p>
-                )}
-              </div>
-            </button>
+                <div className="flex items-center gap-3 mt-2.5">
+                  {c.topHandler && (
+                    <p className="text-[10px] text-[var(--text-muted)] truncate">
+                      Top: <span className="font-semibold text-[var(--text-secondary)]">{c.topHandler.name}</span> ({c.topHandler.count})
+                    </p>
+                  )}
+                  {c.invoiced > 0 && (
+                    <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 flex-shrink-0">
+                      <TrendingUp size={10} /> {c.invoiced} invoiced
+                    </p>
+                  )}
+                </div>
+              </button>
+
+              {/* ── BREAKDOWN — appears directly below this card, spans the full grid width ── */}
+              {isSelected && (
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3 glass rounded-xl border border-[var(--border-color)] p-5 animate-slide-down">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                      <Hash size={15} className="text-indigo-500" /> {c.code} — Breakdown
+                    </h3>
+                    <Link
+                      to={`/?search=${encodeURIComponent(c.code)}`}
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      View shipments <ArrowUpRight size={13} />
+                    </Link>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                    <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
+                      <p className="text-lg font-bold text-[var(--text-primary)]">{c.total}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">Total</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
+                      <p className="text-lg font-bold text-amber-600">{c.open}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">In Progress</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
+                      <p className="text-lg font-bold text-emerald-600">{c.closed}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">Closed</p>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
+                      <p className="text-lg font-bold text-orange-600">{c.invoiced}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">Invoiced</p>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] font-semibold text-[var(--text-muted)] uppercase mb-2">Handled by</p>
+                  <div className="space-y-1.5">
+                    {c.employeeBreakdown.map((e) => (
+                      <div key={e.name} className="flex items-center justify-between text-xs">
+                        <span className="text-[var(--text-secondary)]">{e.name}</span>
+                        <span className="font-semibold text-[var(--text-primary)]">{e.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Fragment>
           )
         })}
       </div>
-
-      {/* ── SELECTED CODE DETAIL ── */}
-      {selected && (
-        <div className="glass rounded-xl border border-[var(--border-color)] p-5 animate-slide-down">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
-              <Hash size={15} className="text-indigo-500" /> {selected.code} — Breakdown
-            </h3>
-            <Link
-              to={`/?search=${encodeURIComponent(selected.code)}`}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
-            >
-              View shipments <ArrowUpRight size={13} />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-            <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
-              <p className="text-lg font-bold text-[var(--text-primary)]">{selected.total}</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Total</p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
-              <p className="text-lg font-bold text-amber-600">{selected.open}</p>
-              <p className="text-[10px] text-[var(--text-muted)]">In Progress</p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
-              <p className="text-lg font-bold text-emerald-600">{selected.closed}</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Closed</p>
-            </div>
-            <div className="text-center p-3 rounded-lg bg-[var(--bg-secondary)]">
-              <p className="text-lg font-bold text-orange-600">{selected.invoiced}</p>
-              <p className="text-[10px] text-[var(--text-muted)]">Invoiced</p>
-            </div>
-          </div>
-
-          <p className="text-[11px] font-semibold text-[var(--text-muted)] uppercase mb-2">Handled by</p>
-          <div className="space-y-1.5">
-            {selected.employeeBreakdown.map((e) => (
-              <div key={e.name} className="flex items-center justify-between text-xs">
-                <span className="text-[var(--text-secondary)]">{e.name}</span>
-                <span className="font-semibold text-[var(--text-primary)]">{e.count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* ── EMPLOYEE x CODE MATRIX ── */}
       <div className="glass rounded-xl border border-[var(--border-color)] overflow-hidden">
