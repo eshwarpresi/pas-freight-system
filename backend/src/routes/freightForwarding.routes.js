@@ -17,8 +17,11 @@ router.get('/shipments/bin', freightController.getBinShipments);
 // ─── GET BIN COUNT ───
 router.get('/shipments/bin/count', freightController.getBinCount);
 
-// ─── GET SHIPMENT STATS (NEW — must stay before /:id route) ───
+// ─── GET SHIPMENT STATS (must stay before /:id route) ───
 router.get('/shipments/stats', freightController.getShipmentStats);
+
+// ─── GET REFERENCE CODE STATS (NEW — must stay before /:id route) ───
+router.get('/shipments/reference-codes', freightController.getReferenceCodeStats);
 
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);

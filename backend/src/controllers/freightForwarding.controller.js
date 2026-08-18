@@ -532,12 +532,9 @@ const getAllShipments = async (req, res) => {
   } catch (error) { console.error('Error fetching:', error); res.status(500).json({ status: 'error', message: 'Failed to fetch' }); }
 };
 
-// ─── GET SHIPMENT STATS (NEW) ───
+// ─── GET SHIPMENT STATS ───
 // Read-only. Returns counts across ALL matching shipments (not just the
 // current page), so progress bars / percentages reflect the whole dataset.
-// Accepts the same filters as getAllShipments (isArchived, shipmentType,
-// status, search) so each dashboard can ask for stats scoped the same way
-// it already scopes its shipment list.
 const getShipmentStats = async (req, res) => {
   try {
     const { status, search, isArchived, shipmentType } = req.query;
@@ -591,6 +588,75 @@ const getShipmentStats = async (req, res) => {
   } catch (error) {
     console.error('Error getting shipment stats:', error);
     res.status(500).json({ status: 'error', message: 'Failed to get stats' });
+  }
+};
+
+// ─── GET REFERENCE CODE STATS (NEW) ───
+// Read-only, purely derived. Groups every non-bin shipment by the code
+// detected at the start of its refNo (e.g. "RLIM-2026-004" -> "RLIM").
+// Refs that don't follow a letters+number pattern (e.g. a fully worded
+// name like "SINGAPORE CONSOLE SHEET") are grouped by their full,
+// uppercased text instead, since those are reused verbatim across many
+// shipments rather than being a prefix+number scheme.
+// No new fields, no schema change — this reads only refNo, currentStatus,
+// and createdByName, all of which already exist.
+function extractReferenceCode(refNo) {
+  if (!refNo || !refNo.trim()) return 'UNSPECIFIED';
+  const trimmed = refNo.trim();
+  const m = trimmed.match(/^([A-Za-z]{2,10})(?=[\s\-_]?\d)/);
+  if (m) return m[1].toUpperCase();
+  return trimmed.toUpperCase();
+}
+
+const CLOSED_STATUSES = ['DELIVERED', 'HAND_OVER', 'COMPLETED', 'INVOICE_SENT'];
+
+const getReferenceCodeStats = async (req, res) => {
+  try {
+    const shipments = await prisma.shipment.findMany({
+      where: { isDeleted: false },
+      select: {
+        refNo: true,
+        currentStatus: true,
+        createdByName: true
+      }
+    });
+
+    const groups = {};
+    for (const s of shipments) {
+      const code = extractReferenceCode(s.refNo);
+      if (!groups[code]) {
+        groups[code] = { code, total: 0, closed: 0, open: 0, employees: {} };
+      }
+      const g = groups[code];
+      g.total += 1;
+      if (CLOSED_STATUSES.includes(s.currentStatus)) g.closed += 1;
+      else g.open += 1;
+
+      const emp = s.createdByName || 'Unknown';
+      g.employees[emp] = (g.employees[emp] || 0) + 1;
+    }
+
+    const data = Object.values(groups)
+      .map((g) => {
+        const employeeBreakdown = Object.entries(g.employees)
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count);
+        return {
+          code: g.code,
+          total: g.total,
+          open: g.open,
+          closed: g.closed,
+          closedRate: g.total > 0 ? Math.round((g.closed / g.total) * 100) : 0,
+          topHandler: employeeBreakdown[0] || null,
+          employeeBreakdown
+        };
+      })
+      .sort((a, b) => b.total - a.total);
+
+    res.json({ status: 'success', data });
+  } catch (error) {
+    console.error('Error getting reference code stats:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get reference code stats' });
   }
 };
 
@@ -709,7 +775,8 @@ module.exports = {
   bulkRestoreShipments,
   exportShipments, 
   getAllShipments, 
-  getShipmentStats, // ✅ NEW
+  getShipmentStats,
+  getReferenceCodeStats, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 

@@ -12,7 +12,8 @@ const DOReleaseDashboard = lazy(() => import('./pages/DOReleaseDashboard'))
 const FFOnlyDashboard = lazy(() => import('./pages/FFOnlyDashboard'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const ChecklistScanner = lazy(() => import('./pages/ChecklistScanner'))
-const DeliveryChallan = lazy(() => import('./pages/DeliveryChallan')) // ✅ NEW
+const DeliveryChallan = lazy(() => import('./pages/DeliveryChallan'))
+const ReferenceCodes = lazy(() => import('./pages/ReferenceCodes')) // ✅ NEW
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -149,7 +150,8 @@ function App() {
                 <Route path="ff-only" element={<FFOnlyDashboard />} />
                 <Route path="analytics" element={<Analytics />} />
                 <Route path="checklist-scanner" element={<ChecklistScanner />} />
-                <Route path="delivery-challan" element={<DeliveryChallan />} /> {/* ✅ NEW */}
+                <Route path="delivery-challan" element={<DeliveryChallan />} />
+                <Route path="reference-codes" element={<ReferenceCodes />} /> {/* ✅ NEW */}
                 <Route path="shipment/:id" element={<ShipmentDetail />} />
                 <Route path="create" element={<CreateShipment />} />
               </Route>

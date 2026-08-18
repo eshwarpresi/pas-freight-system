@@ -75,6 +75,20 @@ export default function Dashboard({ defaultType = '' }) {
   const isFreightFilter = shipmentTypeFilter === 'FULL_SHIPMENT'
   const isCHAFilter = shipmentTypeFilter === 'CHA_ONLY'
 
+  // ─── READ ?search= FROM URL (NEW) ───
+  // Lets other pages (e.g. Reference Codes) deep-link into a pre-filled
+  // search, e.g. /?search=RLIM. Runs once on mount.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const urlSearch = params.get('search')
+      if (urlSearch) {
+        setSearch(urlSearch)
+        setPage(1)
+      }
+    } catch {}
+  }, [])
+
   // ─── FETCH BIN COUNT ───
   useEffect(() => {
     const fetchBinCount = async () => {
@@ -377,10 +391,9 @@ export default function Dashboard({ defaultType = '' }) {
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   
-  // ─── STAT CARDS - FIXED FOR ARCHIVE VIEW ───
+  // ─── STAT CARDS ───
   const statCards = [
     { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments' },
-    // FIX: In Archive view, "In Progress" should be 0
     { 
       label: showArchived ? 'Completed' : 'In Progress', 
       value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pending + analytics.inTransit + analytics.customs, 
