@@ -12,8 +12,17 @@ import {
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
   ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap, ClipboardList, FileText,
-  Trash2, RotateCcw as RotateIcon, History
+  Trash2, RotateCcw as RotateIcon, History, Mail
 } from 'lucide-react'
+
+// ─── QUICK TOOLS ───
+// Your other in-house tools, launched from here. External apps — each
+// opens in a new tab, nothing about them is fetched or embedded.
+const QUICK_TOOLS = [
+  { title: 'Bulk Emailing', desc: 'Send bulk status emails to clients', url: 'https://pasfreight-mailer.onrender.com', icon: Mail, gradient: 'from-sky-500 to-blue-600' },
+  { title: 'Quotation Generator', desc: 'Prepare and send client quotations', url: 'https://pas-freight-quotation.vercel.app/', icon: FileSpreadsheet, gradient: 'from-amber-500 to-orange-600' },
+  { title: 'CAN & FC Certificates', desc: 'Generate CAN / FC certificates', url: 'https://can-fc-pasfreightservices.vercel.app/', icon: FileCheck, gradient: 'from-emerald-500 to-teal-600' },
+]
 
 const PER_PAGE_OPTIONS = [10, 25, 50, 100]
 const STICKY_KEY = 'pas_dashboard_filters'
@@ -75,7 +84,7 @@ export default function Dashboard({ defaultType = '' }) {
   const isFreightFilter = shipmentTypeFilter === 'FULL_SHIPMENT'
   const isCHAFilter = shipmentTypeFilter === 'CHA_ONLY'
 
-  // ─── READ ?search= FROM URL (NEW) ───
+  // ─── READ ?search= FROM URL ───
   // Lets other pages (e.g. Reference Codes) deep-link into a pre-filled
   // search, e.g. /?search=RLIM. Runs once on mount.
   useEffect(() => {
@@ -123,6 +132,25 @@ export default function Dashboard({ defaultType = '' }) {
     staleTime: 120000,
   })
 
+  // ─── FULL-DATASET STATS ───
+  // Backend already computes total/delivered/invoiced/deliveryRate across
+  // every matching shipment (not just the current page) via
+  // /freight/shipments/stats. Uses the exact same filters as the main
+  // shipments query, so the numbers always describe what's on screen.
+  const { data: fullStats } = useQuery({
+    queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, search],
+    queryFn: async () => {
+      const params = { isArchived: showArchived ? 'true' : 'false' }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
+      if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
+      const res = await api.get('/freight/shipments/stats', { params })
+      return res.data?.data || null
+    },
+    enabled: !showBin,
+    staleTime: 60000,
+  })
+
   useEffect(() => {
     if (liveNotification) {
       const timer = setTimeout(() => setLiveNotification(null), 4000)
@@ -138,22 +166,26 @@ export default function Dashboard({ defaultType = '' }) {
         setLiveNotification({ type: 'new', refNo: data.refNo, message: `New shipment created: ${data.refNo}` })
         queryClient.invalidateQueries({ queryKey: ['shipments'] })
         queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+        queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       }
     }
     const handleUpdate = (data) => {
       setLiveNotification({ type: 'update', refNo: data.refNo, message: `Shipment updated: ${data.refNo}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
     }
     const handleStatusUpdate = (data) => {
       setLiveNotification({ type: 'status', refNo: data.refNo, message: `${data.refNo} → ${data.status}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
     }
     const handleArchiveUpdate = (data) => {
       setLiveNotification({ type: 'archive', refNo: data.refNo, message: `${data.refNo} ${data.archived ? 'archived' : 'restored'}` })
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
     }
     socket.on('shipment:new', handleNewShipment)
     socket.on('shipment:update', handleUpdate)
@@ -275,6 +307,7 @@ export default function Dashboard({ defaultType = '' }) {
     onSuccess: (_, id) => { 
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       addToast('Shipment archived', 'success')
       if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: true, id }) }
     },
@@ -286,6 +319,7 @@ export default function Dashboard({ defaultType = '' }) {
     onSuccess: (_, id) => { 
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       addToast('Shipment restored', 'success')
       if (socket) { const s = shipments.find(s => s.id === id); socket.emit('shipment:archived', { refNo: s?.refNo || '', archived: false, id }) }
     },
@@ -297,6 +331,7 @@ export default function Dashboard({ defaultType = '' }) {
     onSuccess: () => { 
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       setSelected([])
       addToast('Shipments archived', 'success') 
     },
@@ -309,6 +344,7 @@ export default function Dashboard({ defaultType = '' }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       setBinCount(prev => prev + 1)
       addToast('Shipment moved to bin', 'info')
     },
@@ -320,6 +356,7 @@ export default function Dashboard({ defaultType = '' }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       setBinCount(prev => Math.max(0, prev - 1))
       addToast('Shipment restored successfully', 'success')
     },
@@ -331,6 +368,7 @@ export default function Dashboard({ defaultType = '' }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       setSelected([])
       setBinCount(prev => Math.max(0, prev - selected.length))
       addToast(`Restored ${selected.length} shipments`, 'success')
@@ -339,30 +377,28 @@ export default function Dashboard({ defaultType = '' }) {
   })
 
   // ─── ANALYTICS ───
+  // Sourced from the full-dataset stats endpoint (fullStats) instead of the
+  // current page's `shipments` array, so these numbers reflect every
+  // matching shipment — not just the up-to-perPage rows on screen.
   const analytics = useMemo(() => {
-    const d = shipments.filter(s => s.currentStatus === 'DELIVERED' || s.currentStatus === 'HAND_OVER').length
-    const t = shipments.filter(s => ['BOOKED','SCHEDULED','AWB_GENERATED'].includes(s.currentStatus)).length
-    const c = shipments.filter(s => ['CHECKLIST_APPROVED','BOE_FILED','OOC_DONE'].includes(s.currentStatus)).length
-    const p = shipments.filter(s => ['ENQUIRY','RATES_ADDED','NOMINATED'].includes(s.currentStatus)).length
-    const i = shipments.filter(s => ['INVOICE_GENERATED','INVOICE_SENT'].includes(s.currentStatus)).length
-    
-    const delivered = d;
-    const total = shipments.length;
+    const total = fullStats?.total ?? overallTotal
+    const delivered = fullStats?.delivered ?? 0
+    const invoiced = fullStats?.invoiced ?? 0
+    // "In Progress" = everything not yet delivered and not yet invoiced.
+    // This is a deliberately simple definition (matches the card's own
+    // "Enquiry to Customs" subtitle) rather than re-deriving every
+    // intermediate status client-side.
+    const pendingTotal = Math.max(0, total - delivered - invoiced)
+    const deliveryRate = fullStats?.deliveryRate ?? (total > 0 ? Math.round((delivered / total) * 100) : 0)
 
-    // Delivery Progress always reflects actual delivered/handed-over count vs
-    // total, in both Active and Archive views — archived just means the
-    // shipment was archived, not that it was necessarily delivered.
-    const deliveryRate = total > 0 ? Math.round((delivered / total) * 100) : 0;
-    
-    return { 
-      delivered: d, 
-      inTransit: t, 
-      customs: c, 
-      pending: p, 
-      invoiced: i, 
-      deliveryRate: deliveryRate 
+    return {
+      delivered,
+      invoiced,
+      pendingTotal,
+      total,
+      deliveryRate,
     }
-  }, [shipments, showArchived])
+  }, [fullStats, overallTotal])
 
   const toggleSelectAll = () => { if (selected.length === shipments.length) setSelected([]); else setSelected(shipments.map(s => s.id)) }
   const toggleSelect = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
@@ -396,7 +432,7 @@ export default function Dashboard({ defaultType = '' }) {
     { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments' },
     { 
       label: showArchived ? 'Completed' : 'In Progress', 
-      value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pending + analytics.inTransit + analytics.customs, 
+      value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pendingTotal, 
       icon: showArchived ? CheckCircle2 : Clock, 
       gradient: showArchived ? statGradients[2] : statGradients[1], 
       desc: showArchived ? 'All archived shipments' : 'Enquiry to Customs' 
@@ -476,6 +512,32 @@ export default function Dashboard({ defaultType = '' }) {
         </div>
       </div>
 
+      {/* ── QUICK TOOLS ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {QUICK_TOOLS.map((tool) => {
+          const Icon = tool.icon
+          return (
+            <a
+              key={tool.url}
+              href={tool.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group relative overflow-hidden glass rounded-xl p-4 border border-[var(--glass-border)] hover-lift flex items-center gap-3"
+            >
+              <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${tool.gradient} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`} />
+              <div className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${tool.gradient} flex items-center justify-center shadow-lg flex-shrink-0 group-hover:scale-110 transition-transform`}>
+                <Icon size={20} className="text-white" />
+              </div>
+              <div className="relative flex-1 min-w-0">
+                <p className="text-sm font-bold text-[var(--text-primary)]">{tool.title}</p>
+                <p className="text-[10px] text-[var(--text-muted)] truncate">{tool.desc}</p>
+              </div>
+              <ArrowUpRight size={16} className="relative text-[var(--text-muted)] group-hover:text-indigo-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all flex-shrink-0" />
+            </a>
+          )
+        })}
+      </div>
+
       {!showBin && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -510,7 +572,7 @@ export default function Dashboard({ defaultType = '' }) {
             <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-2 overflow-hidden">
               <div className="h-2 rounded-full bg-gradient-to-r from-emerald-400 to-teal-500 transition-all duration-700 animate-pulse-glow" style={{width:`${analytics.deliveryRate}%`}}/>
             </div>
-            <p className="text-[10px] text-[var(--text-muted)] mt-1.5">{analytics.delivered} of {shipments.length} shipments delivered / handed over</p>
+            <p className="text-[10px] text-[var(--text-muted)] mt-1.5">{analytics.delivered} of {analytics.total} shipments delivered / handed over</p>
           </div>
         </>
       )}

@@ -5,7 +5,7 @@ import {
   Box, Command,
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
-  BarChart3, FileUp, Receipt, Hash
+  BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -100,6 +100,15 @@ export default function MainLayout({ user }) {
     { path: '/create', icon: Package, label: 'New Shipment', color: 'text-amber-500' },
     { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner', color: 'text-indigo-500' },
     { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan', color: 'text-orange-500' },
+  ]
+
+  // ─── EXTERNAL TOOLS (NEW) ───
+  // Your other in-house apps. These open in a new tab — not internal
+  // routes, so they use <a> instead of <Link>.
+  const toolLinks = [
+    { url: 'https://pasfreight-mailer.onrender.com', icon: Mail, label: 'Bulk Emailing', color: 'text-sky-500' },
+    { url: 'https://pas-freight-quotation.vercel.app/', icon: FileSpreadsheet, label: 'Quotation Generator', color: 'text-amber-500' },
+    { url: 'https://can-fc-pasfreightservices.vercel.app/', icon: FileCheck, label: 'CAN & FC Certificates', color: 'text-emerald-500' },
   ]
 
   const handleLogout = async () => {
@@ -212,6 +221,18 @@ export default function MainLayout({ user }) {
                 className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]`}>
                 <Icon size={17} className={item.color} /><span>{item.label}</span>
               </Link>
+            )
+          })}
+
+          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Tools</p>
+          {toolLinks.map((item) => {
+            const Icon = item.icon
+            return (
+              <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer"
+                className="group flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]">
+                <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
+                <ExternalLink size={13} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
+              </a>
             )
           })}
         </nav>
