@@ -1,5 +1,6 @@
 // frontend/src/pages/Analytics.jsx
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -10,8 +11,16 @@ import {
   ClipboardList, Target, Activity, Award, Zap, Calendar,
   ArrowUpRight, ArrowDownRight, Medal, Download, DollarSign,
   Route, ArrowRight, TrendingDown, Filter, Hash, Weight,
-  FileSpreadsheet, Printer, IndianRupee
+  FileSpreadsheet, Printer, IndianRupee, AlertTriangle, FileWarning, Receipt
 } from 'lucide-react'
+
+// Needs Attention — same closed/invoiced definitions used by the
+// Reference Codes page, kept in sync so these terms mean the same thing
+// everywhere in the app. Purely derived from data already fetched below;
+// no new API calls, no schema changes.
+const NEEDS_ATTN_CLOSED_STATUSES = ['DELIVERED', 'HAND_OVER', 'COMPLETED', 'INVOICE_SENT']
+const NEEDS_ATTN_INVOICED_STATUSES = ['INVOICE_GENERATED', 'INVOICE_SENT']
+const STUCK_DAYS_THRESHOLD = 7
 
 // ─────────────────────────────────────────────
 // PROGRESS BAR COMPONENT
@@ -495,6 +504,40 @@ export default function Analytics() {
     const avgWeight = total > 0 ? (totalWeight / total).toFixed(1) : '0'
     const avgRevenue = total > 0 ? totalRevenue / total : 0
 
+    // ── NEEDS ATTENTION ──
+    // Everything here reads only fields already present on `shipments` —
+    // no extra API calls, nothing written back to the database.
+    const daysSince = (dateStr) => Math.floor((now - new Date(dateStr)) / (1000 * 60 * 60 * 24))
+
+    const stuckShipments = typeFiltered
+      .filter(s =>
+        !NEEDS_ATTN_CLOSED_STATUSES.includes(s.currentStatus) &&
+        s.currentStatus !== 'CANCELLED' &&
+        daysSince(s.createdAt) >= STUCK_DAYS_THRESHOLD
+      )
+      .map(s => ({ ...s, daysStuck: daysSince(s.createdAt) }))
+      .sort((a, b) => b.daysStuck - a.daysStuck)
+      .slice(0, 10)
+
+    const unbilledShipments = typeFiltered
+      .filter(s =>
+        NEEDS_ATTN_CLOSED_STATUSES.includes(s.currentStatus) &&
+        !NEEDS_ATTN_INVOICED_STATUSES.includes(s.currentStatus)
+      )
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 10)
+
+    const incompleteShipments = typeFiltered
+      .filter(s => {
+        if (s.currentStatus === 'ENQUIRY') return false // too early to expect these fields yet
+        const ff = s.freightForwarding || {}
+        const missingAwb = !ff.hawb && !ff.mawb
+        const missingWeight = !ff.weight && !ff.grossWeight
+        return missingAwb || missingWeight
+      })
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 10)
+
     return {
       total,
       delivered,
@@ -528,6 +571,9 @@ export default function Analytics() {
       totalWeight: totalWeight.toFixed(1),
       avgWeight,
       avgRevenue,
+      stuckShipments,
+      unbilledShipments,
+      incompleteShipments,
     }
   }, [shipments, dateRange, selectedType])
 
@@ -781,6 +827,125 @@ export default function Analytics() {
           )
         })}
       </div>
+
+      {/* ──────────────────────────────────────
+          NEEDS ATTENTION
+          ────────────────────────────────────── */}
+      {(a.stuckShipments.length > 0 || a.unbilledShipments.length > 0 || a.incompleteShipments.length > 0) && (
+        <div className="glass rounded-xl border border-amber-200/60 dark:border-amber-900/40 p-5 hover-lift">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-md">
+              <AlertTriangle size={15} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Needs Attention</h3>
+              <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                Shipments that may need a follow-up, at a glance
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Stuck shipments */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <Clock size={13} className="text-amber-500" />
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Stuck {STUCK_DAYS_THRESHOLD}+ Days
+                </p>
+                <span className="text-[10px] font-bold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full ml-auto">
+                  {a.stuckShipments.length}
+                </span>
+              </div>
+              {a.stuckShipments.length === 0 ? (
+                <p className="text-[11px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>Nothing stuck 🎉</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {a.stuckShipments.map(s => (
+                    <Link
+                      key={s.id}
+                      to={`/shipment/${s.id}`}
+                      className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-amber-50/50 dark:hover:bg-amber-900/10 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.refNo}</p>
+                        <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{s.currentStatus.replace(/_/g, ' ')}</p>
+                      </div>
+                      <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 flex-shrink-0">{s.daysStuck}d</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Closed but not invoiced */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <Receipt size={13} className="text-rose-500" />
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Closed, Not Invoiced
+                </p>
+                <span className="text-[10px] font-bold bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-1.5 py-0.5 rounded-full ml-auto">
+                  {a.unbilledShipments.length}
+                </span>
+              </div>
+              {a.unbilledShipments.length === 0 ? (
+                <p className="text-[11px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>All billed up ✅</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {a.unbilledShipments.map(s => (
+                    <Link
+                      key={s.id}
+                      to={`/shipment/${s.id}`}
+                      className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-rose-50/50 dark:hover:bg-rose-900/10 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.refNo}</p>
+                        <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{s.freightForwarding?.consigneeName || 'Unknown consignee'}</p>
+                      </div>
+                      <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 flex-shrink-0">{s.currentStatus.replace(/_/g, ' ')}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Missing key data */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-2.5">
+                <FileWarning size={13} className="text-violet-500" />
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Missing AWB / Weight
+                </p>
+                <span className="text-[10px] font-bold bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-1.5 py-0.5 rounded-full ml-auto">
+                  {a.incompleteShipments.length}
+                </span>
+              </div>
+              {a.incompleteShipments.length === 0 ? (
+                <p className="text-[11px] py-4 text-center" style={{ color: 'var(--text-muted)' }}>All data complete ✅</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {a.incompleteShipments.map(s => (
+                    <Link
+                      key={s.id}
+                      to={`/shipment/${s.id}`}
+                      className="flex items-center justify-between gap-2 p-2 rounded-lg hover:bg-violet-50/50 dark:hover:bg-violet-900/10 transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{s.refNo}</p>
+                        <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{s.currentStatus.replace(/_/g, ' ')}</p>
+                      </div>
+                      <span className="text-[10px] font-bold text-violet-600 dark:text-violet-400 flex-shrink-0">
+                        {!s.freightForwarding?.hawb && !s.freightForwarding?.mawb ? 'No AWB' : 'No Wt'}
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ──────────────────────────────────────
           MONTHLY TREND + TYPE BREAKDOWN
