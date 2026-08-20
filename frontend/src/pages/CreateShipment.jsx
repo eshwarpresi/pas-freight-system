@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
-  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail, Truck, MapPin, ClipboardList, FileText
+  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail, Truck, MapPin, ClipboardList, FileText, Plus
 } from 'lucide-react'
 
 const DRAFT_KEY = 'pas_shipment_draft'
@@ -38,6 +38,59 @@ export default function CreateShipment() {
   const [returnSearch, setReturnSearch] = useState('')
   const [returnStatus, setReturnStatus] = useState('')
   const [returnType, setReturnType] = useState('')
+
+  // ─── REFERENCE PREFIX AUTO-GENERATION (NEW) ───
+  // One shared global counter behind the scenes — RE2602, then PIPE2603,
+  // then SI2604, no matter which prefix is picked next. Employees can
+  // also add brand-new prefixes on the fly (e.g. typing "PIPE" the first
+  // time it's needed).
+  const [prefixes, setPrefixes] = useState([])
+  const [selectedPrefix, setSelectedPrefix] = useState('')
+  const [newPrefixInput, setNewPrefixInput] = useState('')
+  const [generatingRef, setGeneratingRef] = useState(false)
+  const [addingPrefix, setAddingPrefix] = useState(false)
+
+  useEffect(() => {
+    api.get('/freight/reference-prefixes')
+      .then(res => setPrefixes(res.data?.data || []))
+      .catch(() => {})
+  }, [])
+
+  const handleGenerateRef = async () => {
+    if (!selectedPrefix) { addToast('Select a prefix first', 'warning'); return }
+    setGeneratingRef(true)
+    try {
+      const res = await api.post('/freight/reference-number/generate', { prefix: selectedPrefix })
+      const refNo = res.data?.data?.refNo
+      setFormData(prev => ({ ...prev, refNo }))
+      addToast(`Generated ${refNo}`, 'success')
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to generate reference number', 'error')
+    } finally {
+      setGeneratingRef(false)
+    }
+  }
+
+  const handleAddPrefix = async () => {
+    const code = newPrefixInput.trim().toUpperCase()
+    if (!code) return
+    setAddingPrefix(true)
+    try {
+      const res = await api.post('/freight/reference-prefixes', { code })
+      const added = res.data?.data
+      setPrefixes(prev => {
+        if (prev.find(p => p.code === added.code)) return prev
+        return [...prev, added].sort((a, b) => a.code.localeCompare(b.code))
+      })
+      setSelectedPrefix(added.code)
+      setNewPrefixInput('')
+      addToast(`Prefix "${added.code}" added`, 'success')
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to add prefix', 'error')
+    } finally {
+      setAddingPrefix(false)
+    }
+  }
 
   const isCHA = shipmentMode === 'cha-import' || shipmentMode === 'cha-export'
   const isCHAExport = shipmentMode === 'cha-export'
@@ -255,6 +308,46 @@ export default function CreateShipment() {
   const inputClass = `w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`
   const accentBg = isFFOnly ? 'from-purple-400 to-indigo-500' : isDORelease ? 'from-teal-400 to-emerald-500' : isTransport ? 'from-sky-400 to-blue-500' : isCHAExport ? 'from-amber-400 to-orange-500' : isCHA ? 'from-emerald-400 to-green-500' : 'from-indigo-500 to-blue-600'
 
+  // ─── PREFIX PICKER UI (NEW) — reused in Freight and FF Only sections ───
+  const renderPrefixPicker = (theme) => {
+    const selectClass = `flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 ${focusRing}`
+    return (
+      <div className="mt-2 space-y-2">
+        <div className="flex gap-2">
+          <select value={selectedPrefix} onChange={(e) => setSelectedPrefix(e.target.value)} className={selectClass}>
+            <option value="">Select prefix (RE, SI, PIPE...)</option>
+            {prefixes.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
+          </select>
+          <button
+            type="button"
+            onClick={handleGenerateRef}
+            disabled={generatingRef || !selectedPrefix}
+            className={`px-3 py-2 bg-gradient-to-r ${theme} rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap`}
+          >
+            {generatingRef ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
+          </button>
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newPrefixInput}
+            onChange={(e) => setNewPrefixInput(e.target.value)}
+            placeholder="New prefix, e.g. PIPE"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-gray-300"
+          />
+          <button
+            type="button"
+            onClick={handleAddPrefix}
+            disabled={addingPrefix || !newPrefixInput.trim()}
+            className="px-3 py-2 border border-gray-300 text-gray-600 rounded-lg text-xs font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
+          >
+            {addingPrefix ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Add Prefix
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (loadingShipment) return (
     <div className="flex items-center justify-center h-96">
       <div className="flex flex-col items-center gap-3">
@@ -312,9 +405,9 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
                     <div className="flex gap-2">
-                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')}`} /></div>
-                      {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-purple-100 to-indigo-100 rounded-lg text-xs font-medium text-purple-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
+                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} placeholder="Generate below or type manually" className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')}`} /></div>
                     </div>
+                    {!isEditMode && renderPrefixPicker('from-purple-500 to-indigo-500')}
                   </div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Enquiry Date</label>
                     <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
@@ -420,9 +513,9 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
                     <div className="flex gap-2">
-                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')}`} /></div>
-                      {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-indigo-100 to-blue-100 rounded-lg text-xs font-medium text-indigo-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
+                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} placeholder="Generate below or type manually" className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')}`} /></div>
                     </div>
+                    {!isEditMode && renderPrefixPicker('from-indigo-500 to-blue-500')}
                   </div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Enquiry Date</label>
                     <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>

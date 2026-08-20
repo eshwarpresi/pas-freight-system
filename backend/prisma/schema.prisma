@@ -194,3 +194,27 @@ model Notification {
   isRead     Boolean   @default(false)
   createdAt  DateTime  @default(now())
 }
+
+// ==========================================
+// REFERENCE NUMBER AUTO-GENERATION (NEW)
+// ==========================================
+// One shared global counter — every prefix (RE, SI, PIPE, ...) draws its
+// next number from this single row, so a request is never issued twice
+// even if 50+ employees click "Generate" in the same second. The Prisma
+// `increment` update on this row compiles to one atomic SQL UPDATE, which
+// Postgres serializes safely under concurrent load.
+model ReferenceCounter {
+  id        String   @id @default("global")
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// The list of prefixes employees can pick from (or add to) when
+// generating a reference number. Just a label — the actual number always
+// comes from ReferenceCounter above.
+model ReferencePrefix {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  createdBy String?
+  createdAt DateTime @default(now())
+}

@@ -26,6 +26,11 @@ router.get('/shipments/reference-codes', freightController.getReferenceCodeStats
 // ─── GET SHIPMENTS FOR A REFERENCE CODE (NEW — must stay before /:id route) ───
 router.get('/shipments/by-reference-code', freightController.getShipmentsByReferenceCode);
 
+// ─── REFERENCE NUMBER AUTO-GENERATION (NEW) ───
+router.get('/reference-prefixes', freightController.getReferencePrefixes);
+router.post('/reference-prefixes', freightController.createReferencePrefix);
+router.post('/reference-number/generate', freightController.generateReferenceNumber);
+
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);
 

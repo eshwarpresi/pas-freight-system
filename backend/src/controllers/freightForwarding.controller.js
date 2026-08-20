@@ -743,6 +743,76 @@ const getShipmentsByReferenceCode = async (req, res) => {
   }
 };
 
+// ─── REFERENCE PREFIXES (NEW) ───
+// Any employee can add a new prefix (RE, SI, PIPE, ...). Prefixes are
+// just labels — the actual number always comes from one shared global
+// counter, so RE2602 and PIPE2603 can sit right next to each other.
+const getReferencePrefixes = async (req, res) => {
+  try {
+    const prefixes = await prisma.referencePrefix.findMany({ orderBy: { code: 'asc' } });
+    res.json({ status: 'success', data: prefixes });
+  } catch (error) {
+    console.error('Error loading reference prefixes:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load prefixes' });
+  }
+};
+
+const createReferencePrefix = async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code || !code.trim()) {
+      return res.status(400).json({ status: 'error', message: 'Prefix code is required' });
+    }
+    const clean = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!clean) {
+      return res.status(400).json({ status: 'error', message: 'Invalid prefix — letters and numbers only' });
+    }
+    const createdBy = req.user?.name || req.user?.email || null;
+    const existing = await prisma.referencePrefix.findUnique({ where: { code: clean } });
+    if (existing) {
+      return res.json({ status: 'success', data: existing, message: 'Prefix already exists' });
+    }
+    const created = await prisma.referencePrefix.create({ data: { code: clean, createdBy } });
+    res.status(201).json({ status: 'success', data: created });
+  } catch (error) {
+    console.error('Error adding reference prefix:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to add prefix' });
+  }
+};
+
+// ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
+// Atomically bumps the ONE shared global counter and returns e.g. "RE2602".
+// The Prisma `increment` update compiles to a single SQL UPDATE statement,
+// which Postgres executes with a row-level lock — so even if 50+ employees
+// click "Generate" at the exact same second, each request is safely
+// serialized and nobody ever gets a duplicate number.
+const generateReferenceNumber = async (req, res) => {
+  try {
+    const { prefix } = req.body;
+    if (!prefix || !prefix.trim()) {
+      return res.status(400).json({ status: 'error', message: 'Prefix is required' });
+    }
+    const code = prefix.trim().toUpperCase();
+    const prefixExists = await prisma.referencePrefix.findUnique({ where: { code } });
+    if (!prefixExists) {
+      return res.status(400).json({ status: 'error', message: `Prefix "${code}" doesn't exist yet. Add it first.` });
+    }
+    const counter = await prisma.referenceCounter.update({
+      where: { id: 'global' },
+      data: { value: { increment: 1 } }
+    });
+    const refNo = `${code}${counter.value}`;
+    res.json({ status: 'success', data: { refNo, number: counter.value, prefix: code } });
+  } catch (error) {
+    console.error('Error generating reference number:', error);
+    if (error.code === 'P2025') {
+      // Counter row doesn't exist yet — the one-time seed script hasn't been run.
+      return res.status(500).json({ status: 'error', message: 'Reference counter not initialized. Run the seed script first.' });
+    }
+    res.status(500).json({ status: 'error', message: 'Failed to generate reference number' });
+  }
+};
+
 // ─── GET SINGLE ───
 const getShipmentById = async (req, res) => {
   try { const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); if (!s) return res.status(404).json({ status: 'error', message: 'Not found' }); res.json({ status: 'success', data: s }); } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
@@ -861,6 +931,9 @@ module.exports = {
   getShipmentStats,
   getReferenceCodeStats,
   getShipmentsByReferenceCode, // ✅ NEW
+  getReferencePrefixes, // ✅ NEW
+  createReferencePrefix, // ✅ NEW
+  generateReferenceNumber, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 
