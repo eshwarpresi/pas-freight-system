@@ -33,24 +33,6 @@ router.put('/reference-prefixes/:code', freightController.updateReferencePrefix)
 router.delete('/reference-prefixes/:code', freightController.deleteReferencePrefix);
 router.post('/reference-number/generate', freightController.generateReferenceNumber);
 
-// ─── TEMPORARY ONE-TIME SEED ROUTE — DELETE AFTER USE ───
-router.get('/temp-seed-counter/:value', async (req, res) => {
-  try {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-    const startValue = parseInt(req.params.value, 10);
-    if (isNaN(startValue)) return res.status(400).json({ status: 'error', message: 'Invalid number' });
-    const existing = await prisma.referenceCounter.findUnique({ where: { id: 'global' } });
-    if (existing) {
-      return res.json({ status: 'success', message: `Counter already exists at ${existing.value}. Not changed.` });
-    }
-    const created = await prisma.referenceCounter.create({ data: { id: 'global', value: startValue } });
-    res.json({ status: 'success', message: `Counter seeded at ${created.value}. Next generated number will be ${created.value + 1}.` });
-  } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
-  }
-});
-
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);
 
