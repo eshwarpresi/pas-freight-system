@@ -84,23 +84,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ─── TEMPORARY ONE-TIME SEED ROUTE — DELETE AFTER USE ───
-app.get('/api/temp-seed-counter/:value', async (req, res) => {
-  try {
-    const startValue = parseInt(req.params.value, 10);
-    if (isNaN(startValue)) return res.status(400).json({ status: 'error', message: 'Invalid number' });
-
-    const existing = await prisma.referenceCounter.findUnique({ where: { id: 'global' } });
-    if (existing) {
-      return res.json({ status: 'success', message: `Counter already exists at ${existing.value}. Not changed.` });
-    }
-    const created = await prisma.referenceCounter.create({ data: { id: 'global', value: startValue } });
-    res.json({ status: 'success', message: `Counter seeded at ${created.value}. Next generated number will be ${created.value + 1}.` });
-  } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
-  }
-});
-
 // Google OAuth Login
 app.post('/api/auth/google', async (req, res) => {
   try {
