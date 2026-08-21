@@ -800,10 +800,12 @@ const deleteReferencePrefix = async (req, res) => {
 
 // ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
 // Atomically bumps the ONE shared global counter and returns e.g. "RE2602".
-// The Prisma `increment` update compiles to a single SQL UPDATE statement,
-// which Postgres executes with a row-level lock — so even if 50+ employees
-// click "Generate" at the exact same second, each request is safely
-// serialized and nobody ever gets a duplicate number.
+// Numbers ending in 3 or 7 are considered unlucky and skipped automatically
+// — if incrementing lands on one, it just increments again until it finds
+// a number that doesn't end in 3 or 7. Each increment is its own atomic
+// UPDATE, so even with 50+ employees generating at once, nobody ever gets
+// a duplicate — we just occasionally "use up" a couple of numbers to skip
+// past the unlucky ones, which is expected and harmless (gaps are fine).
 const generateReferenceNumber = async (req, res) => {
   try {
     const { prefix } = req.body;
@@ -815,16 +817,26 @@ const generateReferenceNumber = async (req, res) => {
     if (!prefixExists) {
       return res.status(400).json({ status: 'error', message: `Prefix "${code}" doesn't exist yet. Add it first.` });
     }
-    const counter = await prisma.referenceCounter.update({
-      where: { id: 'global' },
-      data: { value: { increment: 1 } }
-    });
-    const refNo = `${code}${counter.value}`;
-    res.json({ status: 'success', data: { refNo, number: counter.value, prefix: code } });
+
+    let counterValue;
+    while (true) {
+      const counter = await prisma.referenceCounter.update({
+        where: { id: 'global' },
+        data: { value: { increment: 1 } }
+      });
+      const lastDigit = counter.value % 10;
+      if (lastDigit !== 3 && lastDigit !== 7) {
+        counterValue = counter.value;
+        break;
+      }
+      // else: this number ends in 3 or 7 — loop again, incrementing past it
+    }
+
+    const refNo = `${code}${counterValue}`;
+    res.json({ status: 'success', data: { refNo, number: counterValue, prefix: code } });
   } catch (error) {
     console.error('Error generating reference number:', error);
     if (error.code === 'P2025') {
-      // Counter row doesn't exist yet — the one-time seed script hasn't been run.
       return res.status(500).json({ status: 'error', message: 'Reference counter not initialized. Run the seed script first.' });
     }
     res.status(500).json({ status: 'error', message: 'Failed to generate reference number' });
