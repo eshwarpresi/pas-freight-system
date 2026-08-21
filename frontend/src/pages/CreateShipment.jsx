@@ -168,6 +168,17 @@ export default function CreateShipment() {
     }
   })
 
+  // ─── AUTO-SAVE DRAFT (NEW) ───
+  // Saves the form — including a just-generated reference number — to
+  // this browser's local storage on every change. If the page refreshes
+  // or the tab is accidentally closed before submitting, reopening
+  // Create Shipment restores exactly where they left off, so a generated
+  // number is never silently lost to a refresh.
+  useEffect(() => {
+    if (isEditMode) return // don't clobber draft storage while editing an existing shipment
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(formData)) } catch {}
+  }, [formData, isEditMode])
+
   useEffect(() => {
     const editParam = searchParams.get('edit')
     if (editParam) {
