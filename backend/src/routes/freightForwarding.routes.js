@@ -29,6 +29,8 @@ router.get('/shipments/by-reference-code', freightController.getShipmentsByRefer
 // ─── REFERENCE NUMBER AUTO-GENERATION (NEW) ───
 router.get('/reference-prefixes', freightController.getReferencePrefixes);
 router.post('/reference-prefixes', freightController.createReferencePrefix);
+router.put('/reference-prefixes/:code', freightController.updateReferencePrefix);
+router.delete('/reference-prefixes/:code', freightController.deleteReferencePrefix);
 router.post('/reference-number/generate', freightController.generateReferenceNumber);
 
 // ─── GET SINGLE SHIPMENT ───

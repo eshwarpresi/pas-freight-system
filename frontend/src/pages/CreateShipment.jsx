@@ -49,6 +49,9 @@ export default function CreateShipment() {
   const [newPrefixInput, setNewPrefixInput] = useState('')
   const [generatingRef, setGeneratingRef] = useState(false)
   const [addingPrefix, setAddingPrefix] = useState(false)
+  const [showManagePrefixes, setShowManagePrefixes] = useState(false)
+  const [editingCode, setEditingCode] = useState(null)
+  const [editingValue, setEditingValue] = useState('')
 
   useEffect(() => {
     api.get('/freight/reference-prefixes')
@@ -82,13 +85,51 @@ export default function CreateShipment() {
         if (prev.find(p => p.code === added.code)) return prev
         return [...prev, added].sort((a, b) => a.code.localeCompare(b.code))
       })
-      setSelectedPrefix(added.code)
       setNewPrefixInput('')
       addToast(`Prefix "${added.code}" added`, 'success')
     } catch (err) {
       addToast(err.response?.data?.message || 'Failed to add prefix', 'error')
     } finally {
       setAddingPrefix(false)
+    }
+  }
+
+  const handleDeletePrefix = async (code) => {
+    if (!window.confirm(`Delete prefix "${code}"? Reference numbers already generated with it are not affected.`)) return
+    try {
+      await api.delete(`/freight/reference-prefixes/${code}`)
+      setPrefixes(prev => prev.filter(p => p.code !== code))
+      if (selectedPrefix === code) setSelectedPrefix('')
+      addToast(`Prefix "${code}" deleted`, 'success')
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to delete prefix', 'error')
+    }
+  }
+
+  const startEditPrefix = (code) => {
+    setEditingCode(code)
+    setEditingValue(code)
+  }
+
+  const cancelEditPrefix = () => {
+    setEditingCode(null)
+    setEditingValue('')
+  }
+
+  const saveEditPrefix = async (oldCode) => {
+    const newCode = editingValue.trim().toUpperCase()
+    if (!newCode || newCode === oldCode) { cancelEditPrefix(); return }
+    try {
+      const res = await api.put(`/freight/reference-prefixes/${oldCode}`, { newCode })
+      const updated = res.data?.data
+      setPrefixes(prev =>
+        prev.map(p => (p.code === oldCode ? updated : p)).sort((a, b) => a.code.localeCompare(b.code))
+      )
+      if (selectedPrefix === oldCode) setSelectedPrefix(updated.code)
+      addToast(`Renamed to "${updated.code}"`, 'success')
+      cancelEditPrefix()
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to rename prefix', 'error')
     }
   }
 
@@ -308,7 +349,7 @@ export default function CreateShipment() {
   const inputClass = `w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`
   const accentBg = isFFOnly ? 'from-purple-400 to-indigo-500' : isDORelease ? 'from-teal-400 to-emerald-500' : isTransport ? 'from-sky-400 to-blue-500' : isCHAExport ? 'from-amber-400 to-orange-500' : isCHA ? 'from-emerald-400 to-green-500' : 'from-indigo-500 to-blue-600'
 
-  // ─── PREFIX PICKER UI (NEW) — reused in Freight and FF Only sections ───
+  // ─── PREFIX PICKER UI (NEW) — dropdown + Generate button + manage panel ───
   const renderPrefixPicker = (theme) => {
     const selectClass = `flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 ${focusRing}`
     return (
@@ -327,23 +368,60 @@ export default function CreateShipment() {
             {generatingRef ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
           </button>
         </div>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={newPrefixInput}
-            onChange={(e) => setNewPrefixInput(e.target.value)}
-            placeholder="New prefix, e.g. PIPE"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-gray-300"
-          />
-          <button
-            type="button"
-            onClick={handleAddPrefix}
-            disabled={addingPrefix || !newPrefixInput.trim()}
-            className="px-3 py-2 border border-gray-300 text-gray-600 rounded-lg text-xs font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
-          >
-            {addingPrefix ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Add Prefix
-          </button>
-        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowManagePrefixes((v) => !v)}
+          className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+        >
+          {showManagePrefixes ? 'Hide prefix list' : 'Manage prefixes (add / edit / delete)'}
+        </button>
+
+        {showManagePrefixes && (
+          <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/60">
+            {prefixes.length === 0 && <p className="text-[11px] text-gray-400">No prefixes yet — add one below.</p>}
+            {prefixes.map((p) => (
+              <div key={p.code} className="flex items-center gap-2">
+                {editingCode === p.code ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      autoFocus
+                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
+                    />
+                    <button type="button" onClick={() => saveEditPrefix(p.code)} className="px-2 py-1.5 bg-emerald-500 text-white rounded-md text-[11px] font-medium">Save</button>
+                    <button type="button" onClick={cancelEditPrefix} className="px-2 py-1.5 border border-gray-300 text-gray-500 rounded-md text-[11px]">Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-xs font-semibold text-gray-700">{p.code}</span>
+                    <button type="button" onClick={() => startEditPrefix(p.code)} className="p-1.5 text-gray-400 hover:text-indigo-600" title="Edit"><Pencil size={13} /></button>
+                    <button type="button" onClick={() => handleDeletePrefix(p.code)} className="p-1.5 text-gray-400 hover:text-red-600" title="Delete"><AlertCircle size={13} className="rotate-45" /></button>
+                  </>
+                )}
+              </div>
+            ))}
+            <div className="flex gap-2 pt-2 border-t border-gray-200">
+              <input
+                type="text"
+                value={newPrefixInput}
+                onChange={(e) => setNewPrefixInput(e.target.value)}
+                placeholder="New prefix, e.g. PIPE"
+                className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
+              />
+              <button
+                type="button"
+                onClick={handleAddPrefix}
+                disabled={addingPrefix || !newPrefixInput.trim()}
+                className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-md text-[11px] font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
+              >
+                {addingPrefix ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Add
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

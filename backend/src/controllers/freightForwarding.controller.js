@@ -780,6 +780,24 @@ const createReferencePrefix = async (req, res) => {
   }
 };
 
+// ─── DELETE A REFERENCE PREFIX (NEW) ───
+// Only removes the label from the dropdown. Any reference numbers already
+// generated with this prefix stay exactly as they are — nothing is
+// touched on existing shipments.
+const deleteReferencePrefix = async (req, res) => {
+  try {
+    const code = req.params.code?.trim().toUpperCase();
+    if (!code) {
+      return res.status(400).json({ status: 'error', message: 'Prefix code is required' });
+    }
+    await prisma.referencePrefix.delete({ where: { code } }).catch(() => null);
+    res.json({ status: 'success', message: `Prefix "${code}" removed` });
+  } catch (error) {
+    console.error('Error deleting reference prefix:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete prefix' });
+  }
+};
+
 // ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
 // Atomically bumps the ONE shared global counter and returns e.g. "RE2602".
 // The Prisma `increment` update compiles to a single SQL UPDATE statement,
@@ -810,6 +828,41 @@ const generateReferenceNumber = async (req, res) => {
       return res.status(500).json({ status: 'error', message: 'Reference counter not initialized. Run the seed script first.' });
     }
     res.status(500).json({ status: 'error', message: 'Failed to generate reference number' });
+  }
+};
+
+// ─── EDIT (RENAME) A REFERENCE PREFIX (NEW) ───
+// Renames the label going forward. Reference numbers already generated
+// with the old prefix text stay exactly as they were printed — this only
+// changes what shows up in the dropdown from now on.
+const updateReferencePrefix = async (req, res) => {
+  try {
+    const oldCode = req.params.code?.trim().toUpperCase();
+    const { newCode } = req.body;
+    if (!oldCode || !newCode || !newCode.trim()) {
+      return res.status(400).json({ status: 'error', message: 'New prefix code is required' });
+    }
+    const clean = newCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!clean) {
+      return res.status(400).json({ status: 'error', message: 'Invalid prefix — letters and numbers only' });
+    }
+    const existing = await prisma.referencePrefix.findUnique({ where: { code: oldCode } });
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Prefix not found' });
+    }
+    const clash = await prisma.referencePrefix.findUnique({ where: { code: clean } });
+    if (clash && clean !== oldCode) {
+      return res.status(400).json({ status: 'error', message: `Prefix "${clean}" already exists` });
+    }
+    // Since code is the primary key, rename = create new + delete old
+    const updated = await prisma.referencePrefix.create({
+      data: { code: clean, createdBy: existing.createdBy }
+    });
+    await prisma.referencePrefix.delete({ where: { code: oldCode } });
+    res.json({ status: 'success', data: updated });
+  } catch (error) {
+    console.error('Error updating reference prefix:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update prefix' });
   }
 };
 
@@ -933,6 +986,8 @@ module.exports = {
   getShipmentsByReferenceCode, // ✅ NEW
   getReferencePrefixes, // ✅ NEW
   createReferencePrefix, // ✅ NEW
+  deleteReferencePrefix, // ✅ NEW
+  updateReferencePrefix, // ✅ NEW
   generateReferenceNumber, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
