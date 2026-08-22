@@ -84,23 +84,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ─── TEMPORARY ONE-TIME RESET ROUTE — DELETE AFTER USE ───
-app.get('/api/temp-reset-counter/:value', async (req, res) => {
-  try {
-    const newValue = parseInt(req.params.value, 10);
-    if (isNaN(newValue)) return res.status(400).json({ status: 'error', message: 'Invalid number' });
-
-    const updated = await prisma.referenceCounter.upsert({
-      where: { id: 'global' },
-      update: { value: newValue },
-      create: { id: 'global', value: newValue }
-    });
-    res.json({ status: 'success', message: `Counter reset to ${updated.value}. Next generated number will be ${updated.value + 1}.` });
-  } catch (error) {
-    res.status(500).json({ status: 'error', message: error.message });
-  }
-});
-
 // Google OAuth Login
 app.post('/api/auth/google', async (req, res) => {
   try {
