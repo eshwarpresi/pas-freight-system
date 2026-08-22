@@ -52,6 +52,15 @@ export default function CreateShipment() {
   const [showManagePrefixes, setShowManagePrefixes] = useState(false)
   const [editingCode, setEditingCode] = useState(null)
   const [editingValue, setEditingValue] = useState('')
+  const [showRefHelp, setShowRefHelp] = useState(false)
+  const [showFirstTimeGuide, setShowFirstTimeGuide] = useState(() => {
+    try { return localStorage.getItem('pas_ref_guide_seen') !== 'true' } catch { return false }
+  })
+
+  const dismissFirstTimeGuide = () => {
+    setShowFirstTimeGuide(false)
+    try { localStorage.setItem('pas_ref_guide_seen', 'true') } catch {}
+  }
 
   useEffect(() => {
     api.get('/freight/reference-prefixes')
@@ -365,20 +374,56 @@ export default function CreateShipment() {
     const selectClass = `flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 ${focusRing}`
     return (
       <div className="mt-2 space-y-2">
-        <div className="flex gap-2">
-          <select value={selectedPrefix} onChange={(e) => setSelectedPrefix(e.target.value)} className={selectClass}>
-            <option value="">Select prefix (RE, SI, PIPE...)</option>
-            {prefixes.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
-          </select>
-          <button
-            type="button"
-            onClick={handleGenerateRef}
-            disabled={generatingRef || !selectedPrefix}
-            className={`px-3 py-2 bg-gradient-to-r ${theme} rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap`}
-          >
-            {generatingRef ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
-          </button>
+        <div className="relative">
+          {/* Game-style spotlight — pulsing glow + bouncing arrow, shown once, */}
+          {/* disappears the moment the employee actually picks a prefix.      */}
+          {showFirstTimeGuide && (
+            <>
+              <div className="absolute -top-7 left-2 flex flex-col items-center z-10 pointer-events-none">
+                <span className="text-[11px] font-semibold text-indigo-600 bg-white px-2 py-0.5 rounded-full shadow-md border border-indigo-200 whitespace-nowrap">
+                  👆 Pick a prefix to start
+                </span>
+                <span className="text-indigo-500 text-sm leading-none animate-bounce">▼</span>
+              </div>
+              <div className="absolute inset-0 rounded-lg ring-4 ring-indigo-400/60 animate-pulse pointer-events-none" />
+            </>
+          )}
+
+          <div className="flex gap-2 items-center">
+            <button
+              type="button"
+              onClick={() => setShowRefHelp((v) => !v)}
+              className="w-4 h-4 rounded-full border border-gray-300 text-gray-400 hover:text-gray-600 hover:border-gray-500 flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
+              title="How does this work?"
+            >
+              i
+            </button>
+            <select
+              value={selectedPrefix}
+              onChange={(e) => { setSelectedPrefix(e.target.value); if (e.target.value) dismissFirstTimeGuide() }}
+              className={selectClass}
+            >
+              <option value="">Select prefix (RE, SI, PIPE...)</option>
+              {prefixes.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={() => { handleGenerateRef(); dismissFirstTimeGuide() }}
+              disabled={generatingRef || !selectedPrefix}
+              className={`px-3 py-2 bg-gradient-to-r ${theme} rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap`}
+            >
+              {generatingRef ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
+            </button>
+          </div>
         </div>
+
+        {showRefHelp && (
+          <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] text-gray-600 space-y-1">
+            <p><strong>1.</strong> Pick a prefix from the dropdown (e.g. RE)</p>
+            <p><strong>2.</strong> Click <strong>Generate</strong> — the number fills in automatically (e.g. RE2602)</p>
+            <p><strong>3.</strong> Don't see your prefix? Open "Manage prefixes" below to add it</p>
+          </div>
+        )}
 
         <button
           type="button"
