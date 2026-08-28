@@ -5,7 +5,8 @@ import {
   Box, Command,
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
-  BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink
+  BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink,
+  Layers, Users, Shield
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -25,6 +26,8 @@ export default function MainLayout({ user }) {
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('pas_dark_mode') === 'true'
   })
+
+  const isAdmin = user?.role === 'ADMIN'
 
   const playSound = () => {
     try {
@@ -79,9 +82,26 @@ export default function MainLayout({ user }) {
 
   const unreadCount = notifications.filter(n => !n.isRead).length
 
-  const navItems = [
-    { path: '/', icon: LayoutDashboard, label: 'All Shipments', shortcut: 'A' },
-    { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
+  // ✅ Admin sidebar looks exactly like the original setup — one
+  // "All Shipments" link showing everything by default, since the index
+  // route itself already renders full data for admins (see App.jsx).
+  // Everyone else gets "My Shipments" as their default, with "Overview"
+  // as a separate link if they want to switch to the full company view.
+  const navItems = isAdmin
+    ? [
+        { path: '/', icon: LayoutDashboard, label: 'All Shipments', shortcut: 'A' },
+        { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
+      ]
+    : [
+        { path: '/', icon: LayoutDashboard, label: 'My Shipments', shortcut: 'A' },
+        { path: '/overview', icon: Layers, label: 'Overview', shortcut: 'O' },
+        { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
+      ]
+
+  // ✅ Admin-only section — completely hidden from the sidebar for
+  // anyone whose role isn't ADMIN, not just visually disabled.
+  const adminItems = [
+    { path: '/team', icon: Users, label: 'Team', color: 'text-indigo-500' },
   ]
 
   const dashboardLinks = [
@@ -102,7 +122,7 @@ export default function MainLayout({ user }) {
     { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan', color: 'text-orange-500' },
   ]
 
-  // ─── EXTERNAL TOOLS (NEW) ───
+  // ─── EXTERNAL TOOLS ───
   // Your other in-house apps. These open in a new tab — not internal
   // routes, so they use <a> instead of <Link>.
   const toolLinks = [
@@ -160,7 +180,10 @@ export default function MainLayout({ user }) {
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md">{userInitial}</div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[var(--text-primary)] truncate">{displayName}</p>
+              <p className="text-xs font-semibold text-[var(--text-primary)] truncate flex items-center gap-1.5">
+                {displayName}
+                {isAdmin && <Shield size={11} className="text-indigo-500 flex-shrink-0" title="Admin" />}
+              </p>
               <p className="text-[10px] text-[var(--text-muted)] truncate">{user?.email || ''}</p>
             </div>
           </div>
@@ -181,6 +204,25 @@ export default function MainLayout({ user }) {
               </Link>
             )
           })}
+
+          {isAdmin && (
+            <>
+              <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Admin</p>
+              {adminItems.map((item) => {
+                const Icon = item.icon
+                const isActive = location.pathname === item.path || location.pathname.startsWith('/team/')
+                return (
+                  <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
+                    className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
+                    }`}>
+                    <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
+                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
+                  </Link>
+                )
+              })}
+            </>
+          )}
 
           <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Modules</p>
           {dashboardLinks.map((item) => {

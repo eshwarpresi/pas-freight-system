@@ -492,7 +492,7 @@ const exportShipments = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -509,6 +509,11 @@ const getAllShipments = async (req, res) => {
       else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
     }
     if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { freightForwarding: { mawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }, { freightForwarding: { customerName: { contains: search } } }];
+    if (mine === 'true' && req.user?.id) {
+      where.createdById = req.user.id;
+    } else if (userId) {
+      where.createdById = userId;
+    }
     
     console.log('🔍 WHERE:', JSON.stringify(where));
     
@@ -549,7 +554,7 @@ const getAllShipments = async (req, res) => {
 // current page), so progress bars / percentages reflect the whole dataset.
 const getShipmentStats = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId } = req.query;
 
     const where = {
       isArchived: isArchived === 'true',
@@ -574,6 +579,11 @@ const getShipmentStats = async (req, res) => {
         { accounts: { invoiceNumber: { contains: search } } },
         { freightForwarding: { customerName: { contains: search } } }
       ];
+    }
+    if (mine === 'true' && req.user?.id) {
+      where.createdById = req.user.id;
+    } else if (userId) {
+      where.createdById = userId;
     }
 
     const [total, delivered, invoiced, weightAgg] = await Promise.all([
@@ -878,6 +888,35 @@ const updateReferencePrefix = async (req, res) => {
   }
 };
 
+// ─── GET TEAM OVERVIEW (NEW, ADMIN ONLY) ───
+// Lists every user with how many shipments they've created. Powers the
+// admin-only Team page — click an employee to see their individual
+// dashboard via the existing userId filter above.
+const getTeamOverview = async (req, res) => {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ status: 'error', message: 'Admin access required' });
+    }
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true }
+    });
+    const counts = await prisma.shipment.groupBy({
+      by: ['createdById'],
+      where: { isDeleted: false },
+      _count: { _all: true }
+    });
+    const countMap = {};
+    counts.forEach((c) => { if (c.createdById) countMap[c.createdById] = c._count._all; });
+    const data = users
+      .map((u) => ({ ...u, shipmentCount: countMap[u.id] || 0 }))
+      .sort((a, b) => b.shipmentCount - a.shipmentCount);
+    res.json({ status: 'success', data });
+  } catch (error) {
+    console.error('Error getting team overview:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get team overview' });
+  }
+};
+
 // ─── GET SINGLE ───
 const getShipmentById = async (req, res) => {
   try { const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); if (!s) return res.status(404).json({ status: 'error', message: 'Not found' }); res.json({ status: 'success', data: s }); } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
@@ -1001,6 +1040,7 @@ module.exports = {
   deleteReferencePrefix, // ✅ NEW
   updateReferencePrefix, // ✅ NEW
   generateReferenceNumber, // ✅ NEW
+  getTeamOverview, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 

@@ -13,7 +13,9 @@ const FFOnlyDashboard = lazy(() => import('./pages/FFOnlyDashboard'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const ChecklistScanner = lazy(() => import('./pages/ChecklistScanner'))
 const DeliveryChallan = lazy(() => import('./pages/DeliveryChallan'))
-const ReferenceCodes = lazy(() => import('./pages/ReferenceCodes')) // ✅ NEW
+const ReferenceCodes = lazy(() => import('./pages/ReferenceCodes'))
+const TeamOverview = lazy(() => import('./pages/TeamOverview')) // ✅ NEW — Admin only
+const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard')) // ✅ NEW — Admin only
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -32,6 +34,16 @@ function PageLoader() {
 function ProtectedRoute({ children }) {
   const token = localStorage.getItem('pas_token')
   if (!token) return <Navigate to="/login" replace />
+  return children
+}
+
+// ✅ NEW — guards /team and /team/:userId. Anyone who isn't ADMIN is
+// bounced back to their own "My Shipments" page rather than seeing an
+// error screen — a non-admin landing here is almost always just an old
+// bookmark or a typed URL, not a real access attempt worth alarming them
+// over.
+function AdminRoute({ user, children }) {
+  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />
   return children
 }
 
@@ -141,8 +153,17 @@ function App() {
             <Routes>
               <Route path="/login" element={<LoginPage setUser={setUser} />} />
               <Route path="/" element={<ProtectedRoute><Layout user={user} /></ProtectedRoute>}>
-                {/* ✅ 6 Separate Dashboards + Analytics + Checklist Scanner */}
-                <Route index element={<Dashboard defaultType="" />} />
+                {/* ✅ Admins see everything by default (like before). Everyone
+                    else lands on their own shipments only. The full
+                    company-wide view stays available at /overview for
+                    non-admins who want to switch to it. */}
+                <Route index element={user?.role === 'ADMIN' ? <Dashboard defaultType="" /> : <Dashboard mineOnly defaultType="" />} />
+                <Route path="overview" element={<Dashboard defaultType="" />} />
+
+                {/* ✅ Admin-only Team pages */}
+                <Route path="team" element={<AdminRoute user={user}><TeamOverview /></AdminRoute>} />
+                <Route path="team/:userId" element={<AdminRoute user={user}><EmployeeDashboard /></AdminRoute>} />
+
                 <Route path="freight" element={<FreightDashboard />} />
                 <Route path="cha" element={<CHADashboard />} />
                 <Route path="transport" element={<TransportDashboard />} />
@@ -151,7 +172,7 @@ function App() {
                 <Route path="analytics" element={<Analytics />} />
                 <Route path="checklist-scanner" element={<ChecklistScanner />} />
                 <Route path="delivery-challan" element={<DeliveryChallan />} />
-                <Route path="reference-codes" element={<ReferenceCodes />} /> {/* ✅ NEW */}
+                <Route path="reference-codes" element={<ReferenceCodes />} />
                 <Route path="shipment/:id" element={<ShipmentDetail />} />
                 <Route path="create" element={<CreateShipment />} />
               </Route>

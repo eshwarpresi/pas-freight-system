@@ -59,7 +59,14 @@ function loadStickyFilters() {
   return { search: '', statusFilter: '', shipmentTypeFilter: '', page: 1, perPage: 25 }
 }
 
-export default function Dashboard({ defaultType = '' }) {
+// mineOnly: forces every query to only include shipments created by the
+// logged-in user — powers the new default "My Shipments" landing page.
+//
+// targetUserId / targetUserName: used by Admin's Team page — when set,
+// every query is scoped to that specific employee's shipments instead of
+// "mine" or "everyone". Only Admins ever pass these in (route is guarded
+// in App.jsx), but the scoping itself works the same way either way.
+export default function Dashboard({ defaultType = '', mineOnly = false, targetUserId = null, targetUserName = null }) {
   const { addToast } = useToast()
   const socket = useSocket()
   const navigate = useNavigate()
@@ -84,6 +91,14 @@ export default function Dashboard({ defaultType = '' }) {
   const isFreightFilter = shipmentTypeFilter === 'FULL_SHIPMENT'
   const isCHAFilter = shipmentTypeFilter === 'CHA_ONLY'
 
+  // Personal or single-employee scope, merged into every request below.
+  // A stable key string is used inside queryKeys so React Query treats
+  // "my shipments" and "everyone" and "Rajeswari's shipments" as
+  // completely separate caches — switching between them never shows
+  // stale data from a different scope.
+  const scopeParams = mineOnly ? { mine: 'true' } : targetUserId ? { userId: targetUserId } : {}
+  const scopeKey = mineOnly ? 'mine' : targetUserId ? `user:${targetUserId}` : 'all'
+
   // ─── READ ?search= FROM URL ───
   // Lets other pages (e.g. Reference Codes) deep-link into a pre-filled
   // search, e.g. /?search=RLIM. Runs once on mount.
@@ -99,6 +114,8 @@ export default function Dashboard({ defaultType = '' }) {
   }, [])
 
   // ─── FETCH BIN COUNT ───
+  // Bin stays company-wide regardless of scope — bin/trash is an
+  // operational safety net, not a personal workload metric.
   useEffect(() => {
     const fetchBinCount = async () => {
       try {
@@ -121,11 +138,11 @@ export default function Dashboard({ defaultType = '' }) {
 
   // ─── TOTAL STATS - CORRECT QUERY KEY ───
   const { data: totalStats } = useQuery({
-    queryKey: ['shipments-total-stats', showArchived],
+    queryKey: ['shipments-total-stats', showArchived, scopeKey],
     queryFn: async () => {
       const isArchivedParam = showArchived ? 'true' : 'false'
       const res = await api.get('/freight/shipments', { 
-        params: { isArchived: isArchivedParam, page: 1, limit: 1 } 
+        params: { isArchived: isArchivedParam, page: 1, limit: 1, ...scopeParams } 
       })
       return res.data.pagination?.total || 0
     },
@@ -138,9 +155,9 @@ export default function Dashboard({ defaultType = '' }) {
   // /freight/shipments/stats. Uses the exact same filters as the main
   // shipments query, so the numbers always describe what's on screen.
   const { data: fullStats } = useQuery({
-    queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, search],
+    queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, search, scopeKey],
     queryFn: async () => {
-      const params = { isArchived: showArchived ? 'true' : 'false' }
+      const params = { isArchived: showArchived ? 'true' : 'false', ...scopeParams }
       if (search) params.search = search
       if (statusFilter) params.status = statusFilter
       if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
@@ -244,7 +261,7 @@ export default function Dashboard({ defaultType = '' }) {
 
   // ─── QUERY FOR SHIPMENTS ───
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, page, perPage],
+    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
@@ -252,7 +269,7 @@ export default function Dashboard({ defaultType = '' }) {
         const res = await api.get('/freight/shipments/bin', { params })
         return res.data
       } else {
-        const params = { isArchived: showArchived ? 'true' : 'false', page, limit: perPage }
+        const params = { isArchived: showArchived ? 'true' : 'false', page, limit: perPage, ...scopeParams }
         if (search) params.search = search
         if (statusFilter) params.status = statusFilter
         if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
@@ -444,6 +461,8 @@ export default function Dashboard({ defaultType = '' }) {
   const getTitle = () => {
     if (showBin) return 'Bin / Trash'
     if (showArchived) return 'Archive'
+    if (targetUserName) return `${targetUserName}'s Shipments`
+    if (mineOnly) return 'My Shipments'
     if (isDOReleaseFilter) return 'DO Release'
     if (isTransportFilter) return 'Transport'
     if (isCHAFilter) return 'CHA'
@@ -452,6 +471,11 @@ export default function Dashboard({ defaultType = '' }) {
   }
 
   const currentPath = window.location.pathname
+  // The module quick-switch (All / FF Only / Freight / CHA...) intentionally
+  // isn't shown in personal or single-employee scope — those sub-pages are
+  // company-wide views and would silently drop the "mine"/employee filter,
+  // which would be confusing rather than helpful here.
+  const showModuleSwitcher = !mineOnly && !targetUserId
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -474,7 +498,7 @@ export default function Dashboard({ defaultType = '' }) {
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[11px] font-semibold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-0.5 rounded-md">Shipments</span>
             <span className="text-xs text-[var(--text-secondary)] font-medium">{overallTotal} total</span>
-            {binCount > 0 && !showBin && (
+            {binCount > 0 && !showBin && !mineOnly && !targetUserId && (
               <span className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full cursor-pointer" onClick={() => toggleView('bin')}>
                 <Trash2 size={10} /> {binCount} in bin
               </span>
@@ -489,54 +513,60 @@ export default function Dashboard({ defaultType = '' }) {
           <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">{getTitle()}</h1>
         </div>
         <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
-            <Link to="/" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>All</Link>
-            <Link to="/ff-only" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/ff-only' ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileText size={12}/>FF Only</Link>
-            <Link to="/freight" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/freight' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Freight</Link>
-            <Link to="/cha" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/cha' ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</Link>
-            <Link to="/transport" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/transport' ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</Link>
-            <Link to="/do-release" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/do-release' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><ClipboardList size={12}/>DO Release</Link>
-          </div>
+          {showModuleSwitcher && (
+            <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
+              <Link to="/overview" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/overview' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>All</Link>
+              <Link to="/ff-only" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/ff-only' ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileText size={12}/>FF Only</Link>
+              <Link to="/freight" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/freight' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Freight</Link>
+              <Link to="/cha" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/cha' ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</Link>
+              <Link to="/transport" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/transport' ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</Link>
+              <Link to="/do-release" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/do-release' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><ClipboardList size={12}/>DO Release</Link>
+            </div>
+          )}
           <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
             <button onClick={()=>toggleView('active')} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all ${!showArchived && !showBin ? 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Active</button>
             <button onClick={()=>toggleView('archived')} className={`px-3.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${showArchived ? 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Archive size={13}/>Archive</button>
-            <button onClick={()=>toggleView('bin')} className={`px-3.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${showBin ? 'bg-white dark:bg-slate-700 text-red-700 dark:text-red-400 shadow-sm' : 'text-[var(--text-secondary)]'}`}>
-              <Trash2 size={13} className={showBin ? 'text-red-500' : ''} />
-              Bin
-              {binCount > 0 && (
-                <span className={`ml-0.5 px-1.5 py-0.5 text-[10px] rounded-full ${showBin ? 'bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}>{binCount}</span>
-              )}
-            </button>
+            {!mineOnly && !targetUserId && (
+              <button onClick={()=>toggleView('bin')} className={`px-3.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${showBin ? 'bg-white dark:bg-slate-700 text-red-700 dark:text-red-400 shadow-sm' : 'text-[var(--text-secondary)]'}`}>
+                <Trash2 size={13} className={showBin ? 'text-red-500' : ''} />
+                Bin
+                {binCount > 0 && (
+                  <span className={`ml-0.5 px-1.5 py-0.5 text-[10px] rounded-full ${showBin ? 'bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-300' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'}`}>{binCount}</span>
+                )}
+              </button>
+            )}
           </div>
           <Link to="/create" className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 text-xs font-semibold shadow-lg shadow-indigo-200 hover-lift"><Plus size={15}/> New Shipment</Link>
         </div>
       </div>
 
-      {/* ── QUICK TOOLS ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {QUICK_TOOLS.map((tool) => {
-          const Icon = tool.icon
-          return (
-            <a
-              key={tool.url}
-              href={tool.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group relative overflow-hidden glass rounded-xl p-4 border border-[var(--glass-border)] hover-lift flex items-center gap-3"
-            >
-              <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${tool.gradient} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`} />
-              <div className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${tool.gradient} flex items-center justify-center shadow-lg flex-shrink-0 group-hover:scale-110 transition-transform`}>
-                <Icon size={20} className="text-white" />
-              </div>
-              <div className="relative flex-1 min-w-0">
-                <p className="text-sm font-bold text-[var(--text-primary)]">{tool.title}</p>
-                <p className="text-[10px] text-[var(--text-muted)] truncate">{tool.desc}</p>
-              </div>
-              <ArrowUpRight size={16} className="relative text-[var(--text-muted)] group-hover:text-indigo-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all flex-shrink-0" />
-            </a>
-          )
-        })}
-      </div>
+      {/* ── QUICK TOOLS — only on the personal landing page, not on admin/employee-scoped views ── */}
+      {!targetUserId && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {QUICK_TOOLS.map((tool) => {
+            const Icon = tool.icon
+            return (
+              <a
+                key={tool.url}
+                href={tool.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group relative overflow-hidden glass rounded-xl p-4 border border-[var(--glass-border)] hover-lift flex items-center gap-3"
+              >
+                <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${tool.gradient} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`} />
+                <div className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${tool.gradient} flex items-center justify-center shadow-lg flex-shrink-0 group-hover:scale-110 transition-transform`}>
+                  <Icon size={20} className="text-white" />
+                </div>
+                <div className="relative flex-1 min-w-0">
+                  <p className="text-sm font-bold text-[var(--text-primary)]">{tool.title}</p>
+                  <p className="text-[10px] text-[var(--text-muted)] truncate">{tool.desc}</p>
+                </div>
+                <ArrowUpRight size={16} className="relative text-[var(--text-muted)] group-hover:text-indigo-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all flex-shrink-0" />
+              </a>
+            )
+          })}
+        </div>
+      )}
 
       {!showBin && (
         <>
@@ -639,7 +669,7 @@ export default function Dashboard({ defaultType = '' }) {
       
       {!isError&&isEmpty&&hasFilters&&(<div className="glass rounded-xl border border-amber-200/50 dark:border-amber-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">No Results</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Try adjusting your search or filters.</p><button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] rounded-lg text-sm font-semibold text-[var(--text-primary)]"><RotateCcw size={14}/> Clear All Filters</button></div>)}
 
-      {!isError&&isEmpty&&!hasFilters&&!showArchived&&!showBin&&(<div className="glass rounded-xl border border-indigo-200/50 dark:border-indigo-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Welcome to PAS Freight</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Create your first shipment to get started.</p><Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><Plus size={14}/> Create Shipment</Link></div>)}
+      {!isError&&isEmpty&&!hasFilters&&!showArchived&&!showBin&&(<div className="glass rounded-xl border border-indigo-200/50 dark:border-indigo-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">{mineOnly ? "You haven't created any shipments yet" : targetUserName ? `${targetUserName} hasn't created any shipments yet` : 'Welcome to PAS Freight'}</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Create your first shipment to get started.</p><Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><Plus size={14}/> Create Shipment</Link></div>)}
 
       {!isError&&isEmpty&&!hasFilters&&showArchived&&(<div className="glass rounded-xl border border-gray-200/50 dark:border-gray-700/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-gray-400 to-slate-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><ArchiveIcon size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Archive Empty</h3><button onClick={()=>toggleView('active')} className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] rounded-lg text-sm font-semibold text-[var(--text-primary)]"><Package size={14}/> View Active Shipments</button></div>)}
 
