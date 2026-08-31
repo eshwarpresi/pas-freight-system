@@ -808,24 +808,112 @@ const deleteReferencePrefix = async (req, res) => {
   }
 };
 
+// ─── REFERENCE INITIALS (NEW) ───
+// Same idea as prefixes — a managed list of employee initials any
+// employee can add/edit/delete — used to tag who generated each number.
+const getReferenceInitials = async (req, res) => {
+  try {
+    const initials = await prisma.referenceInitial.findMany({ orderBy: { code: 'asc' } });
+    res.json({ status: 'success', data: initials });
+  } catch (error) {
+    console.error('Error loading reference initials:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load initials' });
+  }
+};
+
+const createReferenceInitial = async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code || !code.trim()) {
+      return res.status(400).json({ status: 'error', message: 'Initials are required' });
+    }
+    const clean = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!clean) {
+      return res.status(400).json({ status: 'error', message: 'Invalid initials — letters and numbers only' });
+    }
+    const createdBy = req.user?.name || req.user?.email || null;
+    const existing = await prisma.referenceInitial.findUnique({ where: { code: clean } });
+    if (existing) {
+      return res.json({ status: 'success', data: existing, message: 'Initials already exist' });
+    }
+    const created = await prisma.referenceInitial.create({ data: { code: clean, createdBy } });
+    res.status(201).json({ status: 'success', data: created });
+  } catch (error) {
+    console.error('Error adding reference initials:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to add initials' });
+  }
+};
+
+const updateReferenceInitial = async (req, res) => {
+  try {
+    const oldCode = req.params.code?.trim().toUpperCase();
+    const { newCode } = req.body;
+    if (!oldCode || !newCode || !newCode.trim()) {
+      return res.status(400).json({ status: 'error', message: 'New initials are required' });
+    }
+    const clean = newCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!clean) {
+      return res.status(400).json({ status: 'error', message: 'Invalid initials — letters and numbers only' });
+    }
+    const existing = await prisma.referenceInitial.findUnique({ where: { code: oldCode } });
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: 'Initials not found' });
+    }
+    const clash = await prisma.referenceInitial.findUnique({ where: { code: clean } });
+    if (clash && clean !== oldCode) {
+      return res.status(400).json({ status: 'error', message: `Initials "${clean}" already exist` });
+    }
+    const updated = await prisma.referenceInitial.create({ data: { code: clean, createdBy: existing.createdBy } });
+    await prisma.referenceInitial.delete({ where: { code: oldCode } });
+    res.json({ status: 'success', data: updated });
+  } catch (error) {
+    console.error('Error updating reference initials:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update initials' });
+  }
+};
+
+const deleteReferenceInitial = async (req, res) => {
+  try {
+    const code = req.params.code?.trim().toUpperCase();
+    if (!code) {
+      return res.status(400).json({ status: 'error', message: 'Initials are required' });
+    }
+    await prisma.referenceInitial.delete({ where: { code } }).catch(() => null);
+    res.json({ status: 'success', message: `Initials "${code}" removed` });
+  } catch (error) {
+    console.error('Error deleting reference initials:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete initials' });
+  }
+};
+
 // ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
-// Atomically bumps the ONE shared global counter and returns e.g. "RE2602".
-// Numbers ending in 3 or 7 are considered unlucky and skipped automatically
-// — if incrementing lands on one, it just increments again until it finds
-// a number that doesn't end in 3 or 7. Each increment is its own atomic
-// UPDATE, so even with 50+ employees generating at once, nobody ever gets
-// a duplicate — we just occasionally "use up" a couple of numbers to skip
-// past the unlucky ones, which is expected and harmless (gaps are fine).
+// Atomically bumps the ONE shared global counter and returns e.g.
+// "RE2602-PC". Numbers ending in 3 or 7 are considered unlucky and skipped
+// automatically — if incrementing lands on one, it just increments again
+// until it finds a number that doesn't end in 3 or 7. Each increment is
+// its own atomic UPDATE, so even with 50+ employees generating at once,
+// nobody ever gets a duplicate — we just occasionally "use up" a couple of
+// numbers to skip past the unlucky ones, which is expected and harmless
+// (gaps are fine). Initials tag who generated the number.
 const generateReferenceNumber = async (req, res) => {
   try {
-    const { prefix } = req.body;
+    const { prefix, initials } = req.body;
     if (!prefix || !prefix.trim()) {
       return res.status(400).json({ status: 'error', message: 'Prefix is required' });
     }
+    if (!initials || !initials.trim()) {
+      return res.status(400).json({ status: 'error', message: 'Initials are required' });
+    }
     const code = prefix.trim().toUpperCase();
+    const initialsCode = initials.trim().toUpperCase();
+
     const prefixExists = await prisma.referencePrefix.findUnique({ where: { code } });
     if (!prefixExists) {
       return res.status(400).json({ status: 'error', message: `Prefix "${code}" doesn't exist yet. Add it first.` });
+    }
+    const initialsExist = await prisma.referenceInitial.findUnique({ where: { code: initialsCode } });
+    if (!initialsExist) {
+      return res.status(400).json({ status: 'error', message: `Initials "${initialsCode}" don't exist yet. Add them first.` });
     }
 
     let counterValue;
@@ -842,12 +930,12 @@ const generateReferenceNumber = async (req, res) => {
       // else: this number ends in 3 or 7 — loop again, incrementing past it
     }
 
-    const refNo = `${code}${counterValue}`;
-    res.json({ status: 'success', data: { refNo, number: counterValue, prefix: code } });
+    const refNo = `${code}${counterValue}-${initialsCode}`;
+    res.json({ status: 'success', data: { refNo, number: counterValue, prefix: code, initials: initialsCode } });
   } catch (error) {
     console.error('Error generating reference number:', error);
     if (error.code === 'P2025') {
-      return res.status(500).json({ status: 'error', message: 'Reference counter not initialized. Run the seed script first.' });
+      return res.status(500).json({ status: 'error', message: 'Reference counter not initialized.' });
     }
     res.status(500).json({ status: 'error', message: 'Failed to generate reference number' });
   }
@@ -1039,6 +1127,10 @@ module.exports = {
   createReferencePrefix, // ✅ NEW
   deleteReferencePrefix, // ✅ NEW
   updateReferencePrefix, // ✅ NEW
+  getReferenceInitials, // ✅ NEW
+  createReferenceInitial, // ✅ NEW
+  updateReferenceInitial, // ✅ NEW
+  deleteReferenceInitial, // ✅ NEW
   generateReferenceNumber, // ✅ NEW
   getTeamOverview, // ✅ NEW
   getShipmentById, 

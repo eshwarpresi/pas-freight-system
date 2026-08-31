@@ -218,3 +218,10 @@ model ReferencePrefix {
   createdBy String?
   createdAt DateTime @default(now())
 }
+
+model ReferenceInitial {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  createdBy String?
+  createdAt DateTime @default(now())
+}

@@ -31,7 +31,14 @@ router.get('/reference-prefixes', freightController.getReferencePrefixes);
 router.post('/reference-prefixes', freightController.createReferencePrefix);
 router.put('/reference-prefixes/:code', freightController.updateReferencePrefix);
 router.delete('/reference-prefixes/:code', freightController.deleteReferencePrefix);
+router.get('/reference-initials', freightController.getReferenceInitials);
+router.post('/reference-initials', freightController.createReferenceInitial);
+router.put('/reference-initials/:code', freightController.updateReferenceInitial);
+router.delete('/reference-initials/:code', freightController.deleteReferenceInitial);
 router.post('/reference-number/generate', freightController.generateReferenceNumber);
+
+// ─── TEAM OVERVIEW (NEW, ADMIN ONLY) ───
+router.get('/team-overview', freightController.getTeamOverview);
 
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);

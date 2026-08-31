@@ -57,6 +57,82 @@ export default function CreateShipment() {
     try { return localStorage.getItem('pas_ref_guide_seen') !== 'true' } catch { return false }
   })
 
+  // ─── EMPLOYEE INITIALS (NEW) ───
+  // Same idea as prefixes — a managed list anyone can add/edit/delete.
+  // Picking one tags the generated number, e.g. PIPE2604-GJ.
+  const [initialsList, setInitialsList] = useState([])
+  const [selectedInitials, setSelectedInitials] = useState('')
+  const [newInitialInput, setNewInitialInput] = useState('')
+  const [addingInitial, setAddingInitial] = useState(false)
+  const [showManageInitials, setShowManageInitials] = useState(false)
+  const [editingInitialCode, setEditingInitialCode] = useState(null)
+  const [editingInitialValue, setEditingInitialValue] = useState('')
+
+  useEffect(() => {
+    api.get('/freight/reference-initials')
+      .then(res => setInitialsList(res.data?.data || []))
+      .catch(() => {})
+  }, [])
+
+  const handleAddInitial = async () => {
+    const code = newInitialInput.trim().toUpperCase()
+    if (!code) return
+    setAddingInitial(true)
+    try {
+      const res = await api.post('/freight/reference-initials', { code })
+      const added = res.data?.data
+      setInitialsList(prev => {
+        if (prev.find(p => p.code === added.code)) return prev
+        return [...prev, added].sort((a, b) => a.code.localeCompare(b.code))
+      })
+      setNewInitialInput('')
+      addToast(`Initials "${added.code}" added`, 'success')
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to add initials', 'error')
+    } finally {
+      setAddingInitial(false)
+    }
+  }
+
+  const handleDeleteInitial = async (code) => {
+    if (!window.confirm(`Delete initials "${code}"?`)) return
+    try {
+      await api.delete(`/freight/reference-initials/${code}`)
+      setInitialsList(prev => prev.filter(p => p.code !== code))
+      if (selectedInitials === code) setSelectedInitials('')
+      addToast(`Initials "${code}" deleted`, 'success')
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to delete initials', 'error')
+    }
+  }
+
+  const startEditInitial = (code) => {
+    setEditingInitialCode(code)
+    setEditingInitialValue(code)
+  }
+
+  const cancelEditInitial = () => {
+    setEditingInitialCode(null)
+    setEditingInitialValue('')
+  }
+
+  const saveEditInitial = async (oldCode) => {
+    const newCode = editingInitialValue.trim().toUpperCase()
+    if (!newCode || newCode === oldCode) { cancelEditInitial(); return }
+    try {
+      const res = await api.put(`/freight/reference-initials/${oldCode}`, { newCode })
+      const updated = res.data?.data
+      setInitialsList(prev =>
+        prev.map(p => (p.code === oldCode ? updated : p)).sort((a, b) => a.code.localeCompare(b.code))
+      )
+      if (selectedInitials === oldCode) setSelectedInitials(updated.code)
+      addToast(`Renamed to "${updated.code}"`, 'success')
+      cancelEditInitial()
+    } catch (err) {
+      addToast(err.response?.data?.message || 'Failed to rename initials', 'error')
+    }
+  }
+
   const dismissFirstTimeGuide = () => {
     setShowFirstTimeGuide(false)
     try { localStorage.setItem('pas_ref_guide_seen', 'true') } catch {}
@@ -70,9 +146,10 @@ export default function CreateShipment() {
 
   const handleGenerateRef = async () => {
     if (!selectedPrefix) { addToast('Select a prefix first', 'warning'); return }
+    if (!selectedInitials) { addToast('Select your initials first', 'warning'); return }
     setGeneratingRef(true)
     try {
-      const res = await api.post('/freight/reference-number/generate', { prefix: selectedPrefix })
+      const res = await api.post('/freight/reference-number/generate', { prefix: selectedPrefix, initials: selectedInitials })
       const refNo = res.data?.data?.refNo
       setFormData(prev => ({ ...prev, refNo }))
       addToast(`Generated ${refNo}`, 'success')
@@ -381,7 +458,7 @@ export default function CreateShipment() {
             <>
               <div className="absolute -top-7 left-2 flex flex-col items-center z-10 pointer-events-none">
                 <span className="text-[11px] font-semibold text-indigo-600 bg-white px-2 py-0.5 rounded-full shadow-md border border-indigo-200 whitespace-nowrap">
-                  👆 Pick a prefix to start
+                  👆 Pick prefix + initials to start
                 </span>
                 <span className="text-indigo-500 text-sm leading-none animate-bounce">▼</span>
               </div>
@@ -400,16 +477,24 @@ export default function CreateShipment() {
             </button>
             <select
               value={selectedPrefix}
-              onChange={(e) => { setSelectedPrefix(e.target.value); if (e.target.value) dismissFirstTimeGuide() }}
+              onChange={(e) => { setSelectedPrefix(e.target.value); if (e.target.value && selectedInitials) dismissFirstTimeGuide() }}
               className={selectClass}
             >
               <option value="">Select prefix (RE, SI, PIPE...)</option>
               {prefixes.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
             </select>
+            <select
+              value={selectedInitials}
+              onChange={(e) => { setSelectedInitials(e.target.value); if (e.target.value && selectedPrefix) dismissFirstTimeGuide() }}
+              className="w-24 px-2 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 flex-shrink-0"
+            >
+              <option value="">Initials</option>
+              {initialsList.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
+            </select>
             <button
               type="button"
               onClick={() => { handleGenerateRef(); dismissFirstTimeGuide() }}
-              disabled={generatingRef || !selectedPrefix}
+              disabled={generatingRef || !selectedPrefix || !selectedInitials}
               className={`px-3 py-2 bg-gradient-to-r ${theme} rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap`}
             >
               {generatingRef ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
@@ -420,18 +505,74 @@ export default function CreateShipment() {
         {showRefHelp && (
           <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] text-gray-600 space-y-1">
             <p><strong>1.</strong> Pick a prefix from the dropdown (e.g. RE)</p>
-            <p><strong>2.</strong> Click <strong>Generate</strong> — the number fills in automatically (e.g. RE2602)</p>
-            <p><strong>3.</strong> Don't see your prefix? Open "Manage prefixes" below to add it</p>
+            <p><strong>2.</strong> Pick your initials (e.g. GJ)</p>
+            <p><strong>3.</strong> Click <strong>Generate</strong> — the number fills in automatically (e.g. RE2602-GJ)</p>
+            <p><strong>4.</strong> Don't see your prefix or initials? Open "Manage" below to add them</p>
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={() => setShowManagePrefixes((v) => !v)}
-          className="text-[11px] text-gray-500 hover:text-gray-700 underline"
-        >
-          {showManagePrefixes ? 'Hide prefix list' : 'Manage prefixes (add / edit / delete)'}
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => setShowManagePrefixes((v) => !v)}
+            className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+          >
+            {showManagePrefixes ? 'Hide prefix list' : 'Manage prefixes'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowManageInitials((v) => !v)}
+            className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+          >
+            {showManageInitials ? 'Hide initials list' : 'Manage initials'}
+          </button>
+        </div>
+
+        {showManageInitials && (
+          <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/60">
+            {initialsList.length === 0 && <p className="text-[11px] text-gray-400">No initials yet — add yours below.</p>}
+            {initialsList.map((p) => (
+              <div key={p.code} className="flex items-center gap-2">
+                {editingInitialCode === p.code ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editingInitialValue}
+                      onChange={(e) => setEditingInitialValue(e.target.value)}
+                      autoFocus
+                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
+                    />
+                    <button type="button" onClick={() => saveEditInitial(p.code)} className="px-2 py-1.5 bg-emerald-500 text-white rounded-md text-[11px] font-medium">Save</button>
+                    <button type="button" onClick={cancelEditInitial} className="px-2 py-1.5 border border-gray-300 text-gray-500 rounded-md text-[11px]">Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <span className="flex-1 text-xs font-semibold text-gray-700">{p.code}</span>
+                    <button type="button" onClick={() => startEditInitial(p.code)} className="p-1.5 text-gray-400 hover:text-indigo-600" title="Edit"><Pencil size={13} /></button>
+                    <button type="button" onClick={() => handleDeleteInitial(p.code)} className="p-1.5 text-gray-400 hover:text-red-600" title="Delete"><AlertCircle size={13} className="rotate-45" /></button>
+                  </>
+                )}
+              </div>
+            ))}
+            <div className="flex gap-2 pt-2 border-t border-gray-200">
+              <input
+                type="text"
+                value={newInitialInput}
+                onChange={(e) => setNewInitialInput(e.target.value)}
+                placeholder="Your initials, e.g. GJ"
+                className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
+              />
+              <button
+                type="button"
+                onClick={handleAddInitial}
+                disabled={addingInitial || !newInitialInput.trim()}
+                className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-md text-[11px] font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
+              >
+                {addingInitial ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Add
+              </button>
+            </div>
+          </div>
+        )}
 
         {showManagePrefixes && (
           <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/60">
