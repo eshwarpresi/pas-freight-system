@@ -363,9 +363,11 @@ const bulkRestoreShipments = async (req, res) => {
 // ─── EXPORT ───
 const exportShipments = async (req, res) => {
   try {
-    const { status, search } = req.query;
+    const { status, search, mine, userId } = req.query;
     
     const activeWhere = { isArchived: false, isDeleted: false };
+    if (mine === 'true' && req.user?.id) activeWhere.createdById = req.user.id;
+    else if (userId) activeWhere.createdById = userId;
     if (status) activeWhere.currentStatus = status;
     if (search) {
       activeWhere.OR = [
@@ -381,6 +383,8 @@ const exportShipments = async (req, res) => {
     }
     
     const archivedWhere = { isArchived: true, isDeleted: false };
+    if (mine === 'true' && req.user?.id) archivedWhere.createdById = req.user.id;
+    else if (userId) archivedWhere.createdById = userId;
     if (status) archivedWhere.currentStatus = status;
     if (search) {
       archivedWhere.OR = [

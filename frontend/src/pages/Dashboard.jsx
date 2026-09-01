@@ -294,10 +294,20 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const overallTotal = totalStats || totalCount
 
   // ─── EXPORT ───
+  // Respects the page's current scope (mine / a specific employee / the
+  // whole company) plus whatever search and status filters are active —
+  // the download always matches what's actually on screen, not the full
+  // unfiltered dataset. shipmentType and archived/active aren't sent since
+  // the backend export always includes both active and archived shipments
+  // together in one file.
   const handleExport = async () => {
     setExporting(true)
     try {
+      const params = { ...scopeParams }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
       const res = await api.get('/freight/export', { 
+        params,
         responseType: 'blob',
         timeout: 300000
       })
@@ -437,6 +447,24 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   const getImportExportBadge = (v) => v==='Import'?'bg-gradient-to-r from-violet-500 to-purple-500 text-white ring-purple-400':v==='Export'?'bg-gradient-to-r from-orange-500 to-amber-500 text-white ring-amber-400':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-600 ring-gray-300'
+
+  // Same palette as the per-shipment Stage field on ShipmentDetail, so a
+  // shipment's stage looks the same whether you're viewing it in the list
+  // or on its detail page.
+  const getStageBadge = (stage) => {
+    const b = {
+      'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800',
+      'Created': 'bg-gradient-to-r from-blue-400 to-blue-300 text-blue-900',
+      'Confirmed': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900',
+      'Booked': 'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900',
+      'Scheduled': 'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900',
+      'In Progress': 'bg-gradient-to-r from-yellow-400 to-yellow-300 text-yellow-900',
+      'Completed': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900',
+      'Cancelled': 'bg-gradient-to-r from-red-400 to-red-300 text-red-900',
+      'On Hold': 'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900',
+    }
+    return b[stage] || 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700'
+  }
 
   const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
@@ -693,6 +721,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">CHA Name</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Customer</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Stage</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
                       {showBin && <th className="text-left px-3 py-3 text-[11px] font-semibold text-red-500 dark:text-red-400 uppercase">Deleted By</th>}
                     </>
@@ -706,6 +735,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">To</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Delivery</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Stage</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
                       {showBin && <th className="text-left px-3 py-3 text-[11px] font-semibold text-red-500 dark:text-red-400 uppercase">Deleted By</th>}
                     </>
@@ -719,6 +749,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">HAWB</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">SB/BOE No</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Stage</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
                       {showBin && <th className="text-left px-3 py-3 text-[11px] font-semibold text-red-500 dark:text-red-400 uppercase">Deleted By</th>}
                     </>
@@ -763,6 +794,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                         </>
                       )}
                       <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
+                      <td className="px-3 py-3">{s.shipmentStage ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
                       <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
                       {showBin && (
                         <td className="px-3 py-3 text-xs text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</td>
@@ -823,6 +855,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                     <div><span className="text-[var(--text-muted)]">HAWB:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.hawb||'—'}</span></div>
                     <div><span className="text-[var(--text-muted)]">CHA Name:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.agent||'—'}</span></div>
                     <div><span className="text-[var(--text-muted)]">Customer:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
                     <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
                     {showBin && <div><span className="text-[var(--text-muted)]">Deleted By:</span> <span className="text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</span></div>}
                   </div>
@@ -834,6 +867,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                     <div><span className="text-[var(--text-muted)]">From:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.fromLocation||'—'}</span></div>
                     <div><span className="text-[var(--text-muted)]">To:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.toLocation||'—'}</span></div>
                     <div><span className="text-[var(--text-muted)]">Delivery:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
                     <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
                     {showBin && <div><span className="text-[var(--text-muted)]">Deleted By:</span> <span className="text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</span></div>}
                   </div>
@@ -845,6 +879,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                     <div><span className="text-[var(--text-muted)]">HAWB:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.hawb||'—'}</span></div>
                     <div><span className="text-[var(--text-muted)]">SB/BOE:</span> <span className="text-[var(--text-primary)]">{s.cha?.sbNo || s.cha?.boeNo || '—'}</span></div>
                     <div><span className="text-[var(--text-muted)]">I/E:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
                     <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
                     {showBin && <div><span className="text-[var(--text-muted)]">Deleted By:</span> <span className="text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</span></div>}
                   </div>
