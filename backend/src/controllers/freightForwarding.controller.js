@@ -496,7 +496,7 @@ const exportShipments = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, mine, userId, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -517,6 +517,13 @@ const getAllShipments = async (req, res) => {
       where.createdById = req.user.id;
     } else if (userId) {
       where.createdById = userId;
+    }
+    // ✅ NEW — used by the Team Overview "Pending" link to jump straight
+    // into a specific employee's unfinished shipments. Only applies when
+    // no explicit status filter was already requested, since that would
+    // be a direct conflict (an exact status vs. "not yet closed").
+    if (pendingOnly === 'true' && !status) {
+      where.currentStatus = { notIn: CLOSED_STATUSES };
     }
     
     console.log('🔍 WHERE:', JSON.stringify(where));
@@ -981,9 +988,12 @@ const updateReferencePrefix = async (req, res) => {
 };
 
 // ─── GET TEAM OVERVIEW (NEW, ADMIN ONLY) ───
-// Lists every user with how many shipments they've created. Powers the
-// admin-only Team page — click an employee to see their individual
-// dashboard via the existing userId filter above.
+// Lists every user with how many shipments they've created, plus how many
+// of those are cleared vs still pending — same "cleared" definition
+// (CLOSED_STATUSES) as the Reference Codes page uses, so the numbers agree
+// wherever they show up. Powers the admin-only Team page — click an
+// employee (or their Pending count) to see their individual dashboard via
+// the existing userId / pendingOnly filters above.
 const getTeamOverview = async (req, res) => {
   try {
     if (req.user?.role !== 'ADMIN') {
@@ -992,15 +1002,27 @@ const getTeamOverview = async (req, res) => {
     const users = await prisma.user.findMany({
       select: { id: true, name: true, email: true, role: true }
     });
-    const counts = await prisma.shipment.groupBy({
-      by: ['createdById'],
+    const shipments = await prisma.shipment.findMany({
       where: { isDeleted: false },
-      _count: { _all: true }
+      select: { createdById: true, currentStatus: true }
     });
     const countMap = {};
-    counts.forEach((c) => { if (c.createdById) countMap[c.createdById] = c._count._all; });
+    shipments.forEach((s) => {
+      if (!s.createdById) return;
+      if (!countMap[s.createdById]) countMap[s.createdById] = { total: 0, cleared: 0 };
+      countMap[s.createdById].total += 1;
+      if (CLOSED_STATUSES.includes(s.currentStatus)) countMap[s.createdById].cleared += 1;
+    });
     const data = users
-      .map((u) => ({ ...u, shipmentCount: countMap[u.id] || 0 }))
+      .map((u) => {
+        const c = countMap[u.id] || { total: 0, cleared: 0 };
+        return {
+          ...u,
+          shipmentCount: c.total,
+          clearedCount: c.cleared,
+          pendingCount: c.total - c.cleared,
+        };
+      })
       .sort((a, b) => b.shipmentCount - a.shipmentCount);
     res.json({ status: 'success', data });
   } catch (error) {

@@ -66,7 +66,7 @@ function loadStickyFilters() {
 // every query is scoped to that specific employee's shipments instead of
 // "mine" or "everyone". Only Admins ever pass these in (route is guarded
 // in App.jsx), but the scoping itself works the same way either way.
-export default function Dashboard({ defaultType = '', mineOnly = false, targetUserId = null, targetUserName = null }) {
+export default function Dashboard({ defaultType = '', mineOnly = false, targetUserId = null, targetUserName = null, pendingOnly = false }) {
   const { addToast } = useToast()
   const socket = useSocket()
   const navigate = useNavigate()
@@ -96,8 +96,11 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // "my shipments" and "everyone" and "Rajeswari's shipments" as
   // completely separate caches — switching between them never shows
   // stale data from a different scope.
-  const scopeParams = mineOnly ? { mine: 'true' } : targetUserId ? { userId: targetUserId } : {}
-  const scopeKey = mineOnly ? 'mine' : targetUserId ? `user:${targetUserId}` : 'all'
+  const scopeParams = {
+    ...(mineOnly ? { mine: 'true' } : targetUserId ? { userId: targetUserId } : {}),
+    ...(pendingOnly ? { pendingOnly: 'true' } : {}),
+  }
+  const scopeKey = (mineOnly ? 'mine' : targetUserId ? `user:${targetUserId}` : 'all') + (pendingOnly ? ':pending' : '')
 
   // ─── READ ?search= FROM URL ───
   // Lets other pages (e.g. Reference Codes) deep-link into a pre-filled
@@ -489,7 +492,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const getTitle = () => {
     if (showBin) return 'Bin / Trash'
     if (showArchived) return 'Archive'
-    if (targetUserName) return `${targetUserName}'s Shipments`
+    if (targetUserName) return pendingOnly ? `${targetUserName}'s Pending Shipments` : `${targetUserName}'s Shipments`
     if (mineOnly) return 'My Shipments'
     if (isDOReleaseFilter) return 'DO Release'
     if (isTransportFilter) return 'Transport'

@@ -1,14 +1,15 @@
 // frontend/src/pages/TeamOverview.jsx
 //
-// NEW FILE — Admin-only. Lists every employee with how many shipments
-// they've created. Clicking a card opens that person's individual
-// dashboard (same view as "My Shipments", just scoped to them instead).
-// Read-only page — no shipment data is modified here.
+// Admin-only. Lists every employee with how many shipments they've
+// created, how many are cleared (delivered/invoiced), and how many are
+// still pending. Clicking a name opens that person's full dashboard;
+// clicking "View Pending" opens it pre-filtered to just their unfinished
+// shipments. Read-only page — no shipment data is modified here.
 
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import api from '../lib/api'
-import { Users, ArrowUpRight, Loader2, RefreshCw, Package } from 'lucide-react'
+import { Users, ArrowUpRight, Loader2, RefreshCw, Package, CheckCircle2, Clock } from 'lucide-react'
 
 const AVATAR_GRADIENTS = [
   'from-indigo-500 to-blue-600',
@@ -59,7 +60,7 @@ export default function TeamOverview() {
           <span className="text-xs text-[var(--text-secondary)]">{team.length} team members</span>
         </div>
         <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">Team</h1>
-        <p className="text-sm text-[var(--text-muted)] mt-1">Click any employee to see only their shipments.</p>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Click a name for their full dashboard, or "View Pending" for just their unfinished shipments.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -67,13 +68,14 @@ export default function TeamOverview() {
           const gradient = AVATAR_GRADIENTS[i % AVATAR_GRADIENTS.length]
           const initial = (member.name || member.email || '?').charAt(0).toUpperCase()
           const pct = maxCount > 0 ? Math.round((member.shipmentCount / maxCount) * 100) : 0
+          const displayName = member.name || member.email
+          const clearedPct = member.shipmentCount > 0 ? Math.round((member.clearedCount / member.shipmentCount) * 100) : 0
           return (
-            <Link
+            <div
               key={member.id}
-              to={`/team/${member.id}?name=${encodeURIComponent(member.name || member.email)}`}
-              className="text-left glass rounded-xl p-4 border border-[var(--glass-border)] transition-all hover-lift group"
+              className="glass rounded-xl p-4 border border-[var(--glass-border)] transition-all hover-lift group"
             >
-              <div className="flex items-center gap-3 mb-3">
+              <Link to={`/team/${member.id}?name=${encodeURIComponent(displayName)}`} className="flex items-center gap-3 mb-3">
                 <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-sm font-bold shadow-md flex-shrink-0`}>
                   {initial}
                 </div>
@@ -82,22 +84,56 @@ export default function TeamOverview() {
                   <p className="text-[10px] text-[var(--text-muted)] truncate">{member.email}</p>
                 </div>
                 <ArrowUpRight size={15} className="text-[var(--text-muted)] group-hover:text-indigo-500 transition-colors flex-shrink-0" />
-              </div>
+              </Link>
 
               <div className="flex items-center gap-2 mb-2">
                 <Package size={13} className="text-[var(--text-muted)]" />
                 <span className="text-lg font-bold text-[var(--text-primary)]">{member.shipmentCount}</span>
-                <span className="text-[10px] text-[var(--text-muted)]">shipments created</span>
+                <span className="text-[10px] text-[var(--text-muted)]">shipments opened</span>
               </div>
 
-              <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-1.5 overflow-hidden">
+              <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-1.5 overflow-hidden mb-3">
                 <div className={`h-1.5 rounded-full bg-gradient-to-r ${gradient}`} style={{ width: `${pct}%` }} />
               </div>
+
+              <div className="grid grid-cols-2 gap-2 mb-1">
+                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
+                  <CheckCircle2 size={13} className="text-emerald-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400 leading-none">{member.clearedCount}</p>
+                    <p className="text-[9px] text-emerald-600/70 dark:text-emerald-400/70 mt-0.5">Cleared</p>
+                  </div>
+                </div>
+                {member.pendingCount > 0 ? (
+                  <Link
+                    to={`/team/${member.id}?name=${encodeURIComponent(displayName)}&pendingOnly=true`}
+                    className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
+                  >
+                    <Clock size={13} className="text-amber-500 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-amber-700 dark:text-amber-400 leading-none">{member.pendingCount}</p>
+                      <p className="text-[9px] text-amber-600/70 dark:text-amber-400/70 mt-0.5">Pending</p>
+                    </div>
+                  </Link>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/40">
+                    <Clock size={13} className="text-gray-400 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-gray-500 dark:text-gray-400 leading-none">0</p>
+                      <p className="text-[9px] text-gray-400 mt-0.5">Pending</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {member.shipmentCount > 0 && (
+                <p className="text-[9px] text-[var(--text-muted)] mt-1">{clearedPct}% cleared</p>
+              )}
 
               {member.role === 'ADMIN' && (
                 <span className="inline-block mt-2 text-[9px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/40 px-2 py-0.5 rounded-full">ADMIN</span>
               )}
-            </Link>
+            </div>
           )
         })}
         {team.length === 0 && (
