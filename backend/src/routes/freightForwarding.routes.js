@@ -26,6 +26,12 @@ router.get('/shipments/reference-codes', freightController.getReferenceCodeStats
 // ─── GET SHIPMENTS FOR A REFERENCE CODE (NEW — must stay before /:id route) ───
 router.get('/shipments/by-reference-code', freightController.getShipmentsByReferenceCode);
 
+// ─── EMPLOYEE STATS (NEW) ───
+router.get('/employee-stats', freightController.getEmployeeStats);
+
+// ─── GET SHIPMENTS FOR A SPECIFIC EMPLOYEE (NEW — must stay before /:id route) ───
+router.get('/shipments/by-employee', freightController.getShipmentsByEmployee);
+
 // ─── REFERENCE NUMBER AUTO-GENERATION (NEW) ───
 router.get('/reference-prefixes', freightController.getReferencePrefixes);
 router.post('/reference-prefixes', freightController.createReferencePrefix);
@@ -36,6 +42,7 @@ router.post('/reference-initials', freightController.createReferenceInitial);
 router.put('/reference-initials/:code', freightController.updateReferenceInitial);
 router.delete('/reference-initials/:code', freightController.deleteReferenceInitial);
 router.post('/reference-number/generate', freightController.generateReferenceNumber);
+router.post('/reference-number/reset', freightController.resetReferenceCounter);
 
 // ─── TEAM OVERVIEW (NEW, ADMIN ONLY) ───
 router.get('/team-overview', freightController.getTeamOverview);

@@ -764,6 +764,76 @@ const getShipmentsByReferenceCode = async (req, res) => {
   }
 };
 
+// ─── GET EMPLOYEE STATS (NEW) ───
+// Read-only, purely derived. Groups every non-bin shipment by who created
+// it, using the same CLOSED_STATUSES/INVOICED_STATUSES definitions used
+// everywhere else in the app, so these numbers always agree with
+// Reference Codes and the dashboard stat cards.
+const getEmployeeStats = async (req, res) => {
+  try {
+    const shipments = await prisma.shipment.findMany({
+      where: { isDeleted: false },
+      select: { createdById: true, createdByName: true, currentStatus: true }
+    });
+
+    const groups = {};
+    for (const s of shipments) {
+      const key = s.createdById || 'unknown';
+      if (!groups[key]) {
+        groups[key] = { userId: s.createdById, name: s.createdByName || 'Unknown', total: 0, open: 0, closed: 0, invoiced: 0 };
+      }
+      const g = groups[key];
+      g.total += 1;
+      if (CLOSED_STATUSES.includes(s.currentStatus)) g.closed += 1;
+      else g.open += 1;
+      if (INVOICED_STATUSES.includes(s.currentStatus)) g.invoiced += 1;
+    }
+
+    const data = Object.values(groups)
+      .map((g) => ({ ...g, closedRate: g.total > 0 ? Math.round((g.closed / g.total) * 100) : 0 }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json({ status: 'success', data });
+  } catch (error) {
+    console.error('Error getting employee stats:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get employee stats' });
+  }
+};
+
+// ─── GET SHIPMENTS FOR A SPECIFIC EMPLOYEE (NEW) ───
+const getShipmentsByEmployee = async (req, res) => {
+  try {
+    const { userId, name } = req.query;
+    if (!userId && !name) {
+      return res.status(400).json({ status: 'error', message: 'userId or name query parameter is required' });
+    }
+
+    const where = { isDeleted: false };
+    if (userId && userId !== 'unknown') where.createdById = userId;
+    else where.createdByName = name;
+
+    const matching = await prisma.shipment.findMany({
+      where,
+      select: { id: true, refNo: true, currentStatus: true, createdByName: true, createdAt: true, isArchived: true },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const data = matching.map((s) => ({
+      id: s.id,
+      refNo: s.refNo,
+      currentStatus: s.currentStatus,
+      isClosed: CLOSED_STATUSES.includes(s.currentStatus),
+      isArchived: s.isArchived,
+      createdAt: s.createdAt
+    }));
+
+    res.json({ status: 'success', data });
+  } catch (error) {
+    console.error('Error getting shipments by employee:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get shipments for this employee' });
+  }
+};
+
 // ─── REFERENCE PREFIXES (NEW) ───
 // Any employee can add a new prefix (RE, SI, PIPE, ...). Prefixes are
 // just labels — the actual number always comes from one shared global
@@ -949,6 +1019,34 @@ const generateReferenceNumber = async (req, res) => {
       return res.status(500).json({ status: 'error', message: 'Reference counter not initialized.' });
     }
     res.status(500).json({ status: 'error', message: 'Failed to generate reference number' });
+  }
+};
+
+// ─── RESET REFERENCE COUNTER (NEW) ───
+// Resets the ONE shared global counter back to 2602 (or a given starting
+// value, if one is passed in). After this, generateReferenceNumber just
+// keeps incrementing from here as normal — still skipping any number
+// ending in 3 or 7, exactly the same as always. Open to any logged-in
+// user (no admin check). Nothing else is touched — no shipments, no
+// existing reference numbers, no prefixes/initials, no other data.
+const resetReferenceCounter = async (req, res) => {
+  try {
+    const { value } = req.body;
+    const startValue = value !== undefined ? parseInt(value) : 2602;
+    if (isNaN(startValue) || startValue < 0) {
+      return res.status(400).json({ status: 'error', message: 'Invalid reset value' });
+    }
+    const counter = await prisma.referenceCounter.update({
+      where: { id: 'global' },
+      data: { value: startValue }
+    });
+    res.json({ status: 'success', data: counter, message: `Counter reset to ${startValue}` });
+  } catch (error) {
+    console.error('Error resetting reference counter:', error);
+    if (error.code === 'P2025') {
+      return res.status(500).json({ status: 'error', message: 'Reference counter not initialized.' });
+    }
+    res.status(500).json({ status: 'error', message: 'Failed to reset counter' });
   }
 };
 
@@ -1149,6 +1247,8 @@ module.exports = {
   getShipmentStats,
   getReferenceCodeStats,
   getShipmentsByReferenceCode, // ✅ NEW
+  getEmployeeStats, // ✅ NEW
+  getShipmentsByEmployee, // ✅ NEW
   getReferencePrefixes, // ✅ NEW
   createReferencePrefix, // ✅ NEW
   deleteReferencePrefix, // ✅ NEW
@@ -1158,6 +1258,7 @@ module.exports = {
   updateReferenceInitial, // ✅ NEW
   deleteReferenceInitial, // ✅ NEW
   generateReferenceNumber, // ✅ NEW
+  resetReferenceCounter, // ✅ NEW
   getTeamOverview, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
