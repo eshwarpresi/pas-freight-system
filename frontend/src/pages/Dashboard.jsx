@@ -78,6 +78,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const [showBin, setShowBin] = useState(false)
   const [todayOnly, setTodayOnly] = useState(false)
   const [customDate, setCustomDate] = useState('')
+  const [inProgressOnly, setInProgressOnly] = useState(false)
   const [selected, setSelected] = useState([])
   const [page, setPage] = useState(sticky.page || 1)
   const [perPage, setPerPage] = useState(sticky.perPage || 25)
@@ -278,6 +279,33 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const showTodayShipments = () => {
     setTodayOnly(true)
     setCustomDate('')
+    setInProgressOnly(false)
+    setShowArchived(false)
+    setShowBin(false)
+    setSearch('')
+    setStatusFilter('')
+    setPage(1)
+    setSelected([])
+  }
+
+  // ─── TOTAL SHIPMENTS CARD (NEW) ───
+  const showAllShipments = () => {
+    setTodayOnly(false)
+    setCustomDate('')
+    setInProgressOnly(false)
+    setShowArchived(false)
+    setShowBin(false)
+    setSearch('')
+    setStatusFilter('')
+    setPage(1)
+    setSelected([])
+  }
+
+  // ─── IN PROGRESS CARD (NEW) ───
+  const showInProgressShipments = () => {
+    setInProgressOnly(true)
+    setTodayOnly(false)
+    setCustomDate('')
     setShowArchived(false)
     setShowBin(false)
     setSearch('')
@@ -290,6 +318,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const updateCustomDate = (val) => {
     setCustomDate(val)
     setTodayOnly(false)
+    setInProgressOnly(false)
     if (val) {
       setShowArchived(false)
       setShowBin(false)
@@ -301,13 +330,13 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   const clearAllFilters = () => {
-    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setCustomDate(''); setPage(1)
+    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setCustomDate(''); setInProgressOnly(false); setPage(1)
     addToast('Filters cleared', 'info')
   }
 
   // ─── QUERY FOR SHIPMENTS ───
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, customDate, page, perPage, scopeKey],
+    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, customDate, inProgressOnly, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
@@ -318,6 +347,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         const params = { isArchived: showArchived ? 'true' : 'false', page, limit: perPage, ...scopeParams }
         if (customDate) params.date = customDate
         else if (todayOnly) params.today = 'true'
+        else if (inProgressOnly) params.inProgressOnly = 'true'
         if (search) params.search = search
         if (statusFilter) params.status = statusFilter
         if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
@@ -516,19 +546,21 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
-  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||customDate; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
+  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||customDate||inProgressOnly; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   
   // ─── STAT CARDS ───
   const statCards = [
-    { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments' },
+    { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments', onClick: showAllShipments, active: !todayOnly && !customDate && !inProgressOnly && !showArchived && !showBin && !search && !statusFilter },
     { 
       label: showArchived ? 'Completed' : 'In Progress', 
       value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pendingTotal, 
       icon: showArchived ? CheckCircle2 : Clock, 
       gradient: showArchived ? statGradients[2] : statGradients[1], 
-      desc: showArchived ? 'All archived shipments' : 'Enquiry to Customs' 
+      desc: showArchived ? 'All archived shipments' : 'Enquiry to Customs',
+      onClick: showArchived ? undefined : showInProgressShipments,
+      active: inProgressOnly
     },
     { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed' },
     { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent' },
@@ -539,6 +571,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     if (showBin) return 'Bin / Trash'
     if (customDate) return `Shipments on ${new Date(customDate + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
     if (todayOnly) return "Today's Shipments"
+    if (inProgressOnly) return 'In Progress Shipments'
     if (showArchived) return 'Archive'
     if (targetUserName) return pendingOnly ? `${targetUserName}'s Pending Shipments` : `${targetUserName}'s Shipments`
     if (mineOnly) return 'My Shipments'

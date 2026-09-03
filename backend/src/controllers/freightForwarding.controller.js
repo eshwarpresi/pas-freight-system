@@ -496,7 +496,7 @@ const exportShipments = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, inProgressOnly, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -520,6 +520,12 @@ const getAllShipments = async (req, res) => {
       where.isArchived = isArchived === 'true';
     }
     if (status) where.currentStatus = status;
+    // ✅ NEW — "In Progress" card click. Mirrors the exact definition used
+    // by getShipmentStats' pendingTotal calc (total - delivered - invoiced),
+    // so the number shown on the card always matches what this filter returns.
+    if (inProgressOnly === 'true' && !status) {
+      where.currentStatus = { notIn: ['DELIVERED', 'HAND_OVER', 'INVOICE_GENERATED', 'INVOICE_SENT'] };
+    }
     if (shipmentType) {
       if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
       else if (shipmentType === 'TRANSPORT') where.shipmentType = 'Transport';

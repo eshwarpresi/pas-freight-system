@@ -342,8 +342,6 @@ export default function CreateShipment() {
       if (!formData.mawb.trim()) newErrors.mawb = 'MAWB No is required'
       if (!formData.customerName.trim()) newErrors.customerName = 'Customer name is required'
     } else {
-      if (!formData.consigneeName.trim()) newErrors.consigneeName = 'Consignee name is required'
-      if (!formData.shipperName.trim()) newErrors.shipperName = 'Shipper name is required'
       if (!isCHA && !isEditMode && !formData.refNo.trim()) newErrors.refNo = 'Reference number is required'
     }
     setErrors(newErrors)
@@ -376,12 +374,24 @@ export default function CreateShipment() {
         }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: shipmentTypeVal }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: importExportVal }))
+        // ✅ FIX — only send AWB fields (and only fire the AWB update call)
+        // when the user actually entered AWB info. Previously this always
+        // sent hawb/mawb as empty strings, which the backend treats as
+        // "AWB data present" and force-advances currentStatus to
+        // AWB_GENERATED on every single edit, even for unrelated field
+        // changes (consignee, weight, etc.) at any earlier stage.
+        const awbData = {}
+        if (formData.hawb) awbData.hawb = formData.hawb
+        if (formData.mawb) awbData.mawb = formData.mawb
+        if (formData.awbDate) awbData.awbDate = formData.awbDate
+        const hasAwbData = Object.keys(awbData).length > 0
+
         if (isDORelease) {
-          updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
+          if (hasAwbData) updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, awbData))
           updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { agent: formData.chaName }))
         }
         if (!isTransport && !isDORelease) {
-          updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, { hawb: formData.hawb || '', mawb: formData.mawb || '', awbDate: formData.awbDate || null }))
+          if (hasAwbData) updatePromises.push(api.put(`/freight/shipments/${editId}/awb`, awbData))
           updatePromises.push(api.put(`/freight/shipments/${editId}/consignee`, { consigneeName: formData.consigneeName }))
           updatePromises.push(api.put(`/freight/shipments/${editId}/shipper`, { shipperName: formData.shipperName }))
           updatePromises.push(api.put(`/freight/shipments/${editId}/agent`, { agent: formData.agent }))
@@ -710,8 +720,8 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-purple-100">
                 <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-purple-500" /><h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider">Parties Involved</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-purple-100">
@@ -818,8 +828,8 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Parties Involved</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-indigo-100">
@@ -850,13 +860,13 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {isCHAExport ? (
                     <>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
                     </>
                   ) : (
                     <>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
                     </>
                   )}
                 </div>
