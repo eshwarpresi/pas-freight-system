@@ -77,6 +77,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const [showArchived, setShowArchived] = useState(false)
   const [showBin, setShowBin] = useState(false)
   const [todayOnly, setTodayOnly] = useState(false)
+  const [customDate, setCustomDate] = useState('')
   const [selected, setSelected] = useState([])
   const [page, setPage] = useState(sticky.page || 1)
   const [perPage, setPerPage] = useState(sticky.perPage || 25)
@@ -264,6 +265,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setShowArchived(view === 'archived')
     setShowBin(view === 'bin')
     setTodayOnly(false)
+    setCustomDate('')
     setPage(1)
     setSelected([])
     if (view === 'bin') {
@@ -272,8 +274,10 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     }
   }
 
+  // ─── SHOW TODAY'S SHIPMENTS ───
   const showTodayShipments = () => {
     setTodayOnly(true)
+    setCustomDate('')
     setShowArchived(false)
     setShowBin(false)
     setSearch('')
@@ -282,14 +286,28 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setSelected([])
   }
 
+  // ─── PICK A SPECIFIC DATE (NEW) ───
+  const updateCustomDate = (val) => {
+    setCustomDate(val)
+    setTodayOnly(false)
+    if (val) {
+      setShowArchived(false)
+      setShowBin(false)
+      setSearch('')
+      setStatusFilter('')
+    }
+    setPage(1)
+    setSelected([])
+  }
+
   const clearAllFilters = () => {
-    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setPage(1)
+    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setCustomDate(''); setPage(1)
     addToast('Filters cleared', 'info')
   }
 
   // ─── QUERY FOR SHIPMENTS ───
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, page, perPage, scopeKey],
+    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, customDate, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
@@ -298,7 +316,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         return res.data
       } else {
         const params = { isArchived: showArchived ? 'true' : 'false', page, limit: perPage, ...scopeParams }
-        if (todayOnly) params.today = 'true'
+        if (customDate) params.date = customDate
+        else if (todayOnly) params.today = 'true'
         if (search) params.search = search
         if (statusFilter) params.status = statusFilter
         if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
@@ -497,7 +516,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
-  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
+  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||customDate; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   
@@ -518,6 +537,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const getTitle = () => {
     if (showBin) return 'Bin / Trash'
+    if (customDate) return `Shipments on ${new Date(customDate + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
     if (todayOnly) return "Today's Shipments"
     if (showArchived) return 'Archive'
     if (targetUserName) return pendingOnly ? `${targetUserName}'s Pending Shipments` : `${targetUserName}'s Shipments`
@@ -672,6 +692,18 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
           <input type="text" placeholder={showBin ? "Search in bin..." : isDOReleaseFilter ? "Search by Ref No, MAWB, Customer..." : isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"/>
           {search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={14}/></button>}
         </div>
+        {!showBin && (
+          <div className="relative">
+            <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none"/>
+            <input
+              type="date"
+              value={customDate}
+              onChange={e=>updateCustomDate(e.target.value)}
+              className="pl-8 pr-3 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)]"
+              title="View shipments created on a specific date"
+            />
+          </div>
+        )}
         <div className="flex items-center gap-2">
           {hasFilters && (
             <button onClick={clearAllFilters} className="px-3 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><RotateCcw size={14} /> Clear</button>

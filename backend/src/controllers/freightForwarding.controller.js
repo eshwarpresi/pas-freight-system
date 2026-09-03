@@ -496,7 +496,7 @@ const exportShipments = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -504,12 +504,14 @@ const getAllShipments = async (req, res) => {
       isDeleted: false // Exclude bin items from normal view
     };
 
-    // ─── TODAY FILTER (NEW) ───
-    // "Today's Shipments" is a time-based view — shows everything CREATED
-    // today regardless of archived state, so it intentionally ignores the
-    // isArchived toggle rather than combining with it.
-    if (today === 'true') {
-      const start = new Date();
+    // ─── TODAY / CUSTOM DATE FILTER ───
+    // "Today's Shipments" and "pick a date" both show everything CREATED
+    // on that day, regardless of archived state — intentionally ignores
+    // the isArchived toggle rather than combining with it. `date` takes
+    // priority if both are somehow sent; in practice the frontend only
+    // ever sends one or the other.
+    if (today === 'true' || date) {
+      const start = date ? new Date(date) : new Date();
       start.setHours(0, 0, 0, 0);
       const end = new Date(start);
       end.setDate(end.getDate() + 1);
