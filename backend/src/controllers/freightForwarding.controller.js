@@ -496,14 +496,27 @@ const exportShipments = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, page = 1, limit = 25 } = req.query;
-    console.log('🔍 REQUEST:', { shipmentType, search, isArchived, page, limit });
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, page = 1, limit = 25 } = req.query;
+    console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
     const where = { 
-      isArchived: isArchived === 'true',
       isDeleted: false // Exclude bin items from normal view
     };
+
+    // ─── TODAY FILTER (NEW) ───
+    // "Today's Shipments" is a time-based view — shows everything CREATED
+    // today regardless of archived state, so it intentionally ignores the
+    // isArchived toggle rather than combining with it.
+    if (today === 'true') {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      where.createdAt = { gte: start, lt: end };
+    } else {
+      where.isArchived = isArchived === 'true';
+    }
     if (status) where.currentStatus = status;
     if (shipmentType) {
       if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
