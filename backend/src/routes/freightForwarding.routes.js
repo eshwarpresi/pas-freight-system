@@ -42,7 +42,6 @@ router.post('/reference-initials', freightController.createReferenceInitial);
 router.put('/reference-initials/:code', freightController.updateReferenceInitial);
 router.delete('/reference-initials/:code', freightController.deleteReferenceInitial);
 router.post('/reference-number/generate', freightController.generateReferenceNumber);
-router.post('/reference-number/reset', freightController.resetReferenceCounter);
 
 // ─── TEAM OVERVIEW (NEW, ADMIN ONLY) ───
 router.get('/team-overview', freightController.getTeamOverview);

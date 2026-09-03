@@ -114,6 +114,7 @@ export default function MainLayout({ user }) {
 
   const insightLinks = [
     { path: '/reference-codes', icon: Hash, label: 'Reference Codes', color: 'text-fuchsia-500' },
+    { path: '/employee-stats', icon: Users, label: 'Employee Stats', color: 'text-cyan-500' },
   ]
 
   const actionLinks = [

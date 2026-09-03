@@ -1022,34 +1022,6 @@ const generateReferenceNumber = async (req, res) => {
   }
 };
 
-// ─── RESET REFERENCE COUNTER (NEW) ───
-// Resets the ONE shared global counter back to 2602 (or a given starting
-// value, if one is passed in). After this, generateReferenceNumber just
-// keeps incrementing from here as normal — still skipping any number
-// ending in 3 or 7, exactly the same as always. Open to any logged-in
-// user (no admin check). Nothing else is touched — no shipments, no
-// existing reference numbers, no prefixes/initials, no other data.
-const resetReferenceCounter = async (req, res) => {
-  try {
-    const { value } = req.body;
-    const startValue = value !== undefined ? parseInt(value) : 2602;
-    if (isNaN(startValue) || startValue < 0) {
-      return res.status(400).json({ status: 'error', message: 'Invalid reset value' });
-    }
-    const counter = await prisma.referenceCounter.update({
-      where: { id: 'global' },
-      data: { value: startValue }
-    });
-    res.json({ status: 'success', data: counter, message: `Counter reset to ${startValue}` });
-  } catch (error) {
-    console.error('Error resetting reference counter:', error);
-    if (error.code === 'P2025') {
-      return res.status(500).json({ status: 'error', message: 'Reference counter not initialized.' });
-    }
-    res.status(500).json({ status: 'error', message: 'Failed to reset counter' });
-  }
-};
-
 // ─── EDIT (RENAME) A REFERENCE PREFIX (NEW) ───
 // Renames the label going forward. Reference numbers already generated
 // with the old prefix text stay exactly as they were printed — this only
@@ -1258,7 +1230,6 @@ module.exports = {
   updateReferenceInitial, // ✅ NEW
   deleteReferenceInitial, // ✅ NEW
   generateReferenceNumber, // ✅ NEW
-  resetReferenceCounter, // ✅ NEW
   getTeamOverview, // ✅ NEW
   getShipmentById, 
   updateRefNo, 

@@ -6,7 +6,7 @@ import { useToast } from '../components/Toast'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
-  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail, Truck, MapPin, ClipboardList, FileText, Plus, RotateCcw
+  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail, Truck, MapPin, ClipboardList, FileText, Plus
 } from 'lucide-react'
 
 const DRAFT_KEY = 'pas_shipment_draft'
@@ -157,20 +157,6 @@ export default function CreateShipment() {
       addToast(err.response?.data?.message || 'Failed to generate reference number', 'error')
     } finally {
       setGeneratingRef(false)
-    }
-  }
-
-  // ─── RESET REFERENCE COUNTER (NEW) ───
-  // Resets the shared global counter back to 2602. Only affects the
-  // NEXT auto-generated number — every existing shipment and reference
-  // number already saved stays exactly as it is.
-  const handleResetCounter = async () => {
-    if (!window.confirm('Reset the shipment reference counter to 2602? This only affects future auto-generated numbers — nothing existing changes.')) return
-    try {
-      await api.post('/freight/reference-number/reset', { value: 2602 })
-      addToast('Reference counter reset to 2602', 'success')
-    } catch (err) {
-      addToast(err.response?.data?.message || 'Failed to reset counter', 'error')
     }
   }
 
@@ -512,14 +498,6 @@ export default function CreateShipment() {
               className={`px-3 py-2 bg-gradient-to-r ${theme} rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap`}
             >
               {generatingRef ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
-            </button>
-            <button
-              type="button"
-              onClick={handleResetCounter}
-              className="p-2 border border-gray-300 text-gray-400 hover:text-red-600 hover:border-red-300 rounded-lg flex-shrink-0"
-              title="Reset counter to 2602"
-            >
-              <RotateCcw size={14} />
             </button>
           </div>
         </div>

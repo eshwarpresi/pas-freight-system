@@ -14,6 +14,7 @@ const Analytics = lazy(() => import('./pages/Analytics'))
 const ChecklistScanner = lazy(() => import('./pages/ChecklistScanner'))
 const DeliveryChallan = lazy(() => import('./pages/DeliveryChallan'))
 const ReferenceCodes = lazy(() => import('./pages/ReferenceCodes'))
+const EmployeeStats = lazy(() => import('./pages/EmployeeStats')) // ✅ NEW
 const TeamOverview = lazy(() => import('./pages/TeamOverview')) // ✅ NEW — Admin only
 const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard')) // ✅ NEW — Admin only
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
@@ -173,6 +174,7 @@ function App() {
                 <Route path="checklist-scanner" element={<ChecklistScanner />} />
                 <Route path="delivery-challan" element={<DeliveryChallan />} />
                 <Route path="reference-codes" element={<ReferenceCodes />} />
+                <Route path="employee-stats" element={<EmployeeStats />} />
                 <Route path="shipment/:id" element={<ShipmentDetail />} />
                 <Route path="create" element={<CreateShipment />} />
               </Route>
