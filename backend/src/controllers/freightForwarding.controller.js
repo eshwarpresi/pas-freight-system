@@ -1,5 +1,5 @@
 const prisma = require('../utils/prisma');
-const { exportShipmentsToExcel } = require('../utils/excelExport');
+const { exportShipmentsToExcel, exportShipmentsForClient } = require('../utils/excelExport');
 const { sendStatusEmail } = require('../utils/emailService');
 
 // changedBy is now captured on every status-history write (it was already
@@ -490,6 +490,36 @@ const exportShipments = async (req, res) => {
   } catch (error) {
     console.error('Error exporting:', error);
     res.status(500).json({ status: 'error', message: 'Failed to export' });
+  }
+};
+
+// ─── EXPORT SELECTED SHIPMENTS FOR CLIENT (NEW) ───
+// Only the checked shipments, no internal fields (createdBy, remarks,
+// rate, archive status) — safe to send straight to a client.
+const exportSelectedForClient = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'No shipment IDs provided' });
+    }
+    const shipments = await prisma.shipment.findMany({
+      where: { id: { in: ids }, isDeleted: false },
+      select: {
+        refNo: true, currentStatus: true, shipmentType: true,
+        freightForwarding: {
+          select: {
+            consigneeName: true, shipperName: true, customerName: true,
+            fromLocation: true, toLocation: true, mawb: true, hawb: true,
+            etd: true, eta: true, grossWeight: true, weight: true, deliveryDate: true
+          }
+        },
+        cha: { select: { boeNo: true, sbNo: true, deliveryDate: true } }
+      }
+    });
+    await exportShipmentsForClient(shipments, res);
+  } catch (error) {
+    console.error('Error exporting for client:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to export for client' });
   }
 };
 
@@ -1250,6 +1280,7 @@ module.exports = {
   getBinCount,
   bulkRestoreShipments,
   exportShipments, 
+  exportSelectedForClient, // ✅ NEW
   getAllShipments, 
   getShipmentStats,
   getReferenceCodeStats,

@@ -7,6 +7,7 @@ router.post('/shipments', freightController.createShipment);
 
 // ─── EXPORT (MUST be before /:id route) ───
 router.get('/export', freightController.exportShipments);
+router.post('/export-client', freightController.exportSelectedForClient); // ✅ NEW
 
 // ─── GET ALL SHIPMENTS (with filters) ───
 router.get('/shipments', freightController.getAllShipments);

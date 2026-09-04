@@ -11,11 +11,12 @@ import {
   MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2
 } from 'lucide-react'
 
-const STAGE_OPTIONS = ['Draft', 'Created', 'Confirmed', 'Booked', 'Scheduled', 'In Progress', 'Completed', 'Cancelled', 'On Hold']
+const STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice']
 const STAGE_COLORS = {
-  'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800', 'Created': 'bg-gradient-to-r from-blue-400 to-blue-300 text-blue-900', 'Confirmed': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900',
-  'Booked': 'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900', 'Scheduled': 'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900', 'In Progress': 'bg-gradient-to-r from-yellow-400 to-yellow-300 text-yellow-900',
-  'Completed': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900', 'Cancelled': 'bg-gradient-to-r from-red-400 to-red-300 text-red-900', 'On Hold': 'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900',
+  'Enquiry': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900', 'Quoted': 'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900', 'Nomination': 'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900',
+  'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800', 'Pre-alerts': 'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900', 'Checklist': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900',
+  'BOE': 'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900', 'OOC': 'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900', 'POD': 'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900',
+  'Invoice': 'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900',
 }
 const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
 const TRANSPORT_MODE_OPTIONS = ['Air', 'Sea', 'Courier']

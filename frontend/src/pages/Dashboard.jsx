@@ -451,6 +451,34 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     }
   }
 
+  // ─── EXPORT FOR CLIENT (NEW) ───
+  // Only the selected shipments — client-safe columns, no internal data.
+  const [exportingClient, setExportingClient] = useState(false)
+  const handleExportForClient = async () => {
+    if (selected.length === 0) return
+    setExportingClient(true)
+    try {
+      const res = await api.post('/freight/export-client', { ids: selected }, {
+        responseType: 'blob',
+        timeout: 300000
+      })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `PAS_Shipment_Update_${new Date().toISOString().split('T')[0]}.xlsx`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      addToast('Client export downloaded!', 'success')
+    } catch (err) {
+      console.error('Client export error:', err)
+      addToast('Failed to export for client', 'error')
+    } finally {
+      setExportingClient(false)
+    }
+  }
+
   // ─── MUTATIONS ───
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
@@ -816,6 +844,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
               </>
             ) : (
               <>
+                <button onClick={handleExportForClient} disabled={exportingClient} className="px-3.5 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg disabled:opacity-50">
+                  {exportingClient ? <RefreshCw size={13} className="animate-spin"/> : <Download size={13}/>} Export for Client
+                </button>
                 {!showArchived && (
                   <button onClick={() => bulkArchiveMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg">
                     <Archive size={13}/> Archive
