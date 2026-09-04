@@ -405,17 +405,28 @@ async function exportShipmentsToExcel(allShipments, activeShipments, archivedShi
     refGroups[code].push(s);
   }
 
+  // Excel sheet names: max 31 chars, and can't contain \ / ? * [ ] :
+  // Strip anything illegal before using it as a tab name.
+  function sanitizeSheetName(name) {
+    const cleaned = name.replace(/[\\/?*\[\]:]/g, '').trim();
+    return cleaned || 'REF';
+  }
+
   const usedSheetNames = new Set(workbook.worksheets.map(ws => ws.name.toLowerCase()));
   for (const [code, shipments] of Object.entries(refGroups)) {
-    let sheetName = code.substring(0, 28);
-    let suffix = 1;
-    while (usedSheetNames.has(sheetName.toLowerCase())) {
-      sheetName = `${code.substring(0, 25)}_${suffix++}`;
+    try {
+      let sheetName = sanitizeSheetName(code).substring(0, 28);
+      let suffix = 1;
+      while (usedSheetNames.has(sheetName.toLowerCase())) {
+        sheetName = `${sanitizeSheetName(code).substring(0, 25)}_${suffix++}`;
+      }
+      usedSheetNames.add(sheetName.toLowerCase());
+      const wsRef = workbook.addWorksheet(sheetName, { properties: { tabColor: { argb: '9333EA' } } });
+      const refData = processShipments(shipments);
+      writeSheet(wsRef, refData, `REFERENCE: ${code}`, '9333EA', allColumns);
+    } catch (err) {
+      console.error(`Skipping reference sheet for code "${code}":`, err.message);
     }
-    usedSheetNames.add(sheetName.toLowerCase());
-    const wsRef = workbook.addWorksheet(sheetName, { properties: { tabColor: { argb: '9333EA' } } });
-    const refData = processShipments(shipments);
-    writeSheet(wsRef, refData, `REFERENCE: ${code}`, '9333EA', allColumns);
   }
 
   // ─── SUMMARY SHEET ───
