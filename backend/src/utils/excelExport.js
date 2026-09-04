@@ -385,6 +385,39 @@ async function exportShipmentsToExcel(allShipments, activeShipments, archivedShi
     writeSheet(wsFF, ffOnlyData, 'FF ONLY', '8B5CF6', ffOnlyCols);
   }
 
+  // ─── REFERENCE CODE SHEETS (NEW) ───
+  // One extra tab per reference code (RLIM, PIPE, SI, etc.) inside this
+  // same workbook — same prefix-extraction rule used elsewhere in the app
+  // (see extractReferenceCode in freightForwarding.controller.js), so the
+  // grouping here always matches what the "Reference Codes" page shows.
+  function extractRefCode(refNo) {
+    if (!refNo || !refNo.trim()) return 'UNSPECIFIED';
+    const trimmed = refNo.trim();
+    const m = trimmed.match(/^([A-Za-z]{2,10})(?=[\s\-_]?\d)/);
+    if (m) return m[1].toUpperCase();
+    return trimmed.toUpperCase();
+  }
+
+  const refGroups = {};
+  for (const s of allShipments) {
+    const code = extractRefCode(s.refNo);
+    if (!refGroups[code]) refGroups[code] = [];
+    refGroups[code].push(s);
+  }
+
+  const usedSheetNames = new Set(workbook.worksheets.map(ws => ws.name.toLowerCase()));
+  for (const [code, shipments] of Object.entries(refGroups)) {
+    let sheetName = code.substring(0, 28);
+    let suffix = 1;
+    while (usedSheetNames.has(sheetName.toLowerCase())) {
+      sheetName = `${code.substring(0, 25)}_${suffix++}`;
+    }
+    usedSheetNames.add(sheetName.toLowerCase());
+    const wsRef = workbook.addWorksheet(sheetName, { properties: { tabColor: { argb: '9333EA' } } });
+    const refData = processShipments(shipments);
+    writeSheet(wsRef, refData, `REFERENCE: ${code}`, '9333EA', allColumns);
+  }
+
   // ─── SUMMARY SHEET ───
   const ss = workbook.addWorksheet('📊 Summary', { properties: { tabColor: { argb: '7C3AED' } } });
   ss.getColumn(1).width = 5; ss.getColumn(2).width = 22; ss.getColumn(3).width = 14;
