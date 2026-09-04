@@ -496,7 +496,7 @@ const exportShipments = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, inProgressOnly, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, inProgressOnly, deliveredOnly, invoicedOnly, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -510,11 +510,18 @@ const getAllShipments = async (req, res) => {
     // the isArchived toggle rather than combining with it. `date` takes
     // priority if both are somehow sent; in practice the frontend only
     // ever sends one or the other.
+    // IST is UTC+5:30 — computed explicitly so this is correct regardless
+    // of what timezone the server itself runs in (most cloud hosts run UTC).
+    const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
     if (today === 'true' || date) {
-      const start = date ? new Date(date) : new Date();
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 1);
+      let istDateStr;
+      if (date) {
+        istDateStr = date; // date picker already sends YYYY-MM-DD, treat as the intended IST day
+      } else {
+        istDateStr = new Date(Date.now() + IST_OFFSET_MS).toISOString().split('T')[0];
+      }
+      const start = new Date(`${istDateStr}T00:00:00+05:30`);
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
       where.createdAt = { gte: start, lt: end };
     } else {
       where.isArchived = isArchived === 'true';
@@ -525,6 +532,13 @@ const getAllShipments = async (req, res) => {
     // so the number shown on the card always matches what this filter returns.
     if (inProgressOnly === 'true' && !status) {
       where.currentStatus = { notIn: ['DELIVERED', 'HAND_OVER', 'INVOICE_GENERATED', 'INVOICE_SENT'] };
+    }
+    // ✅ NEW — Delivered/Invoiced card clicks
+    if (deliveredOnly === 'true' && !status) {
+      where.currentStatus = { in: ['DELIVERED', 'HAND_OVER'] };
+    }
+    if (invoicedOnly === 'true' && !status) {
+      where.currentStatus = { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] };
     }
     if (shipmentType) {
       if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';

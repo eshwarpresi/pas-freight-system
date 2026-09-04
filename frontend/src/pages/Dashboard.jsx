@@ -79,6 +79,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const [todayOnly, setTodayOnly] = useState(false)
   const [customDate, setCustomDate] = useState('')
   const [inProgressOnly, setInProgressOnly] = useState(false)
+  const [deliveredOnly, setDeliveredOnly] = useState(false)
+  const [invoicedOnly, setInvoicedOnly] = useState(false)
   const [selected, setSelected] = useState([])
   const [page, setPage] = useState(sticky.page || 1)
   const [perPage, setPerPage] = useState(sticky.perPage || 25)
@@ -267,6 +269,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setShowBin(view === 'bin')
     setTodayOnly(false)
     setCustomDate('')
+    setInProgressOnly(false)
+    setDeliveredOnly(false)
+    setInvoicedOnly(false)
     setPage(1)
     setSelected([])
     if (view === 'bin') {
@@ -280,6 +285,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayOnly(true)
     setCustomDate('')
     setInProgressOnly(false)
+    setDeliveredOnly(false)
+    setInvoicedOnly(false)
     setShowArchived(false)
     setShowBin(false)
     setSearch('')
@@ -288,11 +295,13 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setSelected([])
   }
 
-  // ─── TOTAL SHIPMENTS CARD (NEW) ───
+  // ─── TOTAL SHIPMENTS CARD ───
   const showAllShipments = () => {
     setTodayOnly(false)
     setCustomDate('')
     setInProgressOnly(false)
+    setDeliveredOnly(false)
+    setInvoicedOnly(false)
     setShowArchived(false)
     setShowBin(false)
     setSearch('')
@@ -301,11 +310,43 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setSelected([])
   }
 
-  // ─── IN PROGRESS CARD (NEW) ───
+  // ─── IN PROGRESS CARD ───
   const showInProgressShipments = () => {
     setInProgressOnly(true)
     setTodayOnly(false)
     setCustomDate('')
+    setDeliveredOnly(false)
+    setInvoicedOnly(false)
+    setShowArchived(false)
+    setShowBin(false)
+    setSearch('')
+    setStatusFilter('')
+    setPage(1)
+    setSelected([])
+  }
+
+  // ─── DELIVERED CARD (NEW) ───
+  const showDeliveredShipments = () => {
+    setDeliveredOnly(true)
+    setTodayOnly(false)
+    setCustomDate('')
+    setInProgressOnly(false)
+    setInvoicedOnly(false)
+    setShowArchived(false)
+    setShowBin(false)
+    setSearch('')
+    setStatusFilter('')
+    setPage(1)
+    setSelected([])
+  }
+
+  // ─── INVOICED CARD (NEW) ───
+  const showInvoicedShipments = () => {
+    setInvoicedOnly(true)
+    setTodayOnly(false)
+    setCustomDate('')
+    setInProgressOnly(false)
+    setDeliveredOnly(false)
     setShowArchived(false)
     setShowBin(false)
     setSearch('')
@@ -319,6 +360,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setCustomDate(val)
     setTodayOnly(false)
     setInProgressOnly(false)
+    setDeliveredOnly(false)
+    setInvoicedOnly(false)
     if (val) {
       setShowArchived(false)
       setShowBin(false)
@@ -330,13 +373,13 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   const clearAllFilters = () => {
-    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setCustomDate(''); setInProgressOnly(false); setPage(1)
+    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setCustomDate(''); setInProgressOnly(false); setDeliveredOnly(false); setInvoicedOnly(false); setPage(1)
     addToast('Filters cleared', 'info')
   }
 
   // ─── QUERY FOR SHIPMENTS ───
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, customDate, inProgressOnly, page, perPage, scopeKey],
+    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
@@ -348,6 +391,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         if (customDate) params.date = customDate
         else if (todayOnly) params.today = 'true'
         else if (inProgressOnly) params.inProgressOnly = 'true'
+        else if (deliveredOnly) params.deliveredOnly = 'true'
+        else if (invoicedOnly) params.invoicedOnly = 'true'
         if (search) params.search = search
         if (statusFilter) params.status = statusFilter
         if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
@@ -546,7 +591,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
-  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||customDate||inProgressOnly; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
+  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   
@@ -562,8 +607,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       onClick: showArchived ? undefined : showInProgressShipments,
       active: inProgressOnly
     },
-    { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed' },
-    { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent' },
+    { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed', onClick: showDeliveredShipments, active: deliveredOnly },
+    { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent', onClick: showInvoicedShipments, active: invoicedOnly },
     { label: "Today's Shipments", value: todayCount || 0, icon: Calendar, gradient: 'from-rose-500 to-pink-600', desc: 'Created today', onClick: showTodayShipments, active: todayOnly },
   ]
 
@@ -572,6 +617,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     if (customDate) return `Shipments on ${new Date(customDate + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
     if (todayOnly) return "Today's Shipments"
     if (inProgressOnly) return 'In Progress Shipments'
+    if (deliveredOnly) return 'Delivered / Hand Over Shipments'
+    if (invoicedOnly) return 'Invoiced Shipments'
     if (showArchived) return 'Archive'
     if (targetUserName) return pendingOnly ? `${targetUserName}'s Pending Shipments` : `${targetUserName}'s Shipments`
     if (mineOnly) return 'My Shipments'
@@ -686,7 +733,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
             {statCards.map((stat,i)=>{
               const Icon=stat.icon;
               return (
-                <div key={i} onClick={stat.onClick} className={`glass rounded-xl p-4 border hover-lift group animate-scale-in ${stat.onClick ? 'cursor-pointer' : ''} ${stat.active ? 'border-rose-400 dark:border-rose-500 ring-2 ring-rose-300/50' : 'border-[var(--glass-border)]'}`} style={{animationDelay: `${i*100}ms`}}>
+                <div key={i} onClick={stat.onClick} className={`relative glass rounded-xl p-4 border hover-lift group animate-scale-in ${stat.onClick ? 'cursor-pointer' : ''} ${stat.active ? 'border-rose-400 dark:border-rose-500 ring-2 ring-rose-300/50' : 'border-[var(--glass-border)]'}`} style={{animationDelay: `${i*100}ms`}}>
                   <div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${stat.gradient} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`}/>
                   <div className="relative">
                     <div className="flex items-center justify-between mb-2">
