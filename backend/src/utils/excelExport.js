@@ -471,4 +471,125 @@ async function exportShipmentsToExcel(allShipments, activeShipments, archivedShi
   res.end();
 }
 
-module.exports = { exportShipmentsToExcel };
+// ─── CLIENT-FACING EXPORT (NEW) ───
+// A separate, simpler export for sharing directly with clients — only
+// the selected shipments, no internal fields (createdBy, remarks, rate,
+// archive status, reference-number system), single clean sheet.
+async function exportShipmentsForClient(shipments, res) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'PAS Freight Services Pvt Ltd';
+  workbook.created = new Date();
+
+  const clientColumns = [
+    { header: 'SL No', key: 'slNo', width: 7 }, { header: 'Ref No', key: 'refNo', width: 18 },
+    { header: 'Status', key: 'status', width: 18 }, { header: 'Mode', key: 'mode', width: 14 },
+    { header: 'Consignee', key: 'customer', width: 24 }, { header: 'Shipper', key: 'shipper', width: 24 },
+    { header: 'From', key: 'fromLocation', width: 18 }, { header: 'To', key: 'toLocation', width: 18 },
+    { header: 'MAWB', key: 'mawb', width: 16 }, { header: 'HAWB', key: 'hawb', width: 16 },
+    { header: 'BOE No', key: 'boeNo', width: 14 }, { header: 'SB No', key: 'sbNo', width: 14 },
+    { header: 'ETD', key: 'etd', width: 14 }, { header: 'ETA', key: 'eta', width: 14 },
+    { header: 'Gross Wt (kg)', key: 'grossWeight', width: 14 }, { header: 'Chg Wt (kg)', key: 'weight', width: 14 },
+    { header: 'Delivery Date', key: 'deliveryDate', width: 14 },
+  ];
+
+  const num = (v) => (v !== null && v !== undefined && v !== '') ? Number(v) : null;
+
+  const data = shipments.map((s, index) => {
+    const ff = s.freightForwarding || {};
+    const cha = s.cha || {};
+    return {
+      slNo: index + 1,
+      refNo: s.refNo || '',
+      status: s.currentStatus?.replace(/_/g, ' ') || '',
+      mode: s.shipmentType || '',
+      customer: ff.consigneeName || ff.customerName || '',
+      shipper: ff.shipperName || '',
+      fromLocation: ff.fromLocation || '',
+      toLocation: ff.toLocation || '',
+      mawb: ff.mawb || '',
+      hawb: ff.hawb || '',
+      boeNo: cha.boeNo || '',
+      sbNo: cha.sbNo || '',
+      etd: ff.etd ? new Date(ff.etd).toLocaleDateString('en-US') : '',
+      eta: ff.eta ? new Date(ff.eta).toLocaleDateString('en-US') : '',
+      grossWeight: num(ff.grossWeight),
+      weight: num(ff.weight),
+      deliveryDate: (ff.deliveryDate || cha.deliveryDate) ? new Date(ff.deliveryDate || cha.deliveryDate).toLocaleDateString('en-US') : '',
+    };
+  });
+
+  const ws = workbook.addWorksheet('Shipment Details', { properties: { tabColor: { argb: '4F46E5' } } });
+  const colCount = clientColumns.length;
+  const lastCol = (() => { let n = colCount, r = ''; while (n > 0) { n--; r = String.fromCharCode(65 + (n % 26)) + r; n = Math.floor(n / 26); } return r; })();
+
+  ws.columns = clientColumns;
+
+  ws.insertRow(1, ['PAS FREIGHT SERVICES PVT LTD']);
+  ws.mergeCells(`A1:${lastCol}1`);
+  ws.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: '4F46E5' } };
+  ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(1).height = 35;
+
+  ws.insertRow(2, ['SHIPMENT STATUS UPDATE']);
+  ws.mergeCells(`A2:${lastCol}2`);
+  ws.getCell('A2').font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFF' } };
+  ws.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F46E5' } };
+  ws.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(2).height = 30;
+
+  ws.insertRow(3, [`Generated: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`]);
+  ws.mergeCells(`A3:${lastCol}3`);
+  ws.getCell('A3').font = { name: 'Arial', size: 10, color: { argb: '666666' } };
+  ws.getCell('A3').alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(3).height = 22;
+
+  const headerRow = ws.getRow(4);
+  headerRow.height = 32;
+  clientColumns.forEach((col, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = col.header;
+    cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F46E5' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = { top: { style: 'medium' }, bottom: { style: 'medium' }, left: { style: 'thin' }, right: { style: 'thin' } };
+  });
+
+  data.forEach((rowData) => {
+    const row = ws.addRow(rowData);
+    row.height = 22;
+    row.alignment = { horizontal: 'center', vertical: 'middle' };
+    row.font = { name: 'Arial', size: 9 };
+    if (rowData.slNo % 2 === 0) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
+    row.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '4F46E5' } };
+    row.eachCell(cell => {
+      cell.border = { top: { style: 'thin', color: { argb: 'D1D5DB' } }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+  });
+
+  ws.autoFilter = { from: { row: 4, column: 1 }, to: { row: 3 + data.length, column: colCount } };
+  ws.views = [{ state: 'frozen', ySplit: 4 }];
+
+  const fr = ws.addRow(['']);
+  ws.mergeCells(`A${fr.number}:${lastCol}${fr.number}`);
+  ws.getCell(`A${fr.number}`).value = `© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd`;
+  ws.getCell(`A${fr.number}`).font = { name: 'Arial', size: 8, italic: true, color: { argb: '94A3B8' } };
+  ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
+
+  try {
+    const fs = require('fs');
+    let lp = path.join(__dirname, '..', 'logo.webp');
+    let ext = 'webp';
+    if (!fs.existsSync(lp)) { lp = path.join(__dirname, '..', 'logo.png'); ext = 'png'; }
+    if (fs.existsSync(lp)) {
+      const id = workbook.addImage({ filename: lp, extension: ext });
+      ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 80, height: 45 } });
+    }
+  } catch (e) {}
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename=PAS_Shipment_Update_${new Date().toISOString().split('T')[0]}.xlsx`);
+  await workbook.xlsx.write(res);
+  res.end();
+}
+
+module.exports = { exportShipmentsToExcel, exportShipmentsForClient };
