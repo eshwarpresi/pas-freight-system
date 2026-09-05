@@ -915,16 +915,18 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                     </>
                   ) : (
                     <>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Type</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Ref No</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Transport Mode</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Import/Export</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Consignee</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Created By</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">HAWB</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">SB/BOE No</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Handling</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Mode</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Terms</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">From</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">To</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Client Name</th>
+                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Shipper Details</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
                       <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Stage</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
                       {showBin && <th className="text-left px-3 py-3 text-[11px] font-semibold text-red-500 dark:text-red-400 uppercase">Deleted By</th>}
                     </>
                   )}
@@ -958,18 +960,23 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
-                          <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
                           <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
                           <td className="px-3 py-3 text-xs text-[var(--text-secondary)]"><span className="flex items-center gap-1"><User size={10} className="text-[var(--text-muted)]"/>{s.createdByName||<span className="text-[var(--text-muted)]">—</span>}</span></td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.hawb||<span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.cha?.sbNo || s.cha?.boeNo || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.terms||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.fromLocation||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.toLocation||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.shipperName||<span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       )}
                       <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
                       <td className="px-3 py-3">{s.shipmentStage ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                      <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+                      {(isDOReleaseFilter || isTransportFilter) && (
+                        <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+                      )}
                       {showBin && (
                         <td className="px-3 py-3 text-xs text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</td>
                       )}
@@ -1047,14 +1054,16 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-[var(--text-muted)]">Consignee:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Mode:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Created By:</span> <span className="text-[var(--text-primary)] flex items-center gap-1"><User size={10}/>{s.createdByName||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">HAWB:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.hawb||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">SB/BOE:</span> <span className="text-[var(--text-primary)]">{s.cha?.sbNo || s.cha?.boeNo || '—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">I/E:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
                     <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Type:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Handling:</span> <span className="text-[var(--text-primary)] flex items-center gap-1"><User size={10}/>{s.createdByName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Mode:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Terms:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.terms||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">From:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.fromLocation||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">To:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.toLocation||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Client Name:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Shipper:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.shipperName||'—'}</span></div>
+                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
                     {showBin && <div><span className="text-[var(--text-muted)]">Deleted By:</span> <span className="text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</span></div>}
                   </div>
                 )}

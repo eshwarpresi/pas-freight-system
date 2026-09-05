@@ -601,9 +601,9 @@ const getAllShipments = async (req, res) => {
           shipmentType: true, importExport: true, createdByName: true, createdAt: true, 
           freightForwarding: { 
             select: { 
-              consigneeName: true, hawb: true, mawb: true, agent: true, 
+              consigneeName: true, shipperName: true, hawb: true, mawb: true, agent: true, 
               customerName: true, transportMode: true, weight: true, 
-              grossWeight: true, cbm: true, sellingRate: true, 
+              grossWeight: true, cbm: true, sellingRate: true, terms: true,
               fromLocation: true, toLocation: true, deliveryDate: true 
             } 
           }, 
