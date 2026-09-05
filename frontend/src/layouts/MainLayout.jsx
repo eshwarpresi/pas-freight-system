@@ -117,6 +117,14 @@ export default function MainLayout({ user }) {
     { path: '/employee-stats', icon: Users, label: 'Employee Stats', color: 'text-cyan-500' },
   ]
 
+  // ✅ NEW — Reference code group dashboards (RL/PP/SP/JD)
+  const referenceGroupLinks = [
+    { path: '/rl', icon: Hash, label: 'RL (RLI / RLE)', color: 'text-rose-500' },
+    { path: '/pp', icon: Hash, label: 'PP (PPI / PPE)', color: 'text-amber-500' },
+    { path: '/sp', icon: Hash, label: 'SP (SPI / SPE)', color: 'text-lime-500' },
+    { path: '/jd', icon: Hash, label: 'JD (JDI / JDE)', color: 'text-violet-500' },
+  ]
+
   const actionLinks = [
     { path: '/create', icon: Package, label: 'New Shipment', color: 'text-amber-500' },
     { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner', color: 'text-indigo-500' },
@@ -227,6 +235,21 @@ export default function MainLayout({ user }) {
 
           <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Modules</p>
           {dashboardLinks.map((item) => {
+            const Icon = item.icon
+            const isActive = location.pathname === item.path
+            return (
+              <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
+                className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
+                }`}>
+                <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
+                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
+              </Link>
+            )
+          })}
+
+          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Reference Groups</p>
+          {referenceGroupLinks.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname === item.path
             return (

@@ -175,6 +175,13 @@ function App() {
                 <Route path="delivery-challan" element={<DeliveryChallan />} />
                 <Route path="reference-codes" element={<ReferenceCodes />} />
                 <Route path="employee-stats" element={<EmployeeStats />} />
+
+                {/* ✅ NEW — Reference code group dashboards (RL/PP/SP/JD) */}
+                <Route path="rl" element={<Dashboard referenceGroup="RL" />} />
+                <Route path="pp" element={<Dashboard referenceGroup="PP" />} />
+                <Route path="sp" element={<Dashboard referenceGroup="SP" />} />
+                <Route path="jd" element={<Dashboard referenceGroup="JD" />} />
+
                 <Route path="shipment/:id" element={<ShipmentDetail />} />
                 <Route path="create" element={<CreateShipment />} />
               </Route>

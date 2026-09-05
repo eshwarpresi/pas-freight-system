@@ -66,7 +66,7 @@ function loadStickyFilters() {
 // every query is scoped to that specific employee's shipments instead of
 // "mine" or "everyone". Only Admins ever pass these in (route is guarded
 // in App.jsx), but the scoping itself works the same way either way.
-export default function Dashboard({ defaultType = '', mineOnly = false, targetUserId = null, targetUserName = null, pendingOnly = false }) {
+export default function Dashboard({ defaultType = '', mineOnly = false, targetUserId = null, targetUserName = null, pendingOnly = false, referenceGroup = null }) {
   const { addToast } = useToast()
   const socket = useSocket()
   const navigate = useNavigate()
@@ -104,8 +104,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const scopeParams = {
     ...(mineOnly ? { mine: 'true' } : targetUserId ? { userId: targetUserId } : {}),
     ...(pendingOnly ? { pendingOnly: 'true' } : {}),
+    ...(referenceGroup ? { referenceGroup } : {}),
   }
-  const scopeKey = (mineOnly ? 'mine' : targetUserId ? `user:${targetUserId}` : 'all') + (pendingOnly ? ':pending' : '')
+  const scopeKey = (mineOnly ? 'mine' : targetUserId ? `user:${targetUserId}` : 'all') + (pendingOnly ? ':pending' : '') + (referenceGroup ? `:${referenceGroup}` : '')
 
   // ─── READ ?search= FROM URL ───
   // Lets other pages (e.g. Reference Codes) deep-link into a pre-filled
@@ -654,6 +655,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     if (isTransportFilter) return 'Transport'
     if (isCHAFilter) return 'CHA'
     if (isFreightFilter) return 'Freight'
+    if (referenceGroup) return `${referenceGroup} Shipments`
     return 'Overview'
   }
 
@@ -662,7 +664,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // isn't shown in personal or single-employee scope — those sub-pages are
   // company-wide views and would silently drop the "mine"/employee filter,
   // which would be confusing rather than helpful here.
-  const showModuleSwitcher = !mineOnly && !targetUserId
+  const showModuleSwitcher = !mineOnly && !targetUserId && !referenceGroup
 
   return (
     <div className="space-y-6 animate-fade-in">

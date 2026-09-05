@@ -363,9 +363,12 @@ const bulkRestoreShipments = async (req, res) => {
 // ─── EXPORT ───
 const exportShipments = async (req, res) => {
   try {
-    const { status, search, mine, userId } = req.query;
+    const { status, search, mine, userId, referenceGroup } = req.query;
     
     const activeWhere = { isArchived: false, isDeleted: false };
+    if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
+      activeWhere.AND = [{ OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
+    }
     if (mine === 'true' && req.user?.id) activeWhere.createdById = req.user.id;
     else if (userId) activeWhere.createdById = userId;
     if (status) activeWhere.currentStatus = status;
@@ -383,6 +386,9 @@ const exportShipments = async (req, res) => {
     }
     
     const archivedWhere = { isArchived: true, isDeleted: false };
+    if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
+      archivedWhere.AND = [{ OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
+    }
     if (mine === 'true' && req.user?.id) archivedWhere.createdById = req.user.id;
     else if (userId) archivedWhere.createdById = userId;
     if (status) archivedWhere.currentStatus = status;
@@ -526,7 +532,7 @@ const exportSelectedForClient = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, inProgressOnly, deliveredOnly, invoicedOnly, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, inProgressOnly, deliveredOnly, invoicedOnly, referenceGroup, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -576,6 +582,10 @@ const getAllShipments = async (req, res) => {
       else if (shipmentType === 'DO_RELEASE') where.shipmentType = 'DO Release';
       else if (shipmentType === 'FF_ONLY') where.shipmentType = 'FF Only';
       else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
+    }
+    // ✅ NEW — Reference code group dashboards (RL/PP/SP/JD)
+    if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
+      where.AND = [...(where.AND || []), { OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
     }
     if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { freightForwarding: { mawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }, { freightForwarding: { customerName: { contains: search } } }];
     if (mine === 'true' && req.user?.id) {
@@ -630,12 +640,15 @@ const getAllShipments = async (req, res) => {
 // current page), so progress bars / percentages reflect the whole dataset.
 const getShipmentStats = async (req, res) => {
   try {
-    const { status, search, isArchived, shipmentType, mine, userId } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, referenceGroup } = req.query;
 
     const where = {
       isArchived: isArchived === 'true',
       isDeleted: false
     };
+    if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
+      where.AND = [...(where.AND || []), { OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
+    }
     if (status) where.currentStatus = status;
     if (shipmentType) {
       if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
@@ -703,6 +716,18 @@ function extractReferenceCode(refNo) {
   if (m) return m[1].toUpperCase();
   return trimmed.toUpperCase();
 }
+
+// ─── REFERENCE CODE GROUPS (NEW) ───
+// Old prefixes now merged under one parent code per management's updated
+// rules. A shipment belongs to a group if its refNo starts with ANY code
+// listed for that group — covers old codes already in use and the new
+// combined ones going forward.
+const REFERENCE_GROUPS = {
+  RL: ['RLIM', 'RI', 'RLEX', 'RE', 'RLI', 'RLE'],
+  PP: ['PPIM', 'PI', 'PPEX', 'PE', 'PPI', 'PPE'],
+  SP: ['SPIM', 'SI', 'SPEX', 'SE', 'SPI', 'SPE'],
+  JD: ['JDI', 'JDE'],
+};
 
 const CLOSED_STATUSES = ['DELIVERED', 'HAND_OVER', 'COMPLETED', 'INVOICE_SENT'];
 const INVOICED_STATUSES = ['INVOICE_GENERATED', 'INVOICE_SENT'];
