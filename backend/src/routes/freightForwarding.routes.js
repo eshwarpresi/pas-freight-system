@@ -47,6 +47,9 @@ router.post('/reference-number/generate', freightController.generateReferenceNum
 // ─── TEAM OVERVIEW (NEW, ADMIN ONLY) ───
 router.get('/team-overview', freightController.getTeamOverview);
 
+// ─── EMPLOYEE LIST (NEW) — for the Co-Handler dropdown, any logged-in user ───
+router.get('/employees', freightController.getEmployeeList);
+
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);
 

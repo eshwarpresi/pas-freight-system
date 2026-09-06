@@ -54,6 +54,16 @@ model Shipment {
   createdById   String?
   createdByUser User?    @relation("CreatedShipments", fields: [createdById], references: [id])
   createdByName String?  // Denormalized for easy display
+
+  // ─── CO-HANDLER (NEW) ───
+  // An optional second employee who should also see this shipment in
+  // their own "My Shipments" — e.g. when one employee generates a
+  // reference number using another employee's initials because they're
+  // working on it together. Not a Prisma relation on purpose (mirrors
+  // createdByName's denormalized-string pattern) — keeps this additive
+  // and low-risk against the existing createdById/createdByUser relation.
+  coHandlerId   String?
+  coHandlerName String?
   
   freightForwarding FreightForwarding?
   cha               CHA?

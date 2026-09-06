@@ -31,14 +31,24 @@ function actorName(req) {
 // ─── CREATE NEW SHIPMENT ───
 const createShipment = async (req, res) => {
   try {
-    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation } = req.body;
+    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation, coHandlerId } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const createdById = req.user?.id || null;
     const createdByName = req.user?.name || req.user?.email || null;
+    // ✅ Co-Handler (NEW) — an optional second employee who should also
+    // see this shipment in their own "My Shipments". Resolved to a real
+    // user account, not just text, so it stays accurate even if two
+    // people share the same initials.
+    let coHandlerName = null;
+    if (coHandlerId) {
+      const coHandler = await prisma.user.findUnique({ where: { id: coHandlerId }, select: { name: true, email: true } });
+      coHandlerName = coHandler ? (coHandler.name || coHandler.email) : null;
+    }
     const shipment = await prisma.shipment.create({
       data: { 
         refNo, currentStatus: 'ENQUIRY', shipmentType, importExport,
         createdById, createdByName,
+        coHandlerId: coHandlerId || null, coHandlerName,
         freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null, notificationEmail: notificationEmail || null, customerName: customerName || null, vehicleType: vehicleType || null, noOfContainers: noOfContainers ? parseInt(noOfContainers) : null, packageType: packageType || null, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, fromLocation: fromLocation || null, toLocation: toLocation || null } }, 
         statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}`, changedBy: createdByName } } 
       },
@@ -369,7 +379,7 @@ const exportShipments = async (req, res) => {
     if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
       activeWhere.AND = [{ OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
     }
-    if (mine === 'true' && req.user?.id) activeWhere.createdById = req.user.id;
+    if (mine === 'true' && req.user?.id) activeWhere.AND = [...(activeWhere.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
     else if (userId) activeWhere.createdById = userId;
     if (status) activeWhere.currentStatus = status;
     if (search) {
@@ -389,7 +399,7 @@ const exportShipments = async (req, res) => {
     if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
       archivedWhere.AND = [{ OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
     }
-    if (mine === 'true' && req.user?.id) archivedWhere.createdById = req.user.id;
+    if (mine === 'true' && req.user?.id) archivedWhere.AND = [...(archivedWhere.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
     else if (userId) archivedWhere.createdById = userId;
     if (status) archivedWhere.currentStatus = status;
     if (search) {
@@ -589,7 +599,7 @@ const getAllShipments = async (req, res) => {
     }
     if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { freightForwarding: { mawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }, { freightForwarding: { customerName: { contains: search } } }];
     if (mine === 'true' && req.user?.id) {
-      where.createdById = req.user.id;
+      where.AND = [...(where.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
     } else if (userId) {
       where.createdById = userId;
     }
@@ -670,7 +680,7 @@ const getShipmentStats = async (req, res) => {
       ];
     }
     if (mine === 'true' && req.user?.id) {
-      where.createdById = req.user.id;
+      where.AND = [...(where.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
     } else if (userId) {
       where.createdById = userId;
     }
@@ -1147,6 +1157,24 @@ const updateReferencePrefix = async (req, res) => {
   }
 };
 
+// ─── GET EMPLOYEE LIST (NEW) ───
+// Lightweight, non-admin endpoint — just id/name/email for the Co-Handler
+// dropdown when creating a shipment. Any logged-in user can call this;
+// it's not the full Team Overview (which is admin-only and includes
+// shipment counts).
+const getEmployeeList = async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' }
+    });
+    res.json({ status: 'success', data: users });
+  } catch (error) {
+    console.error('Error getting employee list:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get employee list' });
+  }
+};
+
 // ─── GET TEAM OVERVIEW (NEW, ADMIN ONLY) ───
 // Lists every user with how many shipments they've created, plus how many
 // of those are cleared vs still pending — same "cleared" definition
@@ -1322,6 +1350,7 @@ module.exports = {
   deleteReferenceInitial, // ✅ NEW
   generateReferenceNumber, // ✅ NEW
   getTeamOverview, // ✅ NEW
+  getEmployeeList, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 

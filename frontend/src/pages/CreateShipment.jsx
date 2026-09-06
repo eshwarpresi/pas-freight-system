@@ -68,6 +68,17 @@ export default function CreateShipment() {
   const [editingInitialCode, setEditingInitialCode] = useState(null)
   const [editingInitialValue, setEditingInitialValue] = useState('')
 
+  // ✅ CO-HANDLER (NEW) — an optional second employee who should also see
+  // this shipment in their own "My Shipments".
+  const [employees, setEmployees] = useState([])
+  const [coHandlerId, setCoHandlerId] = useState('')
+
+  useEffect(() => {
+    api.get('/freight/employees')
+      .then(res => setEmployees(res.data?.data || []))
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     api.get('/freight/reference-initials')
       .then(res => setInitialsList(res.data?.data || []))
@@ -410,6 +421,7 @@ export default function CreateShipment() {
       } else {
         const submitData = { 
           ...formData, refNo: formData.refNo || generateRefNo(),
+          coHandlerId: coHandlerId || null,
           enquiryDate: formData.enquiryDate || new Date().toISOString().split('T')[0],
           noOfPackages: formData.noOfPackages ? parseInt(formData.noOfPackages) : null,
           weight: formData.weight ? parseFloat(formData.weight) : null,
@@ -971,6 +983,17 @@ export default function CreateShipment() {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
               </div>
             </>
+          )}
+
+          {!isEditMode && (
+            <div className="p-6 border-b border-indigo-100">
+              <div className="flex items-center gap-2 mb-1"><User size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Co-Handler (Optional)</h3></div>
+              <p className="text-[11px] text-gray-500 mb-3">If someone else is working on this with you, add them here — it'll show up in their "My Shipments" too.</p>
+              <select value={coHandlerId} onChange={(e) => setCoHandlerId(e.target.value)} className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}>
+                <option value="">No co-handler</option>
+                {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name || emp.email}</option>)}
+              </select>
+            </div>
           )}
 
           <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 to-blue-50 border-t border-indigo-100 flex items-center justify-between">
