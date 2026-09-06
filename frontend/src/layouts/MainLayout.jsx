@@ -29,15 +29,61 @@ export default function MainLayout({ user }) {
 
   const isAdmin = user?.role === 'ADMIN'
 
+  // ✅ Notification sound (FIXED)
+  // A single AudioContext, created once and reused, instead of a new one
+  // per notification — browsers require it to be "unlocked" by a real
+  // user interaction (click/tap) before it can play sound, and creating
+  // a fresh one every time silently fails until that happens. We create
+  // it lazily on first use and resume it if the browser suspended it.
+  // Sound is a pleasant two-note chime (soft "ding-dong") instead of one
+  // flat beep.
+  const audioCtxRef = useRef(null)
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
+    }
+    return audioCtxRef.current
+  }
+
+  useEffect(() => {
+    // Unlocks audio playback on the very first click/tap anywhere on the
+    // page, so by the time a real notification arrives, sound is ready.
+    const unlock = () => {
+      const ctx = getAudioCtx()
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {})
+      document.removeEventListener('click', unlock)
+      document.removeEventListener('touchstart', unlock)
+    }
+    document.addEventListener('click', unlock)
+    document.addEventListener('touchstart', unlock)
+    return () => {
+      document.removeEventListener('click', unlock)
+      document.removeEventListener('touchstart', unlock)
+    }
+  }, [])
+
   const playSound = () => {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)()
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain); gain.connect(ctx.destination)
-      osc.frequency.value = 800; osc.type = 'sine'; gain.gain.value = 0.1
-      osc.start(); osc.stop(ctx.currentTime + 0.15)
-    } catch(e) {}
+      const ctx = getAudioCtx()
+      if (ctx.state === 'suspended') { ctx.resume().catch(() => {}) }
+
+      const playTone = (freq, startTime, duration, volume) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = freq
+        osc.type = 'sine'
+        gain.gain.setValueAtTime(0, startTime)
+        gain.gain.linearRampToValueAtTime(volume, startTime + 0.02)
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration)
+        osc.start(startTime)
+        osc.stop(startTime + duration)
+      }
+
+      const now = ctx.currentTime
+      playTone(880, now, 0.18, 0.15)
+      playTone(1108.73, now + 0.12, 0.25, 0.13)
+    } catch (e) {}
   }
 
   useEffect(() => { fetchNotifications() }, [])
