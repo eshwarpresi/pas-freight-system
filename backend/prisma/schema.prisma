@@ -19,6 +19,12 @@ model User {
   email     String   @unique
   password  String
   role      String   @default("OPERATIONS") // ADMIN, OPERATIONS, ACCOUNTS
+  // ✅ TEAM (NEW) — which of the 3 shipment-workflow teams this employee
+  // belongs to: FREIGHT, CUSTOMS, ACCOUNTS. Separate from `role` above
+  // (which governs login permissions) since OPERATIONS covers both the
+  // Freight and Customs teams today, and we need to tell those two apart
+  // for the Team Performance report. Null = not yet assigned (e.g. Admins).
+  team      String?
   lastActive DateTime? // Track when user was last active
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -64,6 +70,20 @@ model Shipment {
   // and low-risk against the existing createdById/createdByUser relation.
   coHandlerId   String?
   coHandlerName String?
+
+  // ─── TEAM HANDLED-BY BADGES (NEW) ───
+  // Auto-stamped the first time anyone on that team acts on this
+  // shipment (Customs: checklist/BOE/SB/OOC/gate pass/delivery; Accounts:
+  // invoice generated/sent). Denormalized id+name pair, same pattern as
+  // createdById/createdByName, so these can back both the visible
+  // "Handled By" badges on the shipment and accurate per-employee
+  // aggregation in the Team Performance report (matching by id, not
+  // just name). Left null until that team actually touches the shipment
+  // — a blank badge is the visual signal that nobody has yet.
+  customsHandledById   String?
+  customsHandledByName String?
+  accountsHandledById   String?
+  accountsHandledByName String?
   
   freightForwarding FreightForwarding?
   cha               CHA?

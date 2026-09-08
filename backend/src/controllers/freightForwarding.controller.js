@@ -1309,6 +1309,102 @@ const getTeamOverview = async (req, res) => {
   }
 };
 
+// ─── GET EMPLOYEE PERFORMANCE (NEW, ADMIN ONLY) ───
+// The Team Performance report. For each employee, computes three
+// independent counts across every non-bin shipment (optionally scoped to
+// a date range and/or a team):
+//   - created   -> shipments where createdById === them
+//   - coHandled -> shipments where coHandlerId === them
+//   - touched   -> shipments where their name appears anywhere in
+//                  statusHistory.changedBy, even if they neither created
+//                  nor were co-handler (e.g. Accounts entering an invoice
+//                  number on a shipment Freight created and Customs
+//                  handled). Reuses the exact "involved" pattern from
+//                  getShipmentsByReferenceCode — matched by changedBy
+//                  name, same as everywhere else changedBy is used.
+// lastActive is the most recent status-history timestamp attributed to
+// that name, in the same optional date range — this is what surfaces
+// "who's gone quiet" without anyone having to dig through logs.
+const getEmployeePerformance = async (req, res) => {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ status: 'error', message: 'Admin access required' });
+    }
+    const { team, from, to } = req.query;
+
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true, team: true }
+    });
+
+    // Optional date range — applies to both shipment creation and
+    // status-history activity, same IST-anchored style used elsewhere
+    // in this file (Daily Report, Today filter).
+    let dateFilter = {};
+    if (from) dateFilter.gte = new Date(`${from}T00:00:00+05:30`);
+    if (to) dateFilter.lt = new Date(`${to}T23:59:59.999+05:30`);
+    const hasDateFilter = Object.keys(dateFilter).length > 0;
+
+    const shipmentWhere = { isDeleted: false };
+    if (hasDateFilter) shipmentWhere.createdAt = dateFilter;
+
+    const shipments = await prisma.shipment.findMany({
+      where: shipmentWhere,
+      select: { id: true, createdById: true, coHandlerId: true }
+    });
+
+    // "Touched" activity is read from status history independently of the
+    // shipment-creation date filter above, so an old shipment someone
+    // acts on today still counts toward today's activity.
+    const historyWhere = {};
+    if (hasDateFilter) historyWhere.createdAt = dateFilter;
+
+    const histories = await prisma.statusHistory.findMany({
+      where: historyWhere,
+      select: { shipmentId: true, changedBy: true, createdAt: true }
+    });
+
+    const touchedMap = {}; // name -> Set(shipmentId)
+    const lastActiveMap = {}; // name -> latest Date
+    histories.forEach((h) => {
+      if (!h.changedBy) return;
+      if (!touchedMap[h.changedBy]) touchedMap[h.changedBy] = new Set();
+      touchedMap[h.changedBy].add(h.shipmentId);
+      if (!lastActiveMap[h.changedBy] || h.createdAt > lastActiveMap[h.changedBy]) {
+        lastActiveMap[h.changedBy] = h.createdAt;
+      }
+    });
+
+    const createdMap = {}; // userId -> count
+    const coHandledMap = {}; // userId -> count
+    shipments.forEach((s) => {
+      if (s.createdById) createdMap[s.createdById] = (createdMap[s.createdById] || 0) + 1;
+      if (s.coHandlerId) coHandledMap[s.coHandlerId] = (coHandledMap[s.coHandlerId] || 0) + 1;
+    });
+
+    const data = users
+      .filter((u) => !team || u.team === team)
+      .map((u) => {
+        const touchedSet = touchedMap[u.name] || new Set();
+        return {
+          userId: u.id,
+          name: u.name,
+          email: u.email,
+          team: u.team || null,
+          created: createdMap[u.id] || 0,
+          coHandled: coHandledMap[u.id] || 0,
+          touched: touchedSet.size,
+          lastActive: lastActiveMap[u.name] || null
+        };
+      })
+      .sort((a, b) => b.touched - a.touched);
+
+    res.json({ status: 'success', data });
+  } catch (error) {
+    console.error('Error getting employee performance:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get employee performance' });
+  }
+};
+
 // ─── GET SINGLE ───
 const getShipmentById = async (req, res) => {
   try { const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); if (!s) return res.status(404).json({ status: 'error', message: 'Not found' }); res.json({ status: 'success', data: s }); } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
@@ -1443,6 +1539,7 @@ module.exports = {
   getEmployeeList, // ✅ NEW
   buildDailyReport, // ✅ NEW
   getDailyReport, // ✅ NEW
+  getEmployeePerformance, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 

@@ -6,7 +6,7 @@ import {
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
   BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink,
-  Layers, Users, Shield, BarChart2
+  Layers, Users, Shield, BarChart2, TrendingUp
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -149,6 +149,10 @@ export default function MainLayout({ user }) {
   const adminItems = [
     { path: '/team', icon: Users, label: 'Team', color: 'text-indigo-500' },
     { path: '/daily-report', icon: BarChart2, label: 'Daily Report', color: 'text-emerald-500' },
+    // ✅ NEW — Team Performance: per-employee Created/Co-handled/Touched
+    // breakdown across Freight/Customs/Accounts, with last-activity
+    // flagging for anyone gone quiet.
+    { path: '/team-performance', icon: TrendingUp, label: 'Team Performance', color: 'text-rose-500' },
   ]
 
   const dashboardLinks = [

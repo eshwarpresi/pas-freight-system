@@ -14,6 +14,30 @@ async function getFullShipment(id) {
   });
 }
 
+// Same pattern as freightForwarding.controller.js — resolves the logged-in
+// user's display name for status-history attribution.
+function actorName(req) {
+  return req.user?.name || req.user?.email || null;
+}
+
+// ─── CUSTOMS "HANDLED BY" AUTO-STAMP (NEW) ───
+// The first time anyone in Customs acts on a shipment, this stamps their
+// id+name onto the shipment permanently — powers the visible "Customs:
+// <name>" badge and the Team Performance report. Only fires once per
+// shipment (checks customsHandledById is still null) so a later handoff
+// to a second Customs person doesn't overwrite who originally picked it
+// up; that handoff is still fully captured via statusHistory.changedBy.
+async function stampCustomsHandler(id, req) {
+  if (!req.user?.id) return;
+  const shipment = await prisma.shipment.findUnique({ where: { id }, select: { customsHandledById: true } });
+  if (shipment && !shipment.customsHandledById) {
+    await prisma.shipment.update({
+      where: { id },
+      data: { customsHandledById: req.user.id, customsHandledByName: actorName(req) }
+    });
+  }
+}
+
 // UPDATE CHECKLIST
 const updateChecklist = async (req, res) => {
   try {
@@ -25,7 +49,8 @@ const updateChecklist = async (req, res) => {
     if (req.body.checklistDate) { data.checklistDate = new Date(req.body.checklistDate); parts.push(`Checklist Date: ${req.body.checklistDate}`); }
     if (req.body.checklistApprovalDate) { data.checklistApprovalDate = new Date(req.body.checklistApprovalDate); parts.push(`Approval Date: ${req.body.checklistApprovalDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'CHECKLIST_APPROVED', cha: { update: { data } }, statusHistory: { create: { status: 'CHECKLIST_APPROVED', remarks: parts.join(' | ') } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'CHECKLIST_APPROVED', cha: { update: { data } }, statusHistory: { create: { status: 'CHECKLIST_APPROVED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -42,7 +67,8 @@ const updateBOE = async (req, res) => {
     if (req.body.boeNo !== undefined) { data.boeNo = req.body.boeNo; parts.push(`BOE No: ${req.body.boeNo}`); }
     if (req.body.boeDate) { data.boeDate = new Date(req.body.boeDate); parts.push(`BOE Date: ${req.body.boeDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'BOE_FILED', cha: { update: { data } }, statusHistory: { create: { status: 'BOE_FILED', remarks: parts.join(' | ') } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'BOE_FILED', cha: { update: { data } }, statusHistory: { create: { status: 'BOE_FILED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -55,7 +81,8 @@ const updateDOCollection = async (req, res) => {
     const { id } = req.params;
     await ensureCHA(id);
     if (req.body.doCollectionDate) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DO_COLLECTED', cha: { update: { doCollectionDate: new Date(req.body.doCollectionDate) } }, statusHistory: { create: { status: 'DO_COLLECTED', remarks: `DO Collection Date: ${req.body.doCollectionDate}` } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DO_COLLECTED', cha: { update: { doCollectionDate: new Date(req.body.doCollectionDate) } }, statusHistory: { create: { status: 'DO_COLLECTED', remarks: `DO Collection Date: ${req.body.doCollectionDate}`, changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -68,7 +95,8 @@ const updateOOC = async (req, res) => {
     const { id } = req.params;
     await ensureCHA(id);
     if (req.body.oocDate) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'OOC_DONE', cha: { update: { oocDate: new Date(req.body.oocDate) } }, statusHistory: { create: { status: 'OOC_DONE', remarks: `OOC Date: ${req.body.oocDate}` } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'OOC_DONE', cha: { update: { oocDate: new Date(req.body.oocDate) } }, statusHistory: { create: { status: 'OOC_DONE', remarks: `OOC Date: ${req.body.oocDate}`, changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -81,7 +109,8 @@ const updateGatePass = async (req, res) => {
     const { id } = req.params;
     await ensureCHA(id);
     if (req.body.gatePassDate) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'GATE_PASS', cha: { update: { gatePassDate: new Date(req.body.gatePassDate) } }, statusHistory: { create: { status: 'GATE_PASS', remarks: `Gate Pass Date: ${req.body.gatePassDate}` } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'GATE_PASS', cha: { update: { gatePassDate: new Date(req.body.gatePassDate) } }, statusHistory: { create: { status: 'GATE_PASS', remarks: `Gate Pass Date: ${req.body.gatePassDate}`, changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -98,7 +127,8 @@ const updatePOD = async (req, res) => {
     if (req.body.deliveryDate) { data.deliveryDate = new Date(req.body.deliveryDate); parts.push(`Delivery Date: ${req.body.deliveryDate}`); }
     if (req.body.trackingNumber !== undefined) { data.trackingNumber = req.body.trackingNumber; parts.push(`Tracking No: ${req.body.trackingNumber}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DELIVERED', cha: { update: { data } }, statusHistory: { create: { status: 'DELIVERED', remarks: parts.join(' | ') } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DELIVERED', cha: { update: { data } }, statusHistory: { create: { status: 'DELIVERED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -115,7 +145,8 @@ const updateShippingBill = async (req, res) => {
     if (req.body.sbNo !== undefined) { data.sbNo = req.body.sbNo; parts.push(`SB No: ${req.body.sbNo}`); }
     if (req.body.sbDate) { data.sbDate = new Date(req.body.sbDate); parts.push(`SB Date: ${req.body.sbDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'SB_FILED', cha: { update: { data } }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | ') } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'SB_FILED', cha: { update: { data } }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -128,7 +159,8 @@ const updateLEO = async (req, res) => {
     const { id } = req.params;
     await ensureCHA(id);
     if (req.body.leoDate) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'LEO_DONE', cha: { update: { leoDate: new Date(req.body.leoDate) } }, statusHistory: { create: { status: 'LEO_DONE', remarks: `LEO Date: ${req.body.leoDate}` } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'LEO_DONE', cha: { update: { leoDate: new Date(req.body.leoDate) } }, statusHistory: { create: { status: 'LEO_DONE', remarks: `LEO Date: ${req.body.leoDate}`, changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -141,7 +173,8 @@ const updateHandOver = async (req, res) => {
     const { id } = req.params;
     await ensureCHA(id);
     if (req.body.handOverDate) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'HAND_OVER', cha: { update: { handOverDate: new Date(req.body.handOverDate) } }, statusHistory: { create: { status: 'HAND_OVER', remarks: `Hand Over Date: ${req.body.handOverDate}` } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'HAND_OVER', cha: { update: { handOverDate: new Date(req.body.handOverDate) } }, statusHistory: { create: { status: 'HAND_OVER', remarks: `Hand Over Date: ${req.body.handOverDate}`, changedBy: actorName(req) } } } });
+      await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });

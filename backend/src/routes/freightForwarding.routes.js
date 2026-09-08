@@ -50,6 +50,9 @@ router.get('/team-overview', freightController.getTeamOverview);
 // ─── DAILY REPORT (NEW, ADMIN ONLY) ───
 router.get('/daily-report', freightController.getDailyReport);
 
+// ─── EMPLOYEE PERFORMANCE (NEW, ADMIN ONLY) — Team Performance report ───
+router.get('/employee-performance', freightController.getEmployeePerformance);
+
 // ─── EMPLOYEE LIST (NEW) — for the Co-Handler dropdown, any logged-in user ───
 router.get('/employees', freightController.getEmployeeList);
 

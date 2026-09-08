@@ -14,6 +14,30 @@ async function getFullShipment(id) {
   });
 }
 
+// Same pattern as freightForwarding.controller.js / cha.controller.js —
+// resolves the logged-in user's display name for status-history
+// attribution.
+function actorName(req) {
+  return req.user?.name || req.user?.email || null;
+}
+
+// ─── ACCOUNTS "HANDLED BY" AUTO-STAMP (NEW) ───
+// The first time anyone in Accounts acts on a shipment, this stamps their
+// id+name onto the shipment permanently — powers the visible "Accounts:
+// <name>" badge and the Team Performance report. Only fires once per
+// shipment (checks accountsHandledById is still null), matching the same
+// pattern used for Customs in cha.controller.js.
+async function stampAccountsHandler(id, req) {
+  if (!req.user?.id) return;
+  const shipment = await prisma.shipment.findUnique({ where: { id }, select: { accountsHandledById: true } });
+  if (shipment && !shipment.accountsHandledById) {
+    await prisma.shipment.update({
+      where: { id },
+      data: { accountsHandledById: req.user.id, accountsHandledByName: actorName(req) }
+    });
+  }
+}
+
 // ─── UPDATE INVOICE ───
 // Auto-archive when invoice is complete (Number + Date + Sending Date all present)
 const updateInvoice = async (req, res) => {
@@ -41,11 +65,13 @@ const updateInvoice = async (req, res) => {
           statusHistory: { 
             create: { 
               status: 'INVOICE_GENERATED', 
-              remarks: parts.join(' | ') 
+              remarks: parts.join(' | '),
+              changedBy: actorName(req)
             } 
           } 
         } 
       });
+      await stampAccountsHandler(id, req);
     }
 
     // ─── CHECK IF INVOICE IS COMPLETE ───
@@ -69,7 +95,8 @@ const updateInvoice = async (req, res) => {
           statusHistory: {
             create: {
               status: 'COMPLETED',
-              remarks: 'Shipment auto-archived (Invoice complete - has Number, Date, and Sending Date)'
+              remarks: 'Shipment auto-archived (Invoice complete - has Number, Date, and Sending Date)',
+              changedBy: actorName(req)
             }
           }
         }
@@ -111,11 +138,13 @@ const updateInvoiceSending = async (req, res) => {
           statusHistory: { 
             create: { 
               status: 'INVOICE_SENT', 
-              remarks: `Invoice Sent Date: ${req.body.sendingDate}` 
+              remarks: `Invoice Sent Date: ${req.body.sendingDate}`,
+              changedBy: actorName(req)
             } 
           } 
         } 
       });
+      await stampAccountsHandler(id, req);
       
       // ─── CHECK IF INVOICE IS NOW COMPLETE ───
       // Get current accounts to check if all three fields are present
@@ -138,7 +167,8 @@ const updateInvoiceSending = async (req, res) => {
             statusHistory: {
               create: {
                 status: 'COMPLETED',
-                remarks: 'Shipment auto-archived (Invoice complete - has Number, Date, and Sending Date)'
+                remarks: 'Shipment auto-archived (Invoice complete - has Number, Date, and Sending Date)',
+                changedBy: actorName(req)
               }
             }
           }

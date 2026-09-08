@@ -5,10 +5,15 @@
 // still pending. Clicking a name opens that person's full dashboard;
 // clicking "View Pending" opens it pre-filtered to just their unfinished
 // shipments. Read-only page — no shipment data is modified here.
+//
+// ✅ TEAM ASSIGNMENT (NEW) — each card also lets an Admin set which of
+// the 3 workflow teams (Freight/Customs/Accounts) that employee belongs
+// to. This is what the Team Performance report groups by.
 
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
+import { useToast } from '../components/Toast'
 import { Users, ArrowUpRight, Loader2, RefreshCw, Package, CheckCircle2, Clock } from 'lucide-react'
 
 const AVATAR_GRADIENTS = [
@@ -20,7 +25,23 @@ const AVATAR_GRADIENTS = [
   'from-rose-500 to-pink-600',
 ]
 
+const TEAM_OPTIONS = [
+  { value: '', label: 'No team set' },
+  { value: 'FREIGHT', label: 'Freight' },
+  { value: 'CUSTOMS', label: 'Customs' },
+  { value: 'ACCOUNTS', label: 'Accounts' },
+]
+
+const TEAM_BADGE = {
+  FREIGHT: 'text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/40',
+  CUSTOMS: 'text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/40',
+  ACCOUNTS: 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40',
+}
+
 export default function TeamOverview() {
+  const { addToast } = useToast()
+  const queryClient = useQueryClient()
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['team-overview'],
     queryFn: async () => {
@@ -28,6 +49,15 @@ export default function TeamOverview() {
       return res.data?.data || []
     },
     staleTime: 60000,
+  })
+
+  const updateTeamMutation = useMutation({
+    mutationFn: ({ userId, team }) => api.put(`/freight/employees/${userId}/team`, { team: team || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['team-overview'] })
+      addToast('Team updated', 'success')
+    },
+    onError: () => addToast('Failed to update team', 'error')
   })
 
   const team = data || []
@@ -60,7 +90,7 @@ export default function TeamOverview() {
           <span className="text-xs text-[var(--text-secondary)]">{team.length} team members</span>
         </div>
         <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">Team</h1>
-        <p className="text-sm text-[var(--text-muted)] mt-1">Click a name for their full dashboard, or "View Pending" for just their unfinished shipments.</p>
+        <p className="text-sm text-[var(--text-muted)] mt-1">Click a name for their full dashboard, or "View Pending" for just their unfinished shipments. Use the team dropdown to assign each person to Freight, Customs, or Accounts — this powers the Team Performance report.</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -85,6 +115,20 @@ export default function TeamOverview() {
                 </div>
                 <ArrowUpRight size={15} className="text-[var(--text-muted)] group-hover:text-indigo-500 transition-colors flex-shrink-0" />
               </Link>
+
+              {/* ✅ TEAM ASSIGNMENT (NEW) */}
+              <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                <select
+                  value={member.team || ''}
+                  onChange={(e) => updateTeamMutation.mutate({ userId: member.id, team: e.target.value })}
+                  disabled={updateTeamMutation.isPending}
+                  className={`w-full text-[11px] font-semibold rounded-lg px-2.5 py-1.5 border border-[var(--border-color)] focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50 ${member.team ? TEAM_BADGE[member.team] : 'text-[var(--text-secondary)] bg-[var(--bg-secondary)]'}`}
+                >
+                  {TEAM_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
 
               <div className="flex items-center gap-2 mb-2">
                 <Package size={13} className="text-[var(--text-muted)]" />
