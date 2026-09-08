@@ -17,6 +17,7 @@ const ReferenceCodes = lazy(() => import('./pages/ReferenceCodes'))
 const EmployeeStats = lazy(() => import('./pages/EmployeeStats')) // ✅ NEW
 const TeamOverview = lazy(() => import('./pages/TeamOverview')) // ✅ NEW — Admin only
 const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard')) // ✅ NEW — Admin only
+const DailyReport = lazy(() => import('./pages/DailyReport')) // ✅ NEW — Admin only
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -164,6 +165,9 @@ function App() {
                 {/* ✅ Admin-only Team pages */}
                 <Route path="team" element={<AdminRoute user={user}><TeamOverview /></AdminRoute>} />
                 <Route path="team/:userId" element={<AdminRoute user={user}><EmployeeDashboard /></AdminRoute>} />
+
+                {/* ✅ Admin-only Daily Report page */}
+                <Route path="daily-report" element={<AdminRoute user={user}><DailyReport /></AdminRoute>} />
 
                 <Route path="freight" element={<FreightDashboard />} />
                 <Route path="cha" element={<CHADashboard />} />

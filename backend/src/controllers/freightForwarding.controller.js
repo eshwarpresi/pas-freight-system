@@ -1157,6 +1157,96 @@ const updateReferencePrefix = async (req, res) => {
   }
 };
 
+// ─── DAILY REPORT (NEW) ───
+// Builds a same-day summary: new shipments created, delivered, invoiced,
+// total status-change activity, and a per-employee breakdown for all
+// three counts — all scoped to one IST calendar day. Exported as a plain
+// function (buildDailyReport) separate from the Express handler so the
+// scheduled email job in server.js can reuse the exact same logic the
+// in-app report page uses — the numbers always agree wherever they show up.
+const IST_OFFSET_MS_REPORT = 5.5 * 60 * 60 * 1000;
+
+function getISTDayBounds(dateStr) {
+  const istDateStr = dateStr || new Date(Date.now() + IST_OFFSET_MS_REPORT).toISOString().split('T')[0];
+  const start = new Date(`${istDateStr}T00:00:00+05:30`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { istDateStr, start, end };
+}
+
+async function buildDailyReport(dateStr) {
+  const { istDateStr, start, end } = getISTDayBounds(dateStr);
+
+  // New shipments created this day
+  const newShipments = await prisma.shipment.findMany({
+    where: { isDeleted: false, createdAt: { gte: start, lt: end } },
+    select: { id: true, refNo: true, shipmentType: true, createdByName: true }
+  });
+
+  // Delivered / Invoiced this day, detected via status history so it
+  // reflects when the status actually changed, not when the shipment
+  // was created.
+  const deliveredHistory = await prisma.statusHistory.findMany({
+    where: { status: { in: ['DELIVERED', 'HAND_OVER'] }, createdAt: { gte: start, lt: end } },
+    select: { shipmentId: true }
+  });
+  const invoicedHistory = await prisma.statusHistory.findMany({
+    where: { status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] }, createdAt: { gte: start, lt: end } },
+    select: { shipmentId: true }
+  });
+  const statusChangesCount = await prisma.statusHistory.count({
+    where: { createdAt: { gte: start, lt: end } }
+  });
+
+  const deliveredIds = [...new Set(deliveredHistory.map((h) => h.shipmentId))];
+  const invoicedIds = [...new Set(invoicedHistory.map((h) => h.shipmentId))];
+
+  const [deliveredShipments, invoicedShipments] = await Promise.all([
+    deliveredIds.length > 0
+      ? prisma.shipment.findMany({ where: { id: { in: deliveredIds } }, select: { id: true, refNo: true, createdByName: true } })
+      : [],
+    invoicedIds.length > 0
+      ? prisma.shipment.findMany({ where: { id: { in: invoicedIds } }, select: { id: true, refNo: true, createdByName: true } })
+      : []
+  ]);
+
+  // Per-employee breakdown across all three counts for the day
+  const employeeMap = {};
+  const bump = (name, field) => {
+    const key = name || 'Unknown';
+    if (!employeeMap[key]) employeeMap[key] = { name: key, created: 0, delivered: 0, invoiced: 0 };
+    employeeMap[key][field] += 1;
+  };
+  newShipments.forEach((s) => bump(s.createdByName, 'created'));
+  deliveredShipments.forEach((s) => bump(s.createdByName, 'delivered'));
+  invoicedShipments.forEach((s) => bump(s.createdByName, 'invoiced'));
+
+  const employeeBreakdown = Object.values(employeeMap).sort((a, b) => b.created - a.created);
+
+  return {
+    date: istDateStr,
+    newShipments: { count: newShipments.length, items: newShipments },
+    delivered: { count: deliveredShipments.length, items: deliveredShipments },
+    invoiced: { count: invoicedShipments.length, items: invoicedShipments },
+    statusChangesCount,
+    employeeBreakdown
+  };
+}
+
+// ─── GET DAILY REPORT (NEW, ADMIN ONLY) ───
+const getDailyReport = async (req, res) => {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ status: 'error', message: 'Admin access required' });
+    }
+    const { date } = req.query;
+    const report = await buildDailyReport(date);
+    res.json({ status: 'success', data: report });
+  } catch (error) {
+    console.error('Error getting daily report:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get daily report' });
+  }
+};
+
 // ─── GET EMPLOYEE LIST (NEW) ───
 // Lightweight, non-admin endpoint — just id/name/email for the Co-Handler
 // dropdown when creating a shipment. Any logged-in user can call this;
@@ -1351,6 +1441,8 @@ module.exports = {
   generateReferenceNumber, // ✅ NEW
   getTeamOverview, // ✅ NEW
   getEmployeeList, // ✅ NEW
+  buildDailyReport, // ✅ NEW
+  getDailyReport, // ✅ NEW
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 

@@ -6,7 +6,7 @@ import {
   LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
   BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink,
-  Layers, Users, Shield
+  Layers, Users, Shield, BarChart2
 } from 'lucide-react'
 import api from '../lib/api'
 import { useSocket } from '../App'
@@ -148,6 +148,7 @@ export default function MainLayout({ user }) {
   // anyone whose role isn't ADMIN, not just visually disabled.
   const adminItems = [
     { path: '/team', icon: Users, label: 'Team', color: 'text-indigo-500' },
+    { path: '/daily-report', icon: BarChart2, label: 'Daily Report', color: 'text-emerald-500' },
   ]
 
   const dashboardLinks = [

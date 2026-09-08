@@ -120,4 +120,40 @@ server.listen(PORT, '0.0.0.0', () => {
 
     console.log('🔄 Keep-alive ping enabled (every 10 minutes)');
   }
+
+  // ─── DAILY REPORT EMAIL SCHEDULER (NEW) ───
+  // Checks every minute; when it's 18:30 IST and today's report hasn't
+  // already gone out, builds and emails it. No cron dependency needed —
+  // mirrors the keep-alive setInterval pattern above. lastSentDateIST
+  // guards against firing more than once in the same day (the check
+  // fires every minute, so without this it would only actually match
+  // the 18:30 minute once anyway — but this also protects against a
+  // server restart landing exactly in that minute twice).
+  if (process.env.NODE_ENV === 'production') {
+    const { buildDailyReport } = require('./src/controllers/freightForwarding.controller');
+    const { sendDailyReportEmail } = require('./src/utils/emailService');
+    const DAILY_REPORT_RECIPIENTS = ['shivu@pasfreight.com', 'prathima@pasfreight.com', 'priya.c@pasfreight.com'];
+    let lastSentDateIST = null;
+
+    setInterval(async () => {
+      try {
+        const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+        const istNow = new Date(Date.now() + IST_OFFSET_MS);
+        const istDateStr = istNow.toISOString().split('T')[0];
+        const hh = istNow.getUTCHours(); // already shifted to IST wall-clock above
+        const mm = istNow.getUTCMinutes();
+
+        if (hh === 18 && mm === 30 && lastSentDateIST !== istDateStr) {
+          lastSentDateIST = istDateStr;
+          console.log('📧 [DAILY REPORT] Building report for', istDateStr);
+          const report = await buildDailyReport(istDateStr);
+          await sendDailyReportEmail(report, DAILY_REPORT_RECIPIENTS);
+        }
+      } catch (err) {
+        console.error('[DAILY REPORT] Failed:', err.message);
+      }
+    }, 60 * 1000); // check every minute
+
+    console.log('🗓️ Daily report scheduler enabled (18:30 IST)');
+  }
 });
