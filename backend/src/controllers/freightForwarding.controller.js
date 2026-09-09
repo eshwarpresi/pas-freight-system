@@ -1069,13 +1069,12 @@ const deleteReferenceInitial = async (req, res) => {
 
 // ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
 // Atomically bumps the ONE shared global counter and returns e.g.
-// "RE2602-PC". Numbers ending in 3 or 7 are considered unlucky and skipped
-// automatically — if incrementing lands on one, it just increments again
-// until it finds a number that doesn't end in 3 or 7. Each increment is
-// its own atomic UPDATE, so even with 50+ employees generating at once,
-// nobody ever gets a duplicate — we just occasionally "use up" a couple of
-// numbers to skip past the unlucky ones, which is expected and harmless
-// (gaps are fine). Initials tag who generated the number.
+// "RE260114-PC". The counter itself keeps incrementing exactly as before
+// (a single raw integer, unlucky last-digit skip unchanged) — only the
+// DISPLAYED number is reformatted below, as YEAR (26) + a 4-digit
+// zero-padded sequence, so the sequence can never visually overflow into
+// the year digits the way plain "2601...2699,2700,2701..." did (2714
+// used to read as "year 27, seq 14" instead of "year 26, seq 114").
 const generateReferenceNumber = async (req, res) => {
   try {
     const { prefix, initials } = req.body;
@@ -1111,8 +1110,19 @@ const generateReferenceNumber = async (req, res) => {
       // else: this number ends in 3 or 7 — loop again, incrementing past it
     }
 
-    const refNo = `${code}${counterValue}-${initialsCode}`;
-    res.json({ status: 'success', data: { refNo, number: counterValue, prefix: code, initials: initialsCode } });
+    // ✅ FIX — format as YEAR_BASE's year digits + 4-digit zero-padded
+    // sequence. YEAR_BASE (2600) is the counter value the "26" year block
+    // started counting up from, so sequence = counterValue - YEAR_BASE
+    // continues exactly where the old raw numbering left off (e.g. raw
+    // 2714 -> sequence 114 -> displayed "260114"), it just never bleeds
+    // into the year digits anymore.
+    const YEAR_BASE = 2600;
+    const yearDigits = String(Math.floor(YEAR_BASE / 100));
+    const sequence = counterValue - YEAR_BASE;
+    const formattedNumber = `${yearDigits}${String(sequence).padStart(4, '0')}`;
+
+    const refNo = `${code}${formattedNumber}-${initialsCode}`;
+    res.json({ status: 'success', data: { refNo, number: formattedNumber, prefix: code, initials: initialsCode } });
   } catch (error) {
     console.error('Error generating reference number:', error);
     if (error.code === 'P2025') {

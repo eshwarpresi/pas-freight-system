@@ -88,6 +88,19 @@ function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }
   return (<div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label><div className="flex gap-2"><div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div><div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div></div></div>)
 }
 
+// ─── HANDLED BY BADGES (NEW) ───
+// Shows which team member first touched this shipment on each of the 3
+// workflow teams — Freight (creator), Customs, Accounts. A blank ("—")
+// badge means nobody on that team has acted on this shipment yet, which
+// is the point: it's visible at a glance without opening a report.
+function HandledByBadge({ label, name, colorClass }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${colorClass}`}>
+      {label}: {name || '—'}
+    </span>
+  )
+}
+
 export default function ShipmentDetail() {
   const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -259,6 +272,14 @@ export default function ShipmentDetail() {
                     <Zap size={10} /> {liveEditBy} is editing...
                   </span>
                 )}
+              </div>
+              {/* ✅ HANDLED BY (NEW) — Freight / Customs / Accounts, auto-filled
+                  the moment each team first acts on this shipment. A blank
+                  "—" badge means nobody on that team has touched it yet. */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <HandledByBadge label="Freight" name={shipment.createdByName} colorClass="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" />
+                <HandledByBadge label="Customs" name={shipment.customsHandledByName} colorClass="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" />
+                <HandledByBadge label="Accounts" name={shipment.accountsHandledByName} colorClass="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" />
               </div>
               <p className="text-sm text-[var(--text-secondary)] mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
             </div>
