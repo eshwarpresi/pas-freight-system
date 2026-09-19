@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Package, Menu, X, 
   Box, Command,
-  LogOut, User, ChevronDown, Moon, Sun, Bell, CheckCheck,
+  LogOut, User, ChevronDown, ChevronLeft, ChevronRight, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
   BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink,
   Layers, Users, Shield, BarChart2, TrendingUp
@@ -27,6 +27,17 @@ export default function MainLayout({ user }) {
     return localStorage.getItem('pas_dark_mode') === 'true'
   })
 
+  // ✅ SIDEBAR COLLAPSE (NEW) — desktop-only collapse to an icon-only rail,
+  // freeing up width for the dashboard table. Persisted so it stays how
+  // the person left it across reloads. Mobile keeps its existing
+  // hamburger/overlay behavior untouched — this only affects lg+ screens.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('pas_sidebar_collapsed') === 'true'
+  })
+  useEffect(() => {
+    localStorage.setItem('pas_sidebar_collapsed', sidebarCollapsed)
+  }, [sidebarCollapsed])
+
   const isAdmin = user?.role === 'ADMIN'
 
   // ✅ Notification sound (FIXED)
@@ -46,8 +57,6 @@ export default function MainLayout({ user }) {
   }
 
   useEffect(() => {
-    // Unlocks audio playback on the very first click/tap anywhere on the
-    // page, so by the time a real notification arrives, sound is ready.
     const unlock = () => {
       const ctx = getAudioCtx()
       if (ctx.state === 'suspended') ctx.resume().catch(() => {})
@@ -128,11 +137,6 @@ export default function MainLayout({ user }) {
 
   const unreadCount = notifications.filter(n => !n.isRead).length
 
-  // ✅ Admin sidebar looks exactly like the original setup — one
-  // "All Shipments" link showing everything by default, since the index
-  // route itself already renders full data for admins (see App.jsx).
-  // Everyone else gets "My Shipments" as their default, with "Overview"
-  // as a separate link if they want to switch to the full company view.
   const navItems = isAdmin
     ? [
         { path: '/', icon: LayoutDashboard, label: 'All Shipments', shortcut: 'A' },
@@ -144,14 +148,9 @@ export default function MainLayout({ user }) {
         { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
       ]
 
-  // ✅ Admin-only section — completely hidden from the sidebar for
-  // anyone whose role isn't ADMIN, not just visually disabled.
   const adminItems = [
     { path: '/team', icon: Users, label: 'Team', color: 'text-indigo-500' },
     { path: '/daily-report', icon: BarChart2, label: 'Daily Report', color: 'text-emerald-500' },
-    // ✅ NEW — Team Performance: per-employee Created/Co-handled/Touched
-    // breakdown across Freight/Customs/Accounts, with last-activity
-    // flagging for anyone gone quiet.
     { path: '/team-performance', icon: TrendingUp, label: 'Team Performance', color: 'text-rose-500' },
   ]
 
@@ -168,7 +167,6 @@ export default function MainLayout({ user }) {
     { path: '/employee-stats', icon: Users, label: 'Employee Stats', color: 'text-cyan-500' },
   ]
 
-  // ✅ NEW — Reference code group dashboards (RL/PP/SP/JD)
   const referenceGroupLinks = [
     { path: '/rl', icon: Hash, label: 'RL (RLI / RLE)', color: 'text-rose-500' },
     { path: '/pp', icon: Hash, label: 'PP (PPI / PPE)', color: 'text-amber-500' },
@@ -182,9 +180,6 @@ export default function MainLayout({ user }) {
     { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan', color: 'text-orange-500' },
   ]
 
-  // ─── EXTERNAL TOOLS ───
-  // Your other in-house apps. These open in a new tab — not internal
-  // routes, so they use <a> instead of <Link>.
   const toolLinks = [
     { url: 'https://pasfreight-mailer.onrender.com', icon: Mail, label: 'Bulk Emailing', color: 'text-sky-500' },
     { url: 'https://pas-freight-quotation.vercel.app/', icon: FileSpreadsheet, label: 'Quotation Generator', color: 'text-amber-500' },
@@ -217,6 +212,30 @@ export default function MainLayout({ user }) {
     return `${Math.floor(seconds / 86400)}d ago`
   }
 
+  // ✅ Sidebar width now depends on collapsed state (desktop only — the
+  // mobile overlay behavior via `sidebarOpen`/translate-x is unchanged).
+  const sidebarWidthClass = sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[260px]'
+  const mainMarginClass = sidebarCollapsed ? 'lg:ml-[76px]' : 'lg:ml-[260px]'
+
+  // Renders one nav link, collapsing to icon-only (with a tooltip via
+  // `title`) when the sidebar is collapsed on desktop.
+  const renderNavLink = (item, extraClass = '') => {
+    const Icon = item.icon
+    const isActive = location.pathname === item.path || (item.path === '/team' && location.pathname.startsWith('/team/'))
+    return (
+      <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)} title={sidebarCollapsed ? item.label : undefined}
+        className={`group flex items-center ${sidebarCollapsed ? 'lg:justify-center' : 'justify-between'} px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+          isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
+        } ${extraClass}`}>
+        <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:gap-0' : ''}`}>
+          <Icon size={17} className={item.color} />
+          <span className={sidebarCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
+        </div>
+        {isActive && <span className={`w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)] ${sidebarCollapsed ? 'lg:hidden' : ''}`} />}
+      </Link>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-[var(--bg-secondary)]">
       <LogisticsBackground />
@@ -224,22 +243,33 @@ export default function MainLayout({ user }) {
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden transition-all" onClick={() => setSidebarOpen(false)} />
       )}
 
-      <aside className={`fixed top-0 left-0 h-full w-[260px] border-r z-50 transform transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:translate-x-0 bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed top-0 left-0 h-full w-[260px] ${sidebarWidthClass} border-r z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:translate-x-0 bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex-shrink-0 h-16 flex items-center justify-between px-5 border-b border-[var(--border-color)]">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center"><Box size={16} className="text-white" /></div>
-            <div className="leading-tight">
+          <Link to="/" className={`flex items-center gap-2.5 ${sidebarCollapsed ? 'lg:justify-center lg:w-full' : ''}`}>
+            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center flex-shrink-0"><Box size={16} className="text-white" /></div>
+            <div className={`leading-tight ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
               <h1 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">PAS Freight</h1>
               <p className="text-[10px] text-[var(--text-muted)] font-medium">Services Pvt Ltd</p>
             </div>
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"><X size={16} className="text-[var(--text-secondary)]" /></button>
         </div>
+
+        {/* ✅ COLLAPSE TOGGLE (NEW) — desktop only. Floats on the sidebar's
+            right edge so it's reachable whether the rail is expanded or
+            collapsed. */}
+        <button
+          onClick={() => setSidebarCollapsed(v => !v)}
+          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-md items-center justify-center text-[var(--text-secondary)] hover:text-indigo-600 hover:border-indigo-300 transition-colors z-10"
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
         
-        <div className="flex-shrink-0 px-4 py-3 border-b border-[var(--border-color)]">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md">{userInitial}</div>
-            <div className="flex-1 min-w-0">
+        <div className={`flex-shrink-0 px-4 py-3 border-b border-[var(--border-color)] ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
+          <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}>
+            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md flex-shrink-0">{userInitial}</div>
+            <div className={`flex-1 min-w-0 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
               <p className="text-xs font-semibold text-[var(--text-primary)] truncate flex items-center gap-1.5">
                 {displayName}
                 {isAdmin && <Shield size={11} className="text-indigo-500 flex-shrink-0" title="Admin" />}
@@ -249,117 +279,48 @@ export default function MainLayout({ user }) {
           </div>
         </div>
 
-        <nav className="flex-1 min-h-0 overflow-y-auto p-3 space-y-0.5">
-          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest">Overview</p>
-          {navItems.map((item) => {
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
-            return (
-              <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
-                className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
-                }`}>
-                <div className="flex items-center gap-3"><Icon size={17} /><span>{item.label}</span></div>
-                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
-              </Link>
-            )
-          })}
+        <nav className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-0.5 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
+          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Overview</p>
+          {navItems.map((item) => renderNavLink(item))}
 
           {isAdmin && (
             <>
-              <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Admin</p>
-              {adminItems.map((item) => {
-                const Icon = item.icon
-                const isActive = location.pathname === item.path || location.pathname.startsWith('/team/')
-                return (
-                  <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
-                    className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
-                    }`}>
-                    <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
-                    {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
-                  </Link>
-                )
-              })}
+              <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Admin</p>
+              {adminItems.map((item) => renderNavLink(item))}
             </>
           )}
 
-          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Modules</p>
-          {dashboardLinks.map((item) => {
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
-            return (
-              <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
-                className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
-                }`}>
-                <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
-                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
-              </Link>
-            )
-          })}
+          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Modules</p>
+          {dashboardLinks.map((item) => renderNavLink(item))}
 
-          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Reference Groups</p>
-          {referenceGroupLinks.map((item) => {
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
-            return (
-              <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
-                className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
-                }`}>
-                <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
-                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
-              </Link>
-            )
-          })}
+          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Reference Groups</p>
+          {referenceGroupLinks.map((item) => renderNavLink(item))}
 
-          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Insights</p>
-          {insightLinks.map((item) => {
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
-            return (
-              <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
-                className={`group flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
-                }`}>
-                <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
-                {isActive && <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)]" />}
-              </Link>
-            )
-          })}
+          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Insights</p>
+          {insightLinks.map((item) => renderNavLink(item))}
 
-          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Actions</p>
-          {actionLinks.map((item) => {
-            const Icon = item.icon
-            const isActive = location.pathname === item.path
-            return (
-              <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)}
-                className={`group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]`}>
-                <Icon size={17} className={item.color} /><span>{item.label}</span>
-              </Link>
-            )
-          })}
+          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Actions</p>
+          {actionLinks.map((item) => renderNavLink(item))}
 
-          <p className="px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4">Tools</p>
+          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Tools</p>
           {toolLinks.map((item) => {
             const Icon = item.icon
             return (
-              <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer"
-                className="group flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]">
-                <div className="flex items-center gap-3"><Icon size={17} className={item.color} /><span>{item.label}</span></div>
-                <ExternalLink size={13} className="text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" />
+              <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer" title={sidebarCollapsed ? item.label : undefined}
+                className={`group flex items-center ${sidebarCollapsed ? 'lg:justify-center' : 'justify-between'} gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]`}>
+                <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:gap-0' : ''}`}><Icon size={17} className={item.color} /><span className={sidebarCollapsed ? 'lg:hidden' : ''}>{item.label}</span></div>
+                <ExternalLink size={13} className={`text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity ${sidebarCollapsed ? 'lg:hidden' : ''}`} />
               </a>
             )
           })}
         </nav>
 
         <div className="flex-shrink-0 p-4 border-t border-[var(--border-color)]">
-          <div className="flex items-center gap-2 px-1"><span className="text-[10px] text-[var(--text-muted)] font-medium">© 2026 PAS Freight</span></div>
+          <div className={`flex items-center gap-2 px-1 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}><span className={`text-[10px] text-[var(--text-muted)] font-medium ${sidebarCollapsed ? 'lg:hidden' : ''}`}>© 2026 PAS Freight</span></div>
         </div>
       </aside>
 
-      <div className="relative z-10 lg:ml-[260px]">
+      <div className={`relative z-10 ${mainMarginClass}`}>
         <header className="hidden lg:flex sticky top-0 z-30 bg-[var(--glass-bg-strong)] backdrop-blur-lg border-b border-[var(--border-color)] px-6 py-3 items-center justify-end gap-3">
           <div className="relative" ref={notifRef}>
             <button onClick={(e) => { e.stopPropagation(); setNotifOpen(!notifOpen) }} className="relative p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors">
@@ -428,7 +389,10 @@ export default function MainLayout({ user }) {
           <button onClick={handleLogout} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><LogOut size={18} className="text-red-500" /></button>
         </header>
 
-        <main className="p-6 md:p-8 lg:p-10 max-w-[1400px]"><Outlet /></main>
+        {/* ✅ Width cap removed (was max-w-[1400px]) — the dashboard now uses
+            the full width freed up by the sidebar, especially noticeable
+            once collapsed. */}
+        <main className="p-4 sm:p-6 lg:p-8 w-full"><Outlet /></main>
       </div>
     </div>
   )

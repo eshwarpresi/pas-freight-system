@@ -418,12 +418,6 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const overallTotal = totalStats || totalCount
 
   // ─── EXPORT ───
-  // Respects the page's current scope (mine / a specific employee / the
-  // whole company) plus whatever search and status filters are active —
-  // the download always matches what's actually on screen, not the full
-  // unfiltered dataset. shipmentType and archived/active aren't sent since
-  // the backend export always includes both active and archived shipments
-  // together in one file.
   const handleExport = async () => {
     setExporting(true)
     try {
@@ -453,7 +447,6 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   // ─── EXPORT FOR CLIENT (NEW) ───
-  // Only the selected shipments — client-safe columns, no internal data.
   const [exportingClient, setExportingClient] = useState(false)
   const handleExportForClient = async () => {
     if (selected.length === 0) return
@@ -556,17 +549,10 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   })
 
   // ─── ANALYTICS ───
-  // Sourced from the full-dataset stats endpoint (fullStats) instead of the
-  // current page's `shipments` array, so these numbers reflect every
-  // matching shipment — not just the up-to-perPage rows on screen.
   const analytics = useMemo(() => {
     const total = fullStats?.total ?? overallTotal
     const delivered = fullStats?.delivered ?? 0
     const invoiced = fullStats?.invoiced ?? 0
-    // "In Progress" = everything not yet delivered and not yet invoiced.
-    // This is a deliberately simple definition (matches the card's own
-    // "Enquiry to Customs" subtitle) rather than re-deriving every
-    // intermediate status client-side.
     const pendingTotal = Math.max(0, total - delivered - invoiced)
     const deliveryRate = fullStats?.deliveryRate ?? (total > 0 ? Math.round((delivered / total) * 100) : 0)
 
@@ -600,9 +586,6 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const getImportExportBadge = (v) => v==='Import'?'bg-gradient-to-r from-violet-500 to-purple-500 text-white ring-purple-400':v==='Export'?'bg-gradient-to-r from-orange-500 to-amber-500 text-white ring-amber-400':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-600 ring-gray-300'
 
-  // Same palette as the per-shipment Stage field on ShipmentDetail, so a
-  // shipment's stage looks the same whether you're viewing it in the list
-  // or on its detail page.
   const getStageBadge = (stage) => {
     const b = {
       'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800',
@@ -624,7 +607,6 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   
-  // ─── STAT CARDS ───
   const statCards = [
     { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments', onClick: showAllShipments, active: !todayOnly && !customDate && !inProgressOnly && !showArchived && !showBin && !search && !statusFilter },
     { 
@@ -660,14 +642,10 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   const currentPath = window.location.pathname
-  // The module quick-switch (All / FF Only / Freight / CHA...) intentionally
-  // isn't shown in personal or single-employee scope — those sub-pages are
-  // company-wide views and would silently drop the "mine"/employee filter,
-  // which would be confusing rather than helpful here.
   const showModuleSwitcher = !mineOnly && !targetUserId && !referenceGroup
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="w-full space-y-5 animate-fade-in">
       {liveNotification && (
         <div className="fixed top-4 right-4 z-50 animate-slide-down">
           <div className={`px-4 py-3 rounded-xl shadow-2xl border flex items-center gap-3 text-sm font-medium ${
@@ -682,9 +660,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-[11px] font-semibold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-0.5 rounded-md">Shipments</span>
             <span className="text-xs text-[var(--text-secondary)] font-medium">{overallTotal} total</span>
             {binCount > 0 && !showBin && !mineOnly && !targetUserId && (
@@ -699,24 +677,24 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
             )}
             <OnlineUsers />
           </div>
-          <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">{getTitle()}</h1>
+          <h1 className="text-2xl sm:text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight truncate">{getTitle()}</h1>
         </div>
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {showModuleSwitcher && (
-            <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
-              <Link to="/overview" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/overview' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>All</Link>
-              <Link to="/ff-only" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/ff-only' ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileText size={12}/>FF Only</Link>
-              <Link to="/freight" className={`px-3 py-2 rounded-md text-xs font-semibold transition-all ${currentPath === '/freight' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Freight</Link>
-              <Link to="/cha" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/cha' ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</Link>
-              <Link to="/transport" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/transport' ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</Link>
-              <Link to="/do-release" className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all ${currentPath === '/do-release' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><ClipboardList size={12}/>DO Release</Link>
+            <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)] overflow-x-auto max-w-full">
+              <Link to="/overview" className={`px-2.5 py-2 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${currentPath === '/overview' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>All</Link>
+              <Link to="/ff-only" className={`px-2.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap ${currentPath === '/ff-only' ? 'bg-white dark:bg-slate-700 text-purple-700 dark:text-purple-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileText size={12}/>FF Only</Link>
+              <Link to="/freight" className={`px-2.5 py-2 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${currentPath === '/freight' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Freight</Link>
+              <Link to="/cha" className={`px-2.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap ${currentPath === '/cha' ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><FileCheck size={12}/>CHA</Link>
+              <Link to="/transport" className={`px-2.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap ${currentPath === '/transport' ? 'bg-white dark:bg-slate-700 text-sky-700 dark:text-sky-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Truck size={12}/>Transport</Link>
+              <Link to="/do-release" className={`px-2.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1 transition-all whitespace-nowrap ${currentPath === '/do-release' ? 'bg-white dark:bg-slate-700 text-teal-700 dark:text-teal-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}><ClipboardList size={12}/>DO Release</Link>
             </div>
           )}
           <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)]">
-            <button onClick={()=>toggleView('active')} className={`px-3.5 py-2 rounded-md text-xs font-semibold transition-all ${!showArchived && !showBin ? 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Active</button>
-            <button onClick={()=>toggleView('archived')} className={`px-3.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${showArchived ? 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Archive size={13}/>Archive</button>
+            <button onClick={()=>toggleView('active')} className={`px-3 py-2 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${!showArchived && !showBin ? 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm' : 'text-[var(--text-secondary)]'}`}>Active</button>
+            <button onClick={()=>toggleView('archived')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${showArchived ? 'bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-200 shadow-sm' : 'text-[var(--text-secondary)]'}`}><Archive size={13}/>Archive</button>
             {!mineOnly && !targetUserId && (
-              <button onClick={()=>toggleView('bin')} className={`px-3.5 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${showBin ? 'bg-white dark:bg-slate-700 text-red-700 dark:text-red-400 shadow-sm' : 'text-[var(--text-secondary)]'}`}>
+              <button onClick={()=>toggleView('bin')} className={`px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${showBin ? 'bg-white dark:bg-slate-700 text-red-700 dark:text-red-400 shadow-sm' : 'text-[var(--text-secondary)]'}`}>
                 <Trash2 size={13} className={showBin ? 'text-red-500' : ''} />
                 Bin
                 {binCount > 0 && (
@@ -725,11 +703,10 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
               </button>
             )}
           </div>
-          <Link to="/create" className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 text-xs font-semibold shadow-lg shadow-indigo-200 hover-lift"><Plus size={15}/> New Shipment</Link>
+          <Link to="/create" className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 text-xs font-semibold shadow-lg shadow-indigo-200 hover-lift whitespace-nowrap"><Plus size={15}/> New Shipment</Link>
         </div>
       </div>
 
-      {/* ── QUICK TOOLS — only on the personal landing page, not on admin/employee-scoped views ── */}
       {!targetUserId && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {QUICK_TOOLS.map((tool) => {
@@ -759,21 +736,21 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
       {!showBin && (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {statCards.map((stat,i)=>{
               const Icon=stat.icon;
               return (
-                <div key={i} onClick={stat.onClick} className={`relative glass rounded-xl p-4 border hover-lift group animate-scale-in ${stat.onClick ? 'cursor-pointer' : ''} ${stat.active ? 'border-rose-400 dark:border-rose-500 ring-2 ring-rose-300/50' : 'border-[var(--glass-border)]'}`} style={{animationDelay: `${i*100}ms`}}>
+                <div key={i} onClick={stat.onClick} className={`relative glass rounded-xl p-3.5 border hover-lift group animate-scale-in ${stat.onClick ? 'cursor-pointer' : ''} ${stat.active ? 'border-rose-400 dark:border-rose-500 ring-2 ring-rose-300/50' : 'border-[var(--glass-border)]'}`} style={{animationDelay: `${i*100}ms`}}>
                   <div className={`absolute top-0 right-0 w-20 h-20 bg-gradient-to-br ${stat.gradient} opacity-10 rounded-bl-full group-hover:opacity-20 transition-opacity`}/>
                   <div className="relative">
                     <div className="flex items-center justify-between mb-2">
-                      <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
-                        <Icon size={18} className="text-white"/>
+                      <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
+                        <Icon size={17} className="text-white"/>
                       </div>
                     </div>
-                    <p className="text-2xl font-bold text-[var(--text-primary)]">{stat.value.toLocaleString()}</p>
-                    <p className="text-[11px] text-[var(--text-secondary)] mt-0.5 font-semibold">{stat.label}</p>
-                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{stat.desc}</p>
+                    <p className="text-xl sm:text-2xl font-bold text-[var(--text-primary)]">{stat.value.toLocaleString()}</p>
+                    <p className="text-[10px] sm:text-[11px] text-[var(--text-secondary)] mt-0.5 font-semibold truncate">{stat.label}</p>
+                    <p className="text-[9px] sm:text-[10px] text-[var(--text-muted)] mt-0.5 truncate">{stat.desc}</p>
                   </div>
                 </div>
               )
@@ -796,32 +773,32 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         </>
       )}
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
-        <div className="relative flex-1 w-full">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+        <div className="relative flex-1 w-full min-w-0">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400"/>
           <input type="text" placeholder={showBin ? "Search in bin..." : isDOReleaseFilter ? "Search by Ref No, MAWB, Customer..." : isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"/>
           {search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={14}/></button>}
         </div>
         {!showBin && (
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400 pointer-events-none"/>
             <input
               type="date"
               value={customDate}
               onChange={e=>updateCustomDate(e.target.value)}
-              className="pl-8 pr-3 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)]"
+              className="w-full sm:w-auto pl-8 pr-3 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)]"
               title="View shipments created on a specific date"
             />
           </div>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {hasFilters && (
-            <button onClick={clearAllFilters} className="px-3 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"><RotateCcw size={14} /> Clear</button>
+            <button onClick={clearAllFilters} className="px-3 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 whitespace-nowrap"><RotateCcw size={14} /> Clear</button>
           )}
           {!showBin && (
             <>
-              <button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border transition-all ${showFilters?'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400':'glass border-[var(--border-color)] text-[var(--text-secondary)]'}`}><SlidersHorizontal size={15}/></button>
-              <button onClick={handleExport} disabled={exporting} className="px-3.5 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 disabled:opacity-50">{exporting?<RefreshCw size={14} className="animate-spin"/>:<Download size={14}/>}{exporting?'Exporting...':'Export'}</button>
+              <button onClick={()=>setShowFilters(!showFilters)} className={`p-2.5 rounded-lg border transition-all flex-shrink-0 ${showFilters?'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400':'glass border-[var(--border-color)] text-[var(--text-secondary)]'}`}><SlidersHorizontal size={15}/></button>
+              <button onClick={handleExport} disabled={exporting} className="px-3.5 py-2.5 glass border border-[var(--border-color)] rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 disabled:opacity-50 whitespace-nowrap">{exporting?<RefreshCw size={14} className="animate-spin"/>:<Download size={14}/>}{exporting?'Exporting...':'Export'}</button>
             </>
           )}
         </div>
@@ -830,27 +807,27 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       {!showBin && showFilters && (
         <div className="flex flex-wrap gap-2 p-3.5 glass rounded-xl border border-[var(--border-color)] animate-slide-down">
           <span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center mr-1"><Filter size={11} className="mr-1"/>Status</span>
-          {quickFilters.map(f=>{const I=f.i;const a=statusFilter===f.v;return <button key={f.v} onClick={()=>updateStatus(a?'':f.v)} className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all ${a?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'glass text-[var(--text-secondary)]'}`}><I size={12}/>{f.l}{a&&<X size={11}/>}</button>})}
+          {quickFilters.map(f=>{const I=f.i;const a=statusFilter===f.v;return <button key={f.v} onClick={()=>updateStatus(a?'':f.v)} className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${a?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'glass text-[var(--text-secondary)]'}`}><I size={12}/>{f.l}{a&&<X size={11}/>}</button>})}
         </div>
       )}
 
       {selected.length > 0 && (
-        <div className="glass border border-indigo-300/50 dark:border-indigo-700/50 rounded-xl px-4 py-3 flex items-center justify-between animate-slide-down">
+        <div className="glass border border-indigo-300/50 dark:border-indigo-700/50 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-2 animate-slide-down">
           <span className="text-sm text-indigo-700 dark:text-indigo-300 font-medium">{selected.length} selected</span>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {showBin ? (
               <>
-                <button onClick={() => bulkRestoreMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                <button onClick={() => bulkRestoreMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg whitespace-nowrap">
                   <RotateIcon size={13}/> Restore Selected
                 </button>
               </>
             ) : (
               <>
-                <button onClick={handleExportForClient} disabled={exportingClient} className="px-3.5 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg disabled:opacity-50">
+                <button onClick={handleExportForClient} disabled={exportingClient} className="px-3.5 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg disabled:opacity-50 whitespace-nowrap">
                   {exportingClient ? <RefreshCw size={13} className="animate-spin"/> : <Download size={13}/>} Export for Client
                 </button>
                 {!showArchived && (
-                  <button onClick={() => bulkArchiveMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                  <button onClick={() => bulkArchiveMutation.mutate(selected)} className="px-3.5 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg whitespace-nowrap">
                     <Archive size={13}/> Archive
                   </button>
                 )}
@@ -859,12 +836,12 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                     selected.forEach(id => softDeleteMutation.mutate(id))
                     setSelected([])
                   }
-                }} className="px-3.5 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                }} className="px-3.5 py-1.5 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg whitespace-nowrap">
                   <Trash2 size={13}/> Move to Bin
                 </button>
               </>
             )}
-            <button onClick={()=>setSelected([])} className="px-3.5 py-1.5 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg text-xs font-semibold">Clear</button>
+            <button onClick={()=>setSelected([])} className="px-3.5 py-1.5 border border-[var(--border-color)] text-[var(--text-primary)] rounded-lg text-xs font-semibold whitespace-nowrap">Clear</button>
           </div>
         </div>
       )}
@@ -882,57 +859,61 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       {showSkeleton&&<TableSkeleton/>}
 
       {!showSkeleton&&!isError&&shipments.length>0&&(<>
-        <div className="hidden md:block glass rounded-xl border border-[var(--border-color)] overflow-hidden shadow-lg animate-scale-in">
+        {/* ── UNIFIED SCROLLABLE TABLE (every device) ──
+            One table, always. No separate mobile card layout — on a phone
+            you scroll horizontally to reach every column instead of losing
+            data to a cut-down view. Checkbox + SL No columns stay sticky on
+            the left so you always know which row you're on while scrolling.
+            Actions are compact icon buttons so the row stays short. */}
+        <div className="glass rounded-xl border border-[var(--border-color)] overflow-hidden shadow-lg animate-scale-in">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[1000px]">
               <thead>
                 <tr className={`bg-gradient-to-r ${showBin ? 'from-red-50 to-rose-50 dark:from-red-950/50 dark:to-rose-950/50' : 'from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50'}`}>
-                  <th className="w-10 pl-4 py-3"><input type="checkbox" checked={selected.length===shipments.length&&shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></th>
-                  <th className="text-center px-2 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase w-12">SL No</th>
+                  <th className="sticky left-0 z-10 w-9 pl-3 py-2.5 bg-inherit"><input type="checkbox" checked={selected.length===shipments.length&&shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></th>
+                  <th className="sticky left-9 z-10 text-center px-2 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase w-11 bg-inherit whitespace-nowrap">SL</th>
                   {isDOReleaseFilter ? (
                     <>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Ref No</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">MAWB</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">HAWB</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">CHA Name</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Customer</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Stage</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
-                      {showBin && <th className="text-left px-3 py-3 text-[11px] font-semibold text-red-500 dark:text-red-400 uppercase">Deleted By</th>}
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Ref No</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">MAWB</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">HAWB</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">CHA Name</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Customer</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Status</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Stage</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Date</th>
+                      {showBin && <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-red-500 dark:text-red-400 uppercase whitespace-nowrap">Deleted By</th>}
                     </>
                   ) : isTransportFilter ? (
                     <>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Vehicle No</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Transport Mode</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Customer</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Weight</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">From</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">To</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Delivery</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Stage</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
-                      {showBin && <th className="text-left px-3 py-3 text-[11px] font-semibold text-red-500 dark:text-red-400 uppercase">Deleted By</th>}
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Vehicle No</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Transport Mode</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Customer</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Weight</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">From</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">To</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Delivery</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Status</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Stage</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Date</th>
+                      {showBin && <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-red-500 dark:text-red-400 uppercase whitespace-nowrap">Deleted By</th>}
                     </>
                   ) : (
                     <>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Date</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Type</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Ref No</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Handling</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Mode</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Terms</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">From</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">To</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Client Name</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Shipper Details</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Status</th>
-                      <th className="text-left px-3 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Stage</th>
-                      {showBin && <th className="text-left px-3 py-3 text-[11px] font-semibold text-red-500 dark:text-red-400 uppercase">Deleted By</th>}
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Ref No</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Mode</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Import/Export</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Consignee</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Created By</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">HAWB</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">SB/BOE No</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Status</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Stage</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Date</th>
+                      {showBin && <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-red-500 dark:text-red-400 uppercase whitespace-nowrap">Deleted By</th>}
                     </>
                   )}
-                  <th className="text-right pr-4 py-3 text-[11px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase">Actions</th>
+                  <th className="text-right pr-3 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-color)]">
@@ -940,71 +921,64 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                   const slNo = (page - 1) * perPage + idx + 1; 
                   return (
                     <tr key={s.id} className={`group hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors ${showBin ? 'hover:bg-red-50/30 dark:hover:bg-red-900/10' : ''}`}>
-                      <td className="pl-4 py-3"><input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></td>
-                      <td className="px-2 py-3 text-center text-xs font-semibold text-[var(--text-muted)]">{slNo}</td>
+                      <td className="sticky left-0 z-10 bg-[var(--bg-primary)] group-hover:bg-indigo-50/30 dark:group-hover:bg-indigo-900/10 pl-3 py-2.5"><input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></td>
+                      <td className="sticky left-9 z-10 bg-[var(--bg-primary)] group-hover:bg-indigo-50/30 dark:group-hover:bg-indigo-900/10 px-2 py-2.5 text-center text-xs font-semibold text-[var(--text-muted)] whitespace-nowrap">{slNo}</td>
                       {isDOReleaseFilter ? (
                         <>
-                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.mawb || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.hawb || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.agent || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 whitespace-nowrap"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] font-medium whitespace-nowrap">{s.freightForwarding?.mawb || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.hawb || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.agent || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] font-medium whitespace-nowrap">{s.freightForwarding?.customerName || <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       ) : isTransportFilter ? (
                         <>
-                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.transportMode || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.fromLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)]">{s.freightForwarding?.toLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 whitespace-nowrap"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] font-medium whitespace-nowrap">{s.freightForwarding?.transportMode || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] font-medium whitespace-nowrap">{s.freightForwarding?.customerName || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.fromLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.toLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
-                          <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></td>
-                          <td className="px-3 py-3"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
-                          <td className="px-3 py-3 text-xs text-[var(--text-secondary)]"><span className="flex items-center gap-1"><User size={10} className="text-[var(--text-muted)]"/>{s.createdByName||<span className="text-[var(--text-muted)]">—</span>}</span></td>
-                          <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.terms||<span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.fromLocation||<span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.toLocation||<span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||<span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{s.freightForwarding?.shipperName||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 whitespace-nowrap"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
+                          <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></td>
+                          <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] font-medium whitespace-nowrap">{s.freightForwarding?.consigneeName||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-xs text-[var(--text-secondary)] whitespace-nowrap"><span className="flex items-center gap-1"><User size={10} className="text-[var(--text-muted)]"/>{s.createdByName||<span className="text-[var(--text-muted)]">—</span>}</span></td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.hawb||<span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.cha?.sbNo || s.cha?.boeNo || <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       )}
-                      <td className="px-3 py-3"><span className={`inline-flex px-2.5 py-1 rounded-md text-[11px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
-                      <td className="px-3 py-3">{s.shipmentStage ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                      {(isDOReleaseFilter || isTransportFilter) && (
-                        <td className="px-3 py-3 text-sm text-[var(--text-secondary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
-                      )}
+                      <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
+                      <td className="px-2.5 py-2.5 whitespace-nowrap">{s.shipmentStage ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
+                      <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
                       {showBin && (
-                        <td className="px-3 py-3 text-xs text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</td>
+                        <td className="px-2.5 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium whitespace-nowrap">{s.deletedBy || 'Unknown'}</td>
                       )}
-                      <td className="pr-4 py-3 text-right">
+                      <td className="pr-3 py-2.5 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1">
                           {showBin ? (
-                            <>
-                              <button onClick={() => restoreMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5">
-                                <RotateIcon size={12}/> Restore
-                              </button>
-                            </>
+                            <button onClick={() => restoreMutation.mutate(s.id)} title="Restore" className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md">
+                              <RotateIcon size={14}/>
+                            </button>
                           ) : (
                             <>
-                              <Link to={buildEditUrl(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Pencil size={12}/> Edit</Link>
-                              <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>
+                              <Link to={buildEditUrl(s.id)} title="Edit" className="p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md"><Pencil size={14}/></Link>
+                              <Link to={`/shipment/${s.id}`} title="View" className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md"><Eye size={14}/></Link>
                               {showArchived ? (
-                                <button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>
+                                <button onClick={()=>unarchiveMutation.mutate(s.id)} title="Restore" className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md"><ArchiveRestore size={14}/></button>
                               ) : (
                                 <>
-                                  <button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>
+                                  <button onClick={()=>archiveMutation.mutate(s.id)} title="Archive" className="p-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md"><Archive size={14}/></button>
                                   <button onClick={() => {
                                     if (window.confirm(`Move ${s.refNo} to bin?`)) {
                                       softDeleteMutation.mutate(s.id)
                                     }
-                                  }} className="px-2.5 py-1.5 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md flex items-center gap-1.5">
-                                    <Trash2 size={12}/> Delete
+                                  }} title="Delete" className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md">
+                                    <Trash2 size={14}/>
                                   </button>
                                 </>
                               )}
@@ -1020,93 +994,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
           </div>
         </div>
 
-        <div className="md:hidden space-y-3">
-          {shipments.map((s, idx) => { 
-            const slNo = (page - 1) * perPage + idx + 1; 
-            return (
-              <div key={s.id} className={`glass rounded-xl border border-[var(--border-color)] p-4 shadow-sm hover-lift animate-scale-in ${showBin ? 'border-red-200/50 dark:border-red-800/50' : ''}`}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-[var(--text-muted)]">#{slNo}</span>
-                    <Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{s.refNo}</Link>
-                  </div>
-                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span>
-                </div>
-                {isDOReleaseFilter ? (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-[var(--text-muted)]">MAWB:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.mawb||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">HAWB:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.hawb||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">CHA Name:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.agent||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Customer:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
-                    <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
-                    {showBin && <div><span className="text-[var(--text-muted)]">Deleted By:</span> <span className="text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</span></div>}
-                  </div>
-                ) : isTransportFilter ? (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-[var(--text-muted)]">Transport Mode:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.transportMode||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Customer:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.customerName||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Weight:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : '—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">From:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.fromLocation||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">To:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.toLocation||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Delivery:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
-                    <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
-                    {showBin && <div><span className="text-[var(--text-muted)]">Deleted By:</span> <span className="text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</span></div>}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-[var(--text-muted)]">Date:</span> <span className="text-[var(--text-primary)]">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Type:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Handling:</span> <span className="text-[var(--text-primary)] flex items-center gap-1"><User size={10}/>{s.createdByName||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Mode:</span> <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Terms:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.terms||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">From:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.fromLocation||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">To:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.toLocation||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Client Name:</span> <span className="text-[var(--text-primary)] font-medium">{s.freightForwarding?.consigneeName||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Shipper:</span> <span className="text-[var(--text-primary)]">{s.freightForwarding?.shipperName||'—'}</span></div>
-                    <div><span className="text-[var(--text-muted)]">Stage:</span> {s.shipmentStage ? <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-primary)]">—</span>}</div>
-                    {showBin && <div><span className="text-[var(--text-muted)]">Deleted By:</span> <span className="text-red-600 dark:text-red-400 font-medium">{s.deletedBy || 'Unknown'}</span></div>}
-                  </div>
-                )}
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border-color)]">
-                  <input type="checkbox" checked={selected.includes(s.id)} onChange={()=>toggleSelect(s.id)} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 w-3.5 h-3.5"/>
-                  <div className="flex items-center gap-1">
-                    {showBin ? (
-                      <>
-                        <button onClick={() => restoreMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5">
-                          <RotateIcon size={12}/> Restore
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <Link to={buildEditUrl(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Pencil size={12}/> Edit</Link>
-                        <Link to={`/shipment/${s.id}`} className="px-2.5 py-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-md flex items-center gap-1.5"><Eye size={12}/> View</Link>
-                        {showArchived ? (
-                          <button onClick={()=>unarchiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-md flex items-center gap-1.5"><ArchiveRestore size={12}/> Restore</button>
-                        ) : (
-                          <>
-                            <button onClick={()=>archiveMutation.mutate(s.id)} className="px-2.5 py-1.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md flex items-center gap-1.5"><Archive size={12}/> Archive</button>
-                            <button onClick={() => {
-                              if (window.confirm(`Move ${s.refNo} to bin?`)) {
-                                softDeleteMutation.mutate(s.id)
-                              }
-                            }} className="px-2.5 py-1.5 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md flex items-center gap-1.5">
-                              <Trash2 size={12}/> Delete
-                            </button>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
         <div className="glass rounded-xl border border-[var(--border-color)] px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-secondary)] flex-wrap justify-center">
             <span className="font-semibold text-indigo-700 dark:text-indigo-300">{startItem}-{endItem}</span>
             <span className="text-[var(--text-muted)]">of</span>
             <span className="font-semibold text-indigo-700 dark:text-indigo-300">{totalCount.toLocaleString()}</span>
