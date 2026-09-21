@@ -156,4 +156,38 @@ server.listen(PORT, '0.0.0.0', () => {
 
     console.log('🗓️ Daily report scheduler enabled (18:30 IST)');
   }
+
+  // ─── 30-DAY AUTO-ARCHIVE SWEEP (NEW) ───
+  // A shipment moves to Archive automatically once its invoice has been
+  // complete (Invoice No + Date + Sending Date all filled in) for 30
+  // days — see accounts.controller.js for where completedAt gets
+  // stamped, and autoArchiveMatured() in freightForwarding.controller.js
+  // for the actual sweep logic. That same sweep also runs opportunistically
+  // whenever the shipment list or stats are loaded, but this scheduled
+  // run guarantees it happens daily even during quiet periods with no
+  // one actively browsing the dashboard.
+  if (process.env.NODE_ENV === 'production') {
+    const { autoArchiveMatured } = require('./src/controllers/freightForwarding.controller');
+
+    setInterval(async () => {
+      try {
+        await autoArchiveMatured();
+      } catch (err) {
+        console.error('[AUTO-ARCHIVE] Sweep failed:', err.message);
+      }
+    }, 6 * 60 * 60 * 1000); // every 6 hours
+
+    // Also run once shortly after startup, so a freshly deployed/restarted
+    // server doesn't wait up to 6 hours for the first sweep.
+    setTimeout(async () => {
+      try {
+        await autoArchiveMatured();
+        console.log('[AUTO-ARCHIVE] Initial sweep complete');
+      } catch (err) {
+        console.error('[AUTO-ARCHIVE] Initial sweep failed:', err.message);
+      }
+    }, 15 * 1000);
+
+    console.log('📦 30-day auto-archive sweep enabled (every 6 hours)');
+  }
 });

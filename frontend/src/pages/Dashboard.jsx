@@ -11,7 +11,7 @@ import {
   Eye, ArchiveRestore, X, ChevronLeft, ChevronRight,
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
-  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap, ClipboardList, FileText,
+  ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap, ClipboardList, FileText, PlaneTakeoff, PlaneLanding,
   Trash2, RotateCcw as RotateIcon, History, Mail
 } from 'lucide-react'
 
@@ -172,10 +172,11 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   })
 
   // ─── FULL-DATASET STATS ───
-  // Backend already computes total/delivered/invoiced/deliveryRate across
-  // every matching shipment (not just the current page) via
-  // /freight/shipments/stats. Uses the exact same filters as the main
-  // shipments query, so the numbers always describe what's on screen.
+  // Backend already computes total/delivered/invoiced/deliveryRate/
+  // monthlyShipments/monthlyInvoiced across every matching shipment (not
+  // just the current page) via /freight/shipments/stats. Uses the exact
+  // same filters as the main shipments query, so the numbers always
+  // describe what's on screen.
   const { data: fullStats } = useQuery({
     queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, search, scopeKey],
     queryFn: async () => {
@@ -549,12 +550,16 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   })
 
   // ─── ANALYTICS ───
+  // ✅ NOW ALSO includes monthlyShipments / monthlyInvoiced, sourced
+  // straight from the backend's IST-scoped "this calendar month" counts.
   const analytics = useMemo(() => {
     const total = fullStats?.total ?? overallTotal
     const delivered = fullStats?.delivered ?? 0
     const invoiced = fullStats?.invoiced ?? 0
     const pendingTotal = Math.max(0, total - delivered - invoiced)
     const deliveryRate = fullStats?.deliveryRate ?? (total > 0 ? Math.round((delivered / total) * 100) : 0)
+    const monthlyShipments = fullStats?.monthlyShipments ?? 0
+    const monthlyInvoiced = fullStats?.monthlyInvoiced ?? 0
 
     return {
       delivered,
@@ -562,6 +567,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       pendingTotal,
       total,
       deliveryRate,
+      monthlyShipments,
+      monthlyInvoiced,
     }
   }, [fullStats, overallTotal])
 
@@ -607,6 +614,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   
+  // ✅ STAT CARDS — "Invoiced" (lifetime) replaced with "This Month
+  // Invoice" (calendar-month scoped), and a new "This Month Shipments"
+  // card added alongside "Today's Shipments". Now 6 cards total.
   const statCards = [
     { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments', onClick: showAllShipments, active: !todayOnly && !customDate && !inProgressOnly && !showArchived && !showBin && !search && !statusFilter },
     { 
@@ -619,8 +629,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       active: inProgressOnly
     },
     { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed', onClick: showDeliveredShipments, active: deliveredOnly },
-    { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoice generated/sent', onClick: showInvoicedShipments, active: invoicedOnly },
+    { label: 'This Month Invoice', value: analytics.monthlyInvoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoiced this calendar month', onClick: showInvoicedShipments, active: invoicedOnly },
     { label: "Today's Shipments", value: todayCount || 0, icon: Calendar, gradient: 'from-rose-500 to-pink-600', desc: 'Created today', onClick: showTodayShipments, active: todayOnly },
+    { label: 'This Month Shipments', value: analytics.monthlyShipments, icon: TrendingUp, gradient: 'from-cyan-500 to-sky-600', desc: 'Created this calendar month' },
   ]
 
   const getTitle = () => {
@@ -736,7 +747,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
       {!showBin && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {statCards.map((stat,i)=>{
               const Icon=stat.icon;
               return (
@@ -776,7 +787,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
         <div className="relative flex-1 w-full min-w-0">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400"/>
-          <input type="text" placeholder={showBin ? "Search in bin..." : isDOReleaseFilter ? "Search by Ref No, MAWB, Customer..." : isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"/>
+          <input type="text" placeholder={showBin ? "Search in bin..." : isDOReleaseFilter ? "Search by Ref No, MAWB, Customer..." : isTransportFilter ? "Search by Ref No, Customer..." : "Search by Ref No, Consignee, Shipper, Employee, HAWB, BOE, SB..."} value={search} onChange={e=>updateSearch(e.target.value)} className="w-full pl-9 pr-9 py-2.5 glass border border-[var(--border-color)] rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"/>
           {search&&<button onClick={()=>updateSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={14}/></button>}
         </div>
         {!showBin && (
@@ -864,10 +875,11 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
             you scroll horizontally to reach every column instead of losing
             data to a cut-down view. Checkbox + SL No columns stay sticky on
             the left so you always know which row you're on while scrolling.
-            Actions are compact icon buttons so the row stays short. */}
+            Actions are compact icon buttons so the row stays short.
+            ✅ ETD/ETA columns added to the default (Freight/Overview) view. */}
         <div className="glass rounded-xl border border-[var(--border-color)] overflow-hidden shadow-lg animate-scale-in">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px]">
+            <table className="w-full min-w-[1100px]">
               <thead>
                 <tr className={`bg-gradient-to-r ${showBin ? 'from-red-50 to-rose-50 dark:from-red-950/50 dark:to-rose-950/50' : 'from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50'}`}>
                   <th className="sticky left-0 z-10 w-9 pl-3 py-2.5 bg-inherit"><input type="checkbox" checked={selected.length===shipments.length&&shipments.length>0} onChange={toggleSelectAll} className="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"/></th>
@@ -907,6 +919,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                       <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Created By</th>
                       <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">HAWB</th>
                       <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">SB/BOE No</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">ETD</th>
+                      <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">ETA</th>
                       <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Status</th>
                       <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Stage</th>
                       <th className="text-left px-2.5 py-2.5 text-[10px] font-semibold text-indigo-500 dark:text-indigo-400 uppercase whitespace-nowrap">Date</th>
@@ -950,6 +964,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                           <td className="px-2.5 py-2.5 text-xs text-[var(--text-secondary)] whitespace-nowrap"><span className="flex items-center gap-1"><User size={10} className="text-[var(--text-muted)]"/>{s.createdByName||<span className="text-[var(--text-muted)]">—</span>}</span></td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.hawb||<span className="text-[var(--text-muted)]">—</span>}</td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.cha?.sbNo || s.cha?.boeNo || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.etd ? new Date(s.freightForwarding.etd).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.eta ? new Date(s.freightForwarding.eta).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       )}
                       <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>

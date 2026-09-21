@@ -38,8 +38,44 @@ async function stampAccountsHandler(id, req) {
   }
 }
 
+// ─── MARK INVOICE COMPLETE (NEW) ───
+// Replaces the old "archive immediately" behavior. The moment Invoice No
+// + Invoice Date + Sending Date are ALL present for the first time, this
+// stamps `completedAt` on the Accounts record (once — never overwritten
+// on later edits) and logs a status-history entry. The shipment itself
+// stays in Active; a separate 30-day-matured sweep (in
+// freightForwarding.controller.js, run whenever shipments are listed)
+// is what actually flips isArchived to true, once 30 days have passed
+// since this timestamp. This gives the Accounts team a full month to
+// catch mistakes or amend the invoice before the shipment disappears
+// into Archive.
+async function markInvoiceCompleteIfReady(id, req) {
+  const currentAccounts = await prisma.accounts.findUnique({ where: { shipmentId: id } });
+  const isInvoiceComplete =
+    currentAccounts?.invoiceNumber &&
+    currentAccounts?.invoiceDate &&
+    currentAccounts?.sendingDate;
+
+  if (isInvoiceComplete && !currentAccounts.completedAt) {
+    await prisma.shipment.update({
+      where: { id },
+      data: {
+        accounts: { update: { completedAt: new Date() } },
+        statusHistory: {
+          create: {
+            status: 'INVOICE_COMPLETE',
+            remarks: 'Invoice fully complete (Number, Date, Sending Date) — will move to Archive automatically in 30 days',
+            changedBy: actorName(req)
+          }
+        }
+      }
+    });
+    return true;
+  }
+  return false;
+}
+
 // ─── UPDATE INVOICE ───
-// Auto-archive when invoice is complete (Number + Date + Sending Date all present)
 const updateInvoice = async (req, res) => {
   try {
     const { id } = req.params;
@@ -56,7 +92,6 @@ const updateInvoice = async (req, res) => {
     }
     
     if (Object.keys(data).length > 0) {
-      // Update invoice
       await prisma.shipment.update({ 
         where: { id }, 
         data: { 
@@ -74,40 +109,13 @@ const updateInvoice = async (req, res) => {
       await stampAccountsHandler(id, req);
     }
 
-    // ─── CHECK IF INVOICE IS COMPLETE ───
-    // Get current accounts to check if all three fields are present
-    const currentAccounts = await prisma.accounts.findUnique({
-      where: { shipmentId: id }
-    });
-
-    // Check if invoice is fully complete (has Invoice No, Date, and Sending Date)
-    const isInvoiceComplete = 
-      currentAccounts?.invoiceNumber && 
-      currentAccounts?.invoiceDate && 
-      currentAccounts?.sendingDate;
-
-    if (isInvoiceComplete) {
-      // Auto-archive the shipment
-      await prisma.shipment.update({
-        where: { id },
-        data: {
-          isArchived: true,
-          statusHistory: {
-            create: {
-              status: 'COMPLETED',
-              remarks: 'Shipment auto-archived (Invoice complete - has Number, Date, and Sending Date)',
-              changedBy: actorName(req)
-            }
-          }
-        }
-      });
-    }
+    const justCompleted = await markInvoiceCompleteIfReady(id, req);
 
     const s = await getFullShipment(id);
     res.json({ 
       status: 'success', 
       data: s,
-      message: isInvoiceComplete ? 'Invoice updated and shipment auto-archived' : 'Invoice updated'
+      message: justCompleted ? 'Invoice updated — complete, will archive automatically in 30 days' : 'Invoice updated'
     });
   } catch (e) { 
     console.error(e); 
@@ -116,20 +124,16 @@ const updateInvoice = async (req, res) => {
 };
 
 // ─── UPDATE INVOICE SENDING ───
-// Auto-archive when invoice sending date is set (if invoice already has Number and Date)
 const updateInvoiceSending = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureAccounts(id);
     
-    let isArchived = false;
-    const parts = [];
+    let justCompleted = false;
     
     if (req.body.sendingDate) {
       const sendingDate = new Date(req.body.sendingDate);
-      parts.push(`Invoice Sent Date: ${req.body.sendingDate}`);
       
-      // Update sending date
       await prisma.shipment.update({ 
         where: { id }, 
         data: { 
@@ -146,42 +150,14 @@ const updateInvoiceSending = async (req, res) => {
       });
       await stampAccountsHandler(id, req);
       
-      // ─── CHECK IF INVOICE IS NOW COMPLETE ───
-      // Get current accounts to check if all three fields are present
-      const currentAccounts = await prisma.accounts.findUnique({
-        where: { shipmentId: id }
-      });
-      
-      // Check if invoice is fully complete (has Invoice No, Date, and Sending Date)
-      const isInvoiceComplete = 
-        currentAccounts?.invoiceNumber && 
-        currentAccounts?.invoiceDate && 
-        currentAccounts?.sendingDate;
-      
-      if (isInvoiceComplete) {
-        // Auto-archive the shipment
-        await prisma.shipment.update({
-          where: { id },
-          data: {
-            isArchived: true,
-            statusHistory: {
-              create: {
-                status: 'COMPLETED',
-                remarks: 'Shipment auto-archived (Invoice complete - has Number, Date, and Sending Date)',
-                changedBy: actorName(req)
-              }
-            }
-          }
-        });
-        isArchived = true;
-      }
+      justCompleted = await markInvoiceCompleteIfReady(id, req);
     }
     
     const s = await getFullShipment(id);
     res.json({ 
       status: 'success', 
       data: s,
-      message: isArchived ? 'Invoice sent and shipment auto-archived' : 'Invoice sent'
+      message: justCompleted ? 'Invoice sent — complete, will archive automatically in 30 days' : 'Invoice sent'
     });
   } catch (e) { 
     console.error(e); 

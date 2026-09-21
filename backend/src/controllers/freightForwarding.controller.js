@@ -28,6 +28,47 @@ function actorName(req) {
   return req.user?.name || req.user?.email || null;
 }
 
+// ─── 30-DAY DELAYED AUTO-ARCHIVE (NEW) ───
+// Runs a lightweight sweep every time shipments are listed or stats are
+// computed — no cron job or server.js changes needed. Finds any active
+// shipment whose invoice was marked complete (accounts.completedAt, set
+// by accounts.controller.js) 30+ days ago and moves it to Archive, with
+// a status-history entry recording the auto-archive.
+//
+// This replaces the old "archive the instant all 3 invoice fields are
+// filled in" behavior, which was too aggressive — Accounts now gets a
+// full 30-day grace window after completing an invoice before the
+// shipment leaves Active.
+async function autoArchiveMatured() {
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const matured = await prisma.shipment.findMany({
+      where: {
+        isArchived: false,
+        isDeleted: false,
+        accounts: { completedAt: { lte: cutoff } }
+      },
+      select: { id: true }
+    });
+    if (matured.length === 0) return;
+    await Promise.all(matured.map((m) => prisma.shipment.update({
+      where: { id: m.id },
+      data: {
+        isArchived: true,
+        statusHistory: {
+          create: {
+            status: 'COMPLETED',
+            remarks: 'Auto-archived 30 days after invoice was completed'
+          }
+        }
+      }
+    })));
+  } catch (error) {
+    // Never let a housekeeping sweep break the actual request it's attached to.
+    console.error('Error in autoArchiveMatured sweep:', error);
+  }
+}
+
 // ─── CREATE NEW SHIPMENT ───
 const createShipment = async (req, res) => {
   try {
@@ -215,12 +256,14 @@ const getBinShipments = async (req, res) => {
       where.OR = [
         { refNo: { contains: search } },
         { freightForwarding: { consigneeName: { contains: search } } },
+        { freightForwarding: { shipperName: { contains: search } } },
         { freightForwarding: { hawb: { contains: search } } },
         { freightForwarding: { mawb: { contains: search } } },
         { cha: { boeNo: { contains: search } } },
         { cha: { sbNo: { contains: search } } },
         { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } }
+        { freightForwarding: { customerName: { contains: search } } },
+        { createdByName: { contains: search } }
       ];
     }
 
@@ -386,12 +429,14 @@ const exportShipments = async (req, res) => {
       activeWhere.OR = [
         { refNo: { contains: search } },
         { freightForwarding: { consigneeName: { contains: search } } },
+        { freightForwarding: { shipperName: { contains: search } } },
         { freightForwarding: { hawb: { contains: search } } },
         { freightForwarding: { mawb: { contains: search } } },
         { cha: { boeNo: { contains: search } } },
         { cha: { sbNo: { contains: search } } },
         { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } }
+        { freightForwarding: { customerName: { contains: search } } },
+        { createdByName: { contains: search } }
       ];
     }
     
@@ -406,12 +451,14 @@ const exportShipments = async (req, res) => {
       archivedWhere.OR = [
         { refNo: { contains: search } },
         { freightForwarding: { consigneeName: { contains: search } } },
+        { freightForwarding: { shipperName: { contains: search } } },
         { freightForwarding: { hawb: { contains: search } } },
         { freightForwarding: { mawb: { contains: search } } },
         { cha: { boeNo: { contains: search } } },
         { cha: { sbNo: { contains: search } } },
         { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } }
+        { freightForwarding: { customerName: { contains: search } } },
+        { createdByName: { contains: search } }
       ];
     }
 
@@ -542,6 +589,11 @@ const exportSelectedForClient = async (req, res) => {
 // ─── GET ALL SHIPMENTS ───
 const getAllShipments = async (req, res) => {
   try {
+    // ✅ Runs the 30-day matured-invoice sweep before building the query,
+    // so anything that just crossed the 30-day mark is already reflected
+    // in isArchived by the time we filter/count below.
+    await autoArchiveMatured();
+
     const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, inProgressOnly, deliveredOnly, invoicedOnly, referenceGroup, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
@@ -551,13 +603,6 @@ const getAllShipments = async (req, res) => {
     };
 
     // ─── TODAY / CUSTOM DATE FILTER ───
-    // "Today's Shipments" and "pick a date" both show everything CREATED
-    // on that day, regardless of archived state — intentionally ignores
-    // the isArchived toggle rather than combining with it. `date` takes
-    // priority if both are somehow sent; in practice the frontend only
-    // ever sends one or the other.
-    // IST is UTC+5:30 — computed explicitly so this is correct regardless
-    // of what timezone the server itself runs in (most cloud hosts run UTC).
     const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
     if (today === 'true' || date) {
       let istDateStr;
@@ -573,13 +618,9 @@ const getAllShipments = async (req, res) => {
       where.isArchived = isArchived === 'true';
     }
     if (status) where.currentStatus = status;
-    // ✅ NEW — "In Progress" card click. Mirrors the exact definition used
-    // by getShipmentStats' pendingTotal calc (total - delivered - invoiced),
-    // so the number shown on the card always matches what this filter returns.
     if (inProgressOnly === 'true' && !status) {
       where.currentStatus = { notIn: ['DELIVERED', 'HAND_OVER', 'INVOICE_GENERATED', 'INVOICE_SENT'] };
     }
-    // ✅ NEW — Delivered/Invoiced card clicks
     if (deliveredOnly === 'true' && !status) {
       where.currentStatus = { in: ['DELIVERED', 'HAND_OVER'] };
     }
@@ -593,20 +634,29 @@ const getAllShipments = async (req, res) => {
       else if (shipmentType === 'FF_ONLY') where.shipmentType = 'FF Only';
       else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
     }
-    // ✅ NEW — Reference code group dashboards (RL/PP/SP/JD)
     if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
       where.AND = [...(where.AND || []), { OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
     }
-    if (search) where.OR = [{ refNo: { contains: search } }, { freightForwarding: { consigneeName: { contains: search } } }, { freightForwarding: { hawb: { contains: search } } }, { freightForwarding: { mawb: { contains: search } } }, { cha: { boeNo: { contains: search } } }, { cha: { sbNo: { contains: search } } }, { accounts: { invoiceNumber: { contains: search } } }, { freightForwarding: { customerName: { contains: search } } }];
+    // ✅ SEARCH FIX (was missing Shipper Name + employee name) — now also
+    // matches Shipper Name and the shipment's createdByName, so searching
+    // by an employee's name or a shipper's name actually returns results.
+    if (search) where.OR = [
+      { refNo: { contains: search } },
+      { freightForwarding: { consigneeName: { contains: search } } },
+      { freightForwarding: { shipperName: { contains: search } } },
+      { freightForwarding: { hawb: { contains: search } } },
+      { freightForwarding: { mawb: { contains: search } } },
+      { cha: { boeNo: { contains: search } } },
+      { cha: { sbNo: { contains: search } } },
+      { accounts: { invoiceNumber: { contains: search } } },
+      { freightForwarding: { customerName: { contains: search } } },
+      { createdByName: { contains: search } }
+    ];
     if (mine === 'true' && req.user?.id) {
       where.AND = [...(where.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
     } else if (userId) {
       where.createdById = userId;
     }
-    // ✅ NEW — used by the Team Overview "Pending" link to jump straight
-    // into a specific employee's unfinished shipments. Only applies when
-    // no explicit status filter was already requested, since that would
-    // be a direct conflict (an exact status vs. "not yet closed").
     if (pendingOnly === 'true' && !status) {
       where.currentStatus = { notIn: CLOSED_STATUSES };
     }
@@ -624,7 +674,8 @@ const getAllShipments = async (req, res) => {
               consigneeName: true, shipperName: true, hawb: true, mawb: true, agent: true, 
               customerName: true, transportMode: true, weight: true, 
               grossWeight: true, cbm: true, sellingRate: true, terms: true,
-              fromLocation: true, toLocation: true, deliveryDate: true 
+              fromLocation: true, toLocation: true, deliveryDate: true,
+              etd: true, eta: true
             } 
           }, 
           cha: { select: { boeNo: true, sbNo: true } } 
@@ -645,11 +696,27 @@ const getAllShipments = async (req, res) => {
   } catch (error) { console.error('Error fetching:', error); res.status(500).json({ status: 'error', message: 'Failed to fetch' }); }
 };
 
+// ─── IST MONTH BOUNDS (NEW) ───
+// Same IST-anchored approach as the day-bounds helper below (used by
+// Daily Report) — computes the start/end of the CURRENT calendar month
+// in IST, regardless of what timezone the server itself runs in.
+const IST_OFFSET_MS_MONTH = 5.5 * 60 * 60 * 1000;
+function getISTMonthBounds() {
+  const nowIST = new Date(Date.now() + IST_OFFSET_MS_MONTH);
+  const y = nowIST.getUTCFullYear();
+  const m = nowIST.getUTCMonth(); // 0-indexed
+  const start = new Date(Date.UTC(y, m, 1) - IST_OFFSET_MS_MONTH);
+  const end = new Date(Date.UTC(y, m + 1, 1) - IST_OFFSET_MS_MONTH);
+  return { start, end };
+}
+
 // ─── GET SHIPMENT STATS ───
 // Read-only. Returns counts across ALL matching shipments (not just the
 // current page), so progress bars / percentages reflect the whole dataset.
 const getShipmentStats = async (req, res) => {
   try {
+    await autoArchiveMatured();
+
     const { status, search, isArchived, shipmentType, mine, userId, referenceGroup } = req.query;
 
     const where = {
@@ -671,12 +738,14 @@ const getShipmentStats = async (req, res) => {
       where.OR = [
         { refNo: { contains: search } },
         { freightForwarding: { consigneeName: { contains: search } } },
+        { freightForwarding: { shipperName: { contains: search } } },
         { freightForwarding: { hawb: { contains: search } } },
         { freightForwarding: { mawb: { contains: search } } },
         { cha: { boeNo: { contains: search } } },
         { cha: { sbNo: { contains: search } } },
         { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } }
+        { freightForwarding: { customerName: { contains: search } } },
+        { createdByName: { contains: search } }
       ];
     }
     if (mine === 'true' && req.user?.id) {
@@ -685,15 +754,41 @@ const getShipmentStats = async (req, res) => {
       where.createdById = userId;
     }
 
-    const [total, delivered, invoiced, weightAgg] = await Promise.all([
+    // ✅ THIS MONTH STATS (NEW) — replaces the old lifetime "Invoiced"
+    // card's meaning on the frontend with a calendar-month-scoped number,
+    // plus a new "shipments created this month" count. Both respect the
+    // same scope (mine/team/search/status/etc) as everything else here.
+    const { start: monthStart, end: monthEnd } = getISTMonthBounds();
+
+    const [total, delivered, invoiced, weightAgg, monthlyShipments, matchingForMonth] = await Promise.all([
       prisma.shipment.count({ where }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
       prisma.freightForwarding.aggregate({
         where: { shipment: where },
         _sum: { noOfPackages: true, grossWeight: true }
-      })
+      }),
+      prisma.shipment.count({ where: { ...where, createdAt: { gte: monthStart, lt: monthEnd } } }),
+      prisma.shipment.findMany({ where, select: { id: true } })
     ]);
+
+    // Monthly invoiced = shipments matching the current filter whose
+    // INVOICE_GENERATED/INVOICE_SENT status change happened THIS month —
+    // detected via status history timestamp, not currentStatus, so it
+    // reflects when the invoice action actually happened.
+    let monthlyInvoiced = 0;
+    const matchingIds = matchingForMonth.map((s) => s.id);
+    if (matchingIds.length > 0) {
+      const monthlyInvoiceHistory = await prisma.statusHistory.findMany({
+        where: {
+          shipmentId: { in: matchingIds },
+          status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] },
+          createdAt: { gte: monthStart, lt: monthEnd }
+        },
+        select: { shipmentId: true }
+      });
+      monthlyInvoiced = new Set(monthlyInvoiceHistory.map((h) => h.shipmentId)).size;
+    }
 
     res.json({
       status: 'success',
@@ -703,7 +798,9 @@ const getShipmentStats = async (req, res) => {
         invoiced,
         deliveryRate: total > 0 ? Math.round((delivered / total) * 100) : 0,
         totalPkgs: weightAgg._sum.noOfPackages || 0,
-        totalWt: weightAgg._sum.grossWeight || 0
+        totalWt: weightAgg._sum.grossWeight || 0,
+        monthlyShipments, // ✅ NEW
+        monthlyInvoiced // ✅ NEW
       }
     });
   } catch (error) {
@@ -713,12 +810,6 @@ const getShipmentStats = async (req, res) => {
 };
 
 // ─── GET REFERENCE CODE STATS ───
-// Read-only, purely derived. Groups every non-bin shipment (active AND
-// archived) by the code detected at the start of its refNo (e.g.
-// "RLIM-2026-004" -> "RLIM"). Refs that don't follow a letters+number
-// pattern (e.g. a fully worded name like "SINGAPORE CONSOLE SHEET") are
-// grouped by their full, uppercased text instead, since those are reused
-// verbatim across many shipments rather than being a prefix+number scheme.
 function extractReferenceCode(refNo) {
   if (!refNo || !refNo.trim()) return 'UNSPECIFIED';
   const trimmed = refNo.trim();
@@ -727,11 +818,6 @@ function extractReferenceCode(refNo) {
   return trimmed.toUpperCase();
 }
 
-// ─── REFERENCE CODE GROUPS (NEW) ───
-// Old prefixes now merged under one parent code per management's updated
-// rules. A shipment belongs to a group if its refNo starts with ANY code
-// listed for that group — covers old codes already in use and the new
-// combined ones going forward.
 const REFERENCE_GROUPS = {
   RL: ['RLIM', 'RI', 'RLEX', 'RE', 'RLI', 'RLE'],
   PP: ['PPIM', 'PI', 'PPEX', 'PE', 'PPI', 'PPE'],
@@ -795,12 +881,6 @@ const getReferenceCodeStats = async (req, res) => {
 };
 
 // ─── GET SHIPMENTS FOR A SPECIFIC REFERENCE CODE (NEW) ───
-// Read-only. For a given code (e.g. "RLIM"), returns every matching
-// shipment with its status (open/closed) and everyone "involved" — the
-// creator plus anyone whose name shows up as changedBy in that shipment's
-// status history. Entries logged before changedBy-tracking was added
-// won't contribute a name here; that's an honest gap, not a bug — we
-// can't know who made changes that were never recorded.
 const getShipmentsByReferenceCode = async (req, res) => {
   try {
     const { code } = req.query;
@@ -865,10 +945,6 @@ const getShipmentsByReferenceCode = async (req, res) => {
 };
 
 // ─── GET EMPLOYEE STATS (NEW) ───
-// Read-only, purely derived. Groups every non-bin shipment by who created
-// it, using the same CLOSED_STATUSES/INVOICED_STATUSES definitions used
-// everywhere else in the app, so these numbers always agree with
-// Reference Codes and the dashboard stat cards.
 const getEmployeeStats = async (req, res) => {
   try {
     const shipments = await prisma.shipment.findMany({
@@ -935,9 +1011,6 @@ const getShipmentsByEmployee = async (req, res) => {
 };
 
 // ─── REFERENCE PREFIXES (NEW) ───
-// Any employee can add a new prefix (RE, SI, PIPE, ...). Prefixes are
-// just labels — the actual number always comes from one shared global
-// counter, so RE2602 and PIPE2603 can sit right next to each other.
 const getReferencePrefixes = async (req, res) => {
   try {
     const prefixes = await prisma.referencePrefix.findMany({ orderBy: { code: 'asc' } });
@@ -971,10 +1044,6 @@ const createReferencePrefix = async (req, res) => {
   }
 };
 
-// ─── DELETE A REFERENCE PREFIX (NEW) ───
-// Only removes the label from the dropdown. Any reference numbers already
-// generated with this prefix stay exactly as they are — nothing is
-// touched on existing shipments.
 const deleteReferencePrefix = async (req, res) => {
   try {
     const code = req.params.code?.trim().toUpperCase();
@@ -990,8 +1059,6 @@ const deleteReferencePrefix = async (req, res) => {
 };
 
 // ─── REFERENCE INITIALS (NEW) ───
-// Same idea as prefixes — a managed list of employee initials any
-// employee can add/edit/delete — used to tag who generated each number.
 const getReferenceInitials = async (req, res) => {
   try {
     const initials = await prisma.referenceInitial.findMany({ orderBy: { code: 'asc' } });
@@ -1068,13 +1135,6 @@ const deleteReferenceInitial = async (req, res) => {
 };
 
 // ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
-// Atomically bumps the ONE shared global counter and returns e.g.
-// "RE260114-PC". The counter itself keeps incrementing exactly as before
-// (a single raw integer, unlucky last-digit skip unchanged) — only the
-// DISPLAYED number is reformatted below, as YEAR (26) + a 4-digit
-// zero-padded sequence, so the sequence can never visually overflow into
-// the year digits the way plain "2601...2699,2700,2701..." did (2714
-// used to read as "year 27, seq 14" instead of "year 26, seq 114").
 const generateReferenceNumber = async (req, res) => {
   try {
     const { prefix, initials } = req.body;
@@ -1107,19 +1167,12 @@ const generateReferenceNumber = async (req, res) => {
         counterValue = counter.value;
         break;
       }
-      // else: this number ends in 3 or 7 — loop again, incrementing past it
     }
 
-    // ✅ FIX — format as YEAR_BASE's year digits + 4-digit zero-padded
-    // sequence. YEAR_BASE (2600) is the counter value the "26" year block
-    // started counting up from, so sequence = counterValue - YEAR_BASE
-    // continues exactly where the old raw numbering left off (e.g. raw
-    // 2714 -> sequence 114 -> displayed "260114"), it just never bleeds
-    // into the year digits anymore.
-    const YEAR_BASE = 2600;
-    const yearDigits = String(Math.floor(YEAR_BASE / 100));
-    const sequence = counterValue - YEAR_BASE;
-    const formattedNumber = `${yearDigits}${String(sequence).padStart(4, '0')}`;
+    // Display format: YEAR (2 digits) + 4-digit zero-padded sequence
+    const nowIST = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+    const yearTwoDigit = String(nowIST.getUTCFullYear()).slice(-2);
+    const formattedNumber = `${yearTwoDigit}${String(counterValue).padStart(4, '0')}`;
 
     const refNo = `${code}${formattedNumber}-${initialsCode}`;
     res.json({ status: 'success', data: { refNo, number: formattedNumber, prefix: code, initials: initialsCode } });
@@ -1133,9 +1186,6 @@ const generateReferenceNumber = async (req, res) => {
 };
 
 // ─── EDIT (RENAME) A REFERENCE PREFIX (NEW) ───
-// Renames the label going forward. Reference numbers already generated
-// with the old prefix text stay exactly as they were printed — this only
-// changes what shows up in the dropdown from now on.
 const updateReferencePrefix = async (req, res) => {
   try {
     const oldCode = req.params.code?.trim().toUpperCase();
@@ -1155,7 +1205,6 @@ const updateReferencePrefix = async (req, res) => {
     if (clash && clean !== oldCode) {
       return res.status(400).json({ status: 'error', message: `Prefix "${clean}" already exists` });
     }
-    // Since code is the primary key, rename = create new + delete old
     const updated = await prisma.referencePrefix.create({
       data: { code: clean, createdBy: existing.createdBy }
     });
@@ -1168,12 +1217,6 @@ const updateReferencePrefix = async (req, res) => {
 };
 
 // ─── DAILY REPORT (NEW) ───
-// Builds a same-day summary: new shipments created, delivered, invoiced,
-// total status-change activity, and a per-employee breakdown for all
-// three counts — all scoped to one IST calendar day. Exported as a plain
-// function (buildDailyReport) separate from the Express handler so the
-// scheduled email job in server.js can reuse the exact same logic the
-// in-app report page uses — the numbers always agree wherever they show up.
 const IST_OFFSET_MS_REPORT = 5.5 * 60 * 60 * 1000;
 
 function getISTDayBounds(dateStr) {
@@ -1186,15 +1229,11 @@ function getISTDayBounds(dateStr) {
 async function buildDailyReport(dateStr) {
   const { istDateStr, start, end } = getISTDayBounds(dateStr);
 
-  // New shipments created this day
   const newShipments = await prisma.shipment.findMany({
     where: { isDeleted: false, createdAt: { gte: start, lt: end } },
     select: { id: true, refNo: true, shipmentType: true, createdByName: true }
   });
 
-  // Delivered / Invoiced this day, detected via status history so it
-  // reflects when the status actually changed, not when the shipment
-  // was created.
   const deliveredHistory = await prisma.statusHistory.findMany({
     where: { status: { in: ['DELIVERED', 'HAND_OVER'] }, createdAt: { gte: start, lt: end } },
     select: { shipmentId: true }
@@ -1219,7 +1258,6 @@ async function buildDailyReport(dateStr) {
       : []
   ]);
 
-  // Per-employee breakdown across all three counts for the day
   const employeeMap = {};
   const bump = (name, field) => {
     const key = name || 'Unknown';
@@ -1258,10 +1296,6 @@ const getDailyReport = async (req, res) => {
 };
 
 // ─── GET EMPLOYEE LIST (NEW) ───
-// Lightweight, non-admin endpoint — just id/name/email for the Co-Handler
-// dropdown when creating a shipment. Any logged-in user can call this;
-// it's not the full Team Overview (which is admin-only and includes
-// shipment counts).
 const getEmployeeList = async (req, res) => {
   try {
     const users = await prisma.user.findMany({
@@ -1276,12 +1310,6 @@ const getEmployeeList = async (req, res) => {
 };
 
 // ─── GET TEAM OVERVIEW (NEW, ADMIN ONLY) ───
-// Lists every user with how many shipments they've created, plus how many
-// of those are cleared vs still pending — same "cleared" definition
-// (CLOSED_STATUSES) as the Reference Codes page uses, so the numbers agree
-// wherever they show up. Powers the admin-only Team page — click an
-// employee (or their Pending count) to see their individual dashboard via
-// the existing userId / pendingOnly filters above.
 const getTeamOverview = async (req, res) => {
   try {
     if (req.user?.role !== 'ADMIN') {
@@ -1320,21 +1348,6 @@ const getTeamOverview = async (req, res) => {
 };
 
 // ─── GET EMPLOYEE PERFORMANCE (NEW, ADMIN ONLY) ───
-// The Team Performance report. For each employee, computes three
-// independent counts across every non-bin shipment (optionally scoped to
-// a date range and/or a team):
-//   - created   -> shipments where createdById === them
-//   - coHandled -> shipments where coHandlerId === them
-//   - touched   -> shipments where their name appears anywhere in
-//                  statusHistory.changedBy, even if they neither created
-//                  nor were co-handler (e.g. Accounts entering an invoice
-//                  number on a shipment Freight created and Customs
-//                  handled). Reuses the exact "involved" pattern from
-//                  getShipmentsByReferenceCode — matched by changedBy
-//                  name, same as everywhere else changedBy is used.
-// lastActive is the most recent status-history timestamp attributed to
-// that name, in the same optional date range — this is what surfaces
-// "who's gone quiet" without anyone having to dig through logs.
 const getEmployeePerformance = async (req, res) => {
   try {
     if (req.user?.role !== 'ADMIN') {
@@ -1346,9 +1359,6 @@ const getEmployeePerformance = async (req, res) => {
       select: { id: true, name: true, email: true, role: true, team: true }
     });
 
-    // Optional date range — applies to both shipment creation and
-    // status-history activity, same IST-anchored style used elsewhere
-    // in this file (Daily Report, Today filter).
     let dateFilter = {};
     if (from) dateFilter.gte = new Date(`${from}T00:00:00+05:30`);
     if (to) dateFilter.lt = new Date(`${to}T23:59:59.999+05:30`);
@@ -1362,9 +1372,6 @@ const getEmployeePerformance = async (req, res) => {
       select: { id: true, createdById: true, coHandlerId: true }
     });
 
-    // "Touched" activity is read from status history independently of the
-    // shipment-creation date filter above, so an old shipment someone
-    // acts on today still counts toward today's activity.
     const historyWhere = {};
     if (hasDateFilter) historyWhere.createdAt = dateFilter;
 
@@ -1373,8 +1380,8 @@ const getEmployeePerformance = async (req, res) => {
       select: { shipmentId: true, changedBy: true, createdAt: true }
     });
 
-    const touchedMap = {}; // name -> Set(shipmentId)
-    const lastActiveMap = {}; // name -> latest Date
+    const touchedMap = {};
+    const lastActiveMap = {};
     histories.forEach((h) => {
       if (!h.changedBy) return;
       if (!touchedMap[h.changedBy]) touchedMap[h.changedBy] = new Set();
@@ -1384,8 +1391,8 @@ const getEmployeePerformance = async (req, res) => {
       }
     });
 
-    const createdMap = {}; // userId -> count
-    const coHandledMap = {}; // userId -> count
+    const createdMap = {};
+    const coHandledMap = {};
     shipments.forEach((s) => {
       if (s.createdById) createdMap[s.createdById] = (createdMap[s.createdById] || 0) + 1;
       if (s.coHandlerId) coHandledMap[s.coHandlerId] = (coHandledMap[s.coHandlerId] || 0) + 1;
@@ -1529,27 +1536,28 @@ module.exports = {
   getBinCount,
   bulkRestoreShipments,
   exportShipments, 
-  exportSelectedForClient, // ✅ NEW
+  exportSelectedForClient,
   getAllShipments, 
   getShipmentStats,
   getReferenceCodeStats,
-  getShipmentsByReferenceCode, // ✅ NEW
-  getEmployeeStats, // ✅ NEW
-  getShipmentsByEmployee, // ✅ NEW
-  getReferencePrefixes, // ✅ NEW
-  createReferencePrefix, // ✅ NEW
-  deleteReferencePrefix, // ✅ NEW
-  updateReferencePrefix, // ✅ NEW
-  getReferenceInitials, // ✅ NEW
-  createReferenceInitial, // ✅ NEW
-  updateReferenceInitial, // ✅ NEW
-  deleteReferenceInitial, // ✅ NEW
-  generateReferenceNumber, // ✅ NEW
-  getTeamOverview, // ✅ NEW
-  getEmployeeList, // ✅ NEW
-  buildDailyReport, // ✅ NEW
-  getDailyReport, // ✅ NEW
-  getEmployeePerformance, // ✅ NEW
+  getShipmentsByReferenceCode,
+  getEmployeeStats,
+  getShipmentsByEmployee,
+  getReferencePrefixes,
+  createReferencePrefix,
+  deleteReferencePrefix,
+  updateReferencePrefix,
+  getReferenceInitials,
+  createReferenceInitial,
+  updateReferenceInitial,
+  deleteReferenceInitial,
+  generateReferenceNumber,
+  getTeamOverview,
+  getEmployeeList,
+  buildDailyReport,
+  getDailyReport,
+  getEmployeePerformance,
+  autoArchiveMatured, // ✅ NEW — exported so server.js can also run it on a schedule
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 

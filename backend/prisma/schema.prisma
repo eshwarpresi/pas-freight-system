@@ -187,6 +187,13 @@ model Accounts {
   invoiceDate     DateTime?
   
   sendingDate     DateTime?
+
+  // ✅ COMPLETED-AT (NEW) — stamped once, the first time Invoice No +
+  // Invoice Date + Sending Date are all present. This is the anchor date
+  // for the 30-day delayed auto-archive: a shipment only moves to Archive
+  // once (now - completedAt) >= 30 days, instead of archiving the instant
+  // the invoice is complete. Never overwritten after it's first set.
+  completedAt     DateTime?
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -228,20 +235,12 @@ model Notification {
 // ==========================================
 // REFERENCE NUMBER AUTO-GENERATION (NEW)
 // ==========================================
-// One shared global counter — every prefix (RE, SI, PIPE, ...) draws its
-// next number from this single row, so a request is never issued twice
-// even if 50+ employees click "Generate" in the same second. The Prisma
-// `increment` update on this row compiles to one atomic SQL UPDATE, which
-// Postgres serializes safely under concurrent load.
 model ReferenceCounter {
   id        String   @id @default("global")
   value     Int      @default(0)
   updatedAt DateTime @updatedAt
 }
 
-// The list of prefixes employees can pick from (or add to) when
-// generating a reference number. Just a label — the actual number always
-// comes from ReferenceCounter above.
 model ReferencePrefix {
   id        String   @id @default(uuid())
   code      String   @unique
