@@ -8,7 +8,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice']
@@ -88,7 +88,7 @@ function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }
   return (<div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label><div className="flex gap-2"><div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div><div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div></div></div>)
 }
 
-// ─── HANDLED BY BADGES (NEW) ───
+// ─── HANDLED BY BADGES ───
 // Shows which team member first touched this shipment on each of the 3
 // workflow teams — Freight (creator), Customs, Accounts. A blank ("—")
 // badge means nobody on that team has acted on this shipment yet, which
@@ -98,6 +98,46 @@ function HandledByBadge({ label, name, colorClass }) {
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${colorClass}`}>
       {label}: {name || '—'}
     </span>
+  )
+}
+
+// ─── EVERYONE INVOLVED (NEW) ───
+// Unlike the 3 Handled By badges above (which only show who was FIRST on
+// each team), this shows EVERY person who has ever logged an action on
+// this specific shipment — including handoffs (e.g. Rajeswari started
+// Customs work, Priya finished it — both show up here, Handled By would
+// only ever show Rajeswari). Sourced from `contributors`, computed
+// backend-side from the shipment's full status history.
+function EveryoneInvolved({ contributors }) {
+  if (!contributors || contributors.length === 0) return null
+  const timeAgo = (date) => {
+    const seconds = Math.floor((new Date() - new Date(date)) / 1000)
+    if (seconds < 60) return 'just now'
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+    return `${Math.floor(seconds / 86400)}d ago`
+  }
+  return (
+    <div className="glass rounded-xl border border-[var(--border-color)] p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <Users2 size={15} className="text-violet-500" />
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Everyone Involved</h3>
+        <span className="text-[11px] text-[var(--text-muted)]">({contributors.length} {contributors.length === 1 ? 'person' : 'people'})</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {contributors.map((c) => (
+          <div key={c.name} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-900">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+              {c.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-[var(--text-primary)] leading-tight">{c.name}</p>
+              <p className="text-[10px] text-[var(--text-muted)] leading-tight">{c.actionCount} {c.actionCount === 1 ? 'action' : 'actions'} · last {timeAgo(c.lastAction)}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -273,7 +313,7 @@ export default function ShipmentDetail() {
                   </span>
                 )}
               </div>
-              {/* ✅ HANDLED BY (NEW) — Freight / Customs / Accounts, auto-filled
+              {/* ✅ HANDLED BY — Freight / Customs / Accounts, auto-filled
                   the moment each team first acts on this shipment. A blank
                   "—" badge means nobody on that team has touched it yet. */}
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -319,6 +359,10 @@ export default function ShipmentDetail() {
           )}
         </div>
       </div>
+
+      {/* ✅ EVERYONE INVOLVED (NEW) — full contributor list for this
+          shipment, distinct from the 3 Handled By badges above. */}
+      <EveryoneInvolved contributors={shipment.contributors} />
       
       <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
         <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isFFOnly ? 'FF Only Workflow' : isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>

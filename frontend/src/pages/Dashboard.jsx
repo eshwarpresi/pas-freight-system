@@ -957,7 +957,22 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                         </>
                       ) : (
                         <>
-                          <td className="px-2.5 py-2.5 whitespace-nowrap"><Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link></td>
+                          <td className="px-2.5 py-2.5 whitespace-nowrap">
+                            <Link to={`/shipment/${s.id}`} className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline">{s.refNo}</Link>
+                            {/* ✅ HANDLED BY (NEW) — same Freight/Customs/Accounts badges
+                                shown on Shipment Detail, mirrored here so the list itself
+                                shows who's been involved without opening each shipment. */}
+                            <div className="flex flex-wrap items-center gap-1 mt-1">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">F: {s.createdByName || '—'}</span>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">C: {s.customsHandledByName || '—'}</span>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">A: {s.accountsHandledByName || '—'}</span>
+                              {s.contributorCount > 0 && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300" title="Total people who have worked on this shipment">
+                                  👥 {s.contributorCount}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getModeBadge(s.shipmentType)}`}>{s.shipmentType||'—'}</span></td>
                           <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getImportExportBadge(s.importExport)}`}>{s.importExport||'—'}</span></td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] font-medium whitespace-nowrap">{s.freightForwarding?.consigneeName||<span className="text-[var(--text-muted)]">—</span>}</td>

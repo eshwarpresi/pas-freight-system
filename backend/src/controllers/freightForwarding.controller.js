@@ -669,6 +669,7 @@ const getAllShipments = async (req, res) => {
         select: { 
           id: true, refNo: true, currentStatus: true, shipmentStage: true, 
           shipmentType: true, importExport: true, createdByName: true, createdAt: true, 
+          customsHandledByName: true, accountsHandledByName: true, // ✅ NEW — Handled By badges on the list
           freightForwarding: { 
             select: { 
               consigneeName: true, shipperName: true, hawb: true, mawb: true, agent: true, 
@@ -686,6 +687,34 @@ const getAllShipments = async (req, res) => {
       }),
       prisma.shipment.count({ where })
     ]);
+
+    // ✅ CONTRIBUTOR COUNTS (NEW) — one batch query for the whole page,
+    // not one query per row. Counts how many DISTINCT people have logged
+    // any action on each shipment (via statusHistory.changedBy), so the
+    // Dashboard can show "👥 N" without needing the full per-shipment
+    // breakdown (that lives on the Shipment Detail page instead).
+    if (shipments.length > 0) {
+      const shipmentIds = shipments.map((s) => s.id);
+      const allHistory = await prisma.statusHistory.findMany({
+        where: { shipmentId: { in: shipmentIds }, changedBy: { not: null } },
+        select: { shipmentId: true, changedBy: true }
+      });
+      const contributorSets = {};
+      allHistory.forEach((h) => {
+        if (!contributorSets[h.shipmentId]) contributorSets[h.shipmentId] = new Set();
+        contributorSets[h.shipmentId].add(h.changedBy);
+      });
+      shipments.forEach((s) => {
+        const set = contributorSets[s.id];
+        // createdByName counts as a contributor too, even if some early
+        // ENQUIRY history entry predates changedBy tracking.
+        if (s.createdByName) {
+          if (!set) contributorSets[s.id] = new Set([s.createdByName]);
+          else set.add(s.createdByName);
+        }
+        s.contributorCount = contributorSets[s.id] ? contributorSets[s.id].size : (s.createdByName ? 1 : 0);
+      });
+    }
     
     console.log('🔍 RESULT total:', total, 'data length:', shipments.length);
     if (shipments.length > 0) {
@@ -1423,8 +1452,40 @@ const getEmployeePerformance = async (req, res) => {
 };
 
 // ─── GET SINGLE ───
+// ✅ Now also computes `contributors` — EVERY person who has ever acted
+// on this specific shipment (not just who created it, and not just who
+// was first per team), with how many actions each of them logged and
+// when their first/last action was. Pulled from the FULL status history
+// for this shipment (not the 50-entry-limited slice returned for the
+// timeline UI), so the count is always accurate even on very old,
+// heavily-worked shipments. This is the real per-shipment "who worked on
+// this" answer — Handled By badges only show who was first per team,
+// this shows everyone, including handoffs.
 const getShipmentById = async (req, res) => {
-  try { const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); if (!s) return res.status(404).json({ status: 'error', message: 'Not found' }); res.json({ status: 'success', data: s }); } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try {
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    if (!s) return res.status(404).json({ status: 'error', message: 'Not found' });
+
+    const fullHistory = await prisma.statusHistory.findMany({
+      where: { shipmentId: s.id, changedBy: { not: null } },
+      select: { changedBy: true, createdAt: true },
+      orderBy: { createdAt: 'asc' }
+    });
+    const contribMap = {};
+    fullHistory.forEach((h) => {
+      if (!contribMap[h.changedBy]) contribMap[h.changedBy] = { name: h.changedBy, actionCount: 0, firstAction: h.createdAt, lastAction: h.createdAt };
+      contribMap[h.changedBy].actionCount += 1;
+      contribMap[h.changedBy].lastAction = h.createdAt;
+    });
+    // Ensure the creator always appears, even if their earliest history
+    // entries predate changedBy tracking and so weren't counted above.
+    if (s.createdByName && !contribMap[s.createdByName]) {
+      contribMap[s.createdByName] = { name: s.createdByName, actionCount: 0, firstAction: s.createdAt, lastAction: s.createdAt };
+    }
+    const contributors = Object.values(contribMap).sort((a, b) => b.actionCount - a.actionCount);
+
+    res.json({ status: 'success', data: { ...s, contributors } });
+  } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // ─── ALL UPDATE ROUTES ───
