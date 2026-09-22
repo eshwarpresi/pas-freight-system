@@ -963,9 +963,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                                 shown on Shipment Detail, mirrored here so the list itself
                                 shows who's been involved without opening each shipment. */}
                             <div className="flex flex-wrap items-center gap-1 mt-1">
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">F: {s.freightCompletedByName || '—'}</span>
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">C: {s.customsHandledByName || '—'}</span>
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">A: {s.accountsHandledByName || '—'}</span>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" title={(s.freightNames || []).join(', ')}>F: {(s.freightNames && s.freightNames.length > 0) ? s.freightNames.join(', ') : '—'}</span>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" title={(s.customsNames || []).join(', ')}>C: {(s.customsNames && s.customsNames.length > 0) ? s.customsNames.join(', ') : '—'}</span>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" title={(s.accountsNames || []).join(', ')}>A: {(s.accountsNames && s.accountsNames.length > 0) ? s.accountsNames.join(', ') : '—'}</span>
                               {s.contributorCount > 0 && (
                                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300" title="Total people who have worked on this shipment">
                                   👥 {s.contributorCount}

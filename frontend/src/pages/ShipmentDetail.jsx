@@ -313,13 +313,13 @@ export default function ShipmentDetail() {
                   </span>
                 )}
               </div>
-              {/* ✅ HANDLED BY — Freight / Customs / Accounts, auto-filled
-                  the moment each team first acts on this shipment. A blank
-                  "—" badge means nobody on that team has touched it yet. */}
+              {/* ✅ HANDLED BY — Freight / Customs / Accounts, showing
+                  EVERYONE who has worked that team's part on this
+                  shipment, not just whoever was first. */}
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                <HandledByBadge label="Freight" name={shipment.freightCompletedByName} colorClass="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" />
-                <HandledByBadge label="Customs" name={shipment.customsHandledByName} colorClass="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" />
-                <HandledByBadge label="Accounts" name={shipment.accountsHandledByName} colorClass="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" />
+                <HandledByBadge label="Freight" name={(shipment.teamContributors?.FREIGHT || []).join(', ')} colorClass="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" />
+                <HandledByBadge label="Customs" name={(shipment.teamContributors?.CUSTOMS || []).join(', ')} colorClass="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" />
+                <HandledByBadge label="Accounts" name={(shipment.teamContributors?.ACCOUNTS || []).join(', ')} colorClass="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" />
               </div>
               <p className="text-sm text-[var(--text-secondary)] mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
             </div>

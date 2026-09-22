@@ -28,6 +28,42 @@ function actorName(req) {
   return req.user?.name || req.user?.email || null;
 }
 
+// ─── STATUS -> TEAM MAP (NEW) ───
+// Classifies each status-history entry by which of the 3 workflow teams
+// performed it. Used to build "Freight: A, B" / "Customs: C, D, E" /
+// "Accounts: F, G" badges showing EVERYONE who worked on that team's
+// part of a shipment — not just whoever was first. Statuses not listed
+// here (REMARKS, STAGE_CHANGE, DELETED, RESTORED, COMPLETED, etc.) are
+// team-neutral/administrative and don't attribute to any single team,
+// though they still count toward the overall "Everyone Involved" total.
+const STATUS_TEAM_MAP = {
+  ENQUIRY: 'FREIGHT', REFNO_UPDATED: 'FREIGHT', CONSIGNEE_UPDATED: 'FREIGHT', SHIPPER_UPDATED: 'FREIGHT',
+  AGENT_UPDATED: 'FREIGHT', TYPE_UPDATED: 'FREIGHT', IMPORT_EXPORT_UPDATED: 'FREIGHT',
+  FROM_LOCATION: 'FREIGHT', TO_LOCATION: 'FREIGHT', TERMS: 'FREIGHT', RATES_UPDATED: 'FREIGHT',
+  CBM_UPDATED: 'FREIGHT', PORT_LOCATION: 'FREIGHT', NOMINATED: 'FREIGHT', BOOKED: 'FREIGHT',
+  SCHEDULED: 'FREIGHT', AWB_GENERATED: 'FREIGHT',
+  CHECKLIST_APPROVED: 'CUSTOMS', BOE_FILED: 'CUSTOMS', DO_COLLECTED: 'CUSTOMS', OOC_DONE: 'CUSTOMS',
+  GATE_PASS: 'CUSTOMS', DELIVERED: 'CUSTOMS', SB_FILED: 'CUSTOMS', LEO_DONE: 'CUSTOMS', HAND_OVER: 'CUSTOMS',
+  INVOICE_GENERATED: 'ACCOUNTS', INVOICE_SENT: 'ACCOUNTS', INVOICE_COMPLETE: 'ACCOUNTS',
+};
+
+// Groups a shipment's status-history entries into per-team name lists,
+// deduped, in first-seen order. Returns { FREIGHT: [names], CUSTOMS: [names], ACCOUNTS: [names] }.
+function groupContributorsByTeam(historyEntries) {
+  const byTeam = { FREIGHT: [], CUSTOMS: [], ACCOUNTS: [] };
+  const seen = { FREIGHT: new Set(), CUSTOMS: new Set(), ACCOUNTS: new Set() };
+  historyEntries.forEach((h) => {
+    if (!h.changedBy) return;
+    const team = STATUS_TEAM_MAP[h.status];
+    if (!team) return;
+    if (!seen[team].has(h.changedBy)) {
+      seen[team].add(h.changedBy);
+      byTeam[team].push(h.changedBy);
+    }
+  });
+  return byTeam;
+}
+
 // ─── FREIGHT "HANDLED BY" COMPLETION STAMP (NEW) ───
 // Mirrors the Customs/Accounts pattern: the Freight badge should only
 // show a name once real freight work is done, not the instant a shipment
@@ -693,7 +729,6 @@ const getAllShipments = async (req, res) => {
         select: { 
           id: true, refNo: true, currentStatus: true, shipmentStage: true, 
           shipmentType: true, importExport: true, createdByName: true, createdAt: true, 
-          customsHandledByName: true, accountsHandledByName: true, freightCompletedByName: true, // ✅ NEW — Handled By badges on the list
           freightForwarding: { 
             select: { 
               consigneeName: true, shipperName: true, hawb: true, mawb: true, agent: true, 
@@ -712,31 +747,38 @@ const getAllShipments = async (req, res) => {
       prisma.shipment.count({ where })
     ]);
 
-    // ✅ CONTRIBUTOR COUNTS (NEW) — one batch query for the whole page,
-    // not one query per row. Counts how many DISTINCT people have logged
-    // any action on each shipment (via statusHistory.changedBy), so the
-    // Dashboard can show "👥 N" without needing the full per-shipment
-    // breakdown (that lives on the Shipment Detail page instead).
+    // ✅ HANDLED BY — EVERYONE PER TEAM (FIXED) — one batch query for the
+    // whole page, not one per row. For each shipment, groups every
+    // status-history entry into Freight/Customs/Accounts by which team
+    // performed that action (see STATUS_TEAM_MAP), producing a full name
+    // list per team — e.g. "Customs: Rajeswari, Priya, Tanuja" — not just
+    // whoever touched it first. contributorCount is the total distinct
+    // people across all teams, including the creator.
     if (shipments.length > 0) {
       const shipmentIds = shipments.map((s) => s.id);
       const allHistory = await prisma.statusHistory.findMany({
         where: { shipmentId: { in: shipmentIds }, changedBy: { not: null } },
-        select: { shipmentId: true, changedBy: true }
+        select: { shipmentId: true, changedBy: true, status: true },
+        orderBy: { createdAt: 'asc' }
       });
-      const contributorSets = {};
+      const historyByShipment = {};
       allHistory.forEach((h) => {
-        if (!contributorSets[h.shipmentId]) contributorSets[h.shipmentId] = new Set();
-        contributorSets[h.shipmentId].add(h.changedBy);
+        if (!historyByShipment[h.shipmentId]) historyByShipment[h.shipmentId] = [];
+        historyByShipment[h.shipmentId].push(h);
       });
       shipments.forEach((s) => {
-        const set = contributorSets[s.id];
-        // createdByName counts as a contributor too, even if some early
-        // ENQUIRY history entry predates changedBy tracking.
-        if (s.createdByName) {
-          if (!set) contributorSets[s.id] = new Set([s.createdByName]);
-          else set.add(s.createdByName);
+        const entries = historyByShipment[s.id] || [];
+        const byTeam = groupContributorsByTeam(entries);
+        // Creator always counts as a Freight contributor, even if their
+        // earliest history entries predate changedBy tracking.
+        if (s.createdByName && !byTeam.FREIGHT.includes(s.createdByName)) {
+          byTeam.FREIGHT.unshift(s.createdByName);
         }
-        s.contributorCount = contributorSets[s.id] ? contributorSets[s.id].size : (s.createdByName ? 1 : 0);
+        s.freightNames = byTeam.FREIGHT;
+        s.customsNames = byTeam.CUSTOMS;
+        s.accountsNames = byTeam.ACCOUNTS;
+        const allNames = new Set([...byTeam.FREIGHT, ...byTeam.CUSTOMS, ...byTeam.ACCOUNTS]);
+        s.contributorCount = allNames.size;
       });
     }
     
@@ -1680,7 +1722,21 @@ const getShipmentById = async (req, res) => {
     }
     const contributors = Object.values(contribMap).sort((a, b) => b.actionCount - a.actionCount);
 
-    res.json({ status: 'success', data: { ...s, contributors } });
+    // ✅ HANDLED BY — EVERYONE PER TEAM (FIXED) — same grouping as the
+    // Dashboard list, computed from the FULL history for this one
+    // shipment. Powers "Freight: A, B" / "Customs: C, D, E" / "Accounts:
+    // F, G" badges showing every person who worked that team's part, not
+    // just whoever was first.
+    const fullHistoryWithStatus = await prisma.statusHistory.findMany({
+      where: { shipmentId: s.id, changedBy: { not: null } },
+      select: { changedBy: true, status: true }
+    });
+    const teamContributorsFinal = groupContributorsByTeam(fullHistoryWithStatus);
+    if (s.createdByName && !teamContributorsFinal.FREIGHT.includes(s.createdByName)) {
+      teamContributorsFinal.FREIGHT.unshift(s.createdByName);
+    }
+
+    res.json({ status: 'success', data: { ...s, contributors, teamContributors: teamContributorsFinal } });
   } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
