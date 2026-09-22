@@ -1230,32 +1230,65 @@ const deleteReferenceInitial = async (req, res) => {
 };
 
 // ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
-// ─── BACKFILL A PREFIX'S COUNTER FROM EXISTING SHIPMENTS (NEW) ───
+// ─── BACKFILL A PREFIX'S COUNTER FROM EXISTING SHIPMENTS (FIXED) ───
 // The first time a prefix generates a number under the new per-prefix
 // counter system, this scans existing shipments starting with that
 // prefix code and finds the highest 4-digit sequence already in use
 // (e.g. "RLI260319-BG" -> sequence 319), so the new counter continues
-// from there instead of resetting to 0 and colliding with numbers
-// already issued under the old shared global counter.
+// from there instead of resetting to 0.
+//
+// ✅ FIXED: only recognizes refNos matching our OWN generated format
+// exactly — CODE + 6 digits (year + 4-digit sequence) + a dash. This
+// previously matched loosely on any digits after the code, so a
+// manually-typed ref like "SPI2661180-XX" (not one we ever generated)
+// got misread as sequence 6118 and jumped the whole counter forward by
+// thousands. The tightened pattern ignores anything that doesn't look
+// exactly like our own numbering scheme.
 async function backfillPrefixCounter(code) {
   const shipments = await prisma.shipment.findMany({
     where: { refNo: { startsWith: code } },
     select: { refNo: true }
   });
   let maxSeq = 0;
-  const re = new RegExp(`^${code}(\\d+)`);
+  const re = new RegExp(`^${code}\\d{2}(\\d{4})-`);
   shipments.forEach((s) => {
     const m = s.refNo.match(re);
     if (!m) return;
-    const digits = m[1];
-    const seqPart = digits.length >= 4 ? digits.slice(-4) : digits;
-    const seqNum = parseInt(seqPart, 10);
+    const seqNum = parseInt(m[1], 10);
     if (!isNaN(seqNum) && seqNum > maxSeq) maxSeq = seqNum;
   });
   return maxSeq;
 }
 
-// ─── GENERATE NEXT REFERENCE NUMBER (FIXED) ───
+// ─── MANUALLY SET A PREFIX'S COUNTER (NEW) ───
+// Lets anyone directly correct a prefix's counter if it ever gets thrown
+// off (e.g. a bad manual refNo poisoning the auto-backfill). Setting it
+// to N means the NEXT generated number will be N+1 — e.g. set to 319 to
+// make the next one 320.
+const setPrefixCounter = async (req, res) => {
+  try {
+    const code = req.params.code?.trim().toUpperCase();
+    const { value } = req.body;
+    if (!code) {
+      return res.status(400).json({ status: 'error', message: 'Prefix code is required' });
+    }
+    const numValue = parseInt(value, 10);
+    if (isNaN(numValue) || numValue < 0) {
+      return res.status(400).json({ status: 'error', message: 'A valid non-negative number is required' });
+    }
+    const existing = await prisma.referencePrefix.findUnique({ where: { code } });
+    if (!existing) {
+      return res.status(404).json({ status: 'error', message: `Prefix "${code}" not found` });
+    }
+    const updated = await prisma.referencePrefix.update({ where: { code }, data: { lastNumber: numValue } });
+    res.json({ status: 'success', data: updated, message: `Counter for "${code}" set to ${numValue}. Next generated number will use ${numValue + 1}.` });
+  } catch (error) {
+    console.error('Error setting prefix counter:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to set counter' });
+  }
+};
+
+
 // ✅ Each prefix now has its OWN independent counter (ReferencePrefix.
 // lastNumber), instead of one counter shared across every prefix. That
 // old shared design meant RLI's next number could jump unpredictably
@@ -1846,6 +1879,7 @@ module.exports = {
   createReferencePrefix,
   deleteReferencePrefix,
   updateReferencePrefix,
+  setPrefixCounter, // ✅ NEW
   getReferenceInitials,
   createReferenceInitial,
   updateReferenceInitial,
