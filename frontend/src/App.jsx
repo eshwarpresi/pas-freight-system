@@ -163,15 +163,15 @@ function App() {
                 <Route index element={user?.role === 'ADMIN' ? <Dashboard defaultType="" /> : <Dashboard mineOnly defaultType="" />} />
                 <Route path="overview" element={<Dashboard defaultType="" />} />
 
-                {/* ✅ Admin-only Team pages */}
-                <Route path="team" element={<AdminRoute user={user}><TeamOverview /></AdminRoute>} />
-                <Route path="team/:userId" element={<AdminRoute user={user}><EmployeeDashboard /></AdminRoute>} />
+                {/* ✅ Team pages — now open to everyone, not admin-only */}
+                <Route path="team" element={<TeamOverview />} />
+                <Route path="team/:userId" element={<EmployeeDashboard />} />
 
-                {/* ✅ Admin-only Daily Report page */}
-                <Route path="daily-report" element={<AdminRoute user={user}><DailyReport /></AdminRoute>} />
+                {/* ✅ Daily Report — now open to everyone */}
+                <Route path="daily-report" element={<DailyReport />} />
 
-                {/* ✅ NEW — Admin-only Team Performance page */}
-                <Route path="team-performance" element={<AdminRoute user={user}><TeamPerformance /></AdminRoute>} />
+                {/* ✅ Team Performance — now open to everyone */}
+                <Route path="team-performance" element={<TeamPerformance />} />
 
                 <Route path="freight" element={<FreightDashboard />} />
                 <Route path="cha" element={<CHADashboard />} />

@@ -1416,12 +1416,9 @@ async function buildDailyReport(dateStr) {
   };
 }
 
-// ─── GET DAILY REPORT (NEW, ADMIN ONLY) ───
+// ─── GET DAILY REPORT (NEW — visible to everyone) ───
 const getDailyReport = async (req, res) => {
   try {
-    if (req.user?.role !== 'ADMIN') {
-      return res.status(403).json({ status: 'error', message: 'Admin access required' });
-    }
     const { date } = req.query;
     const report = await buildDailyReport(date);
     res.json({ status: 'success', data: report });
@@ -1445,12 +1442,9 @@ const getEmployeeList = async (req, res) => {
   }
 };
 
-// ─── GET TEAM OVERVIEW (NEW, ADMIN ONLY) ───
+// ─── GET TEAM OVERVIEW (NEW — visible to everyone) ───
 const getTeamOverview = async (req, res) => {
   try {
-    if (req.user?.role !== 'ADMIN') {
-      return res.status(403).json({ status: 'error', message: 'Admin access required' });
-    }
     const users = await prisma.user.findMany({
       select: { id: true, name: true, email: true, role: true, team: true }
     });
@@ -1483,7 +1477,7 @@ const getTeamOverview = async (req, res) => {
   }
 };
 
-// ─── UPDATE EMPLOYEE TEAM (NEW, ADMIN ONLY) ───
+// ─── UPDATE EMPLOYEE TEAM (NEW — visible to everyone) ───
 // Sets which of the 3 workflow teams (FREIGHT/CUSTOMS/ACCOUNTS) an
 // employee belongs to. This is what the Team Performance report groups
 // by — separate from `role` (ADMIN/OPERATIONS/ACCOUNTS), since OPERATIONS
@@ -1492,9 +1486,6 @@ const getTeamOverview = async (req, res) => {
 const VALID_TEAMS = ['FREIGHT', 'CUSTOMS', 'ACCOUNTS'];
 const updateEmployeeTeam = async (req, res) => {
   try {
-    if (req.user?.role !== 'ADMIN') {
-      return res.status(403).json({ status: 'error', message: 'Admin access required' });
-    }
     const { id } = req.params;
     const { team } = req.body;
     if (team !== null && !VALID_TEAMS.includes(team)) {
@@ -1512,12 +1503,9 @@ const updateEmployeeTeam = async (req, res) => {
   }
 };
 
-// ─── GET EMPLOYEE PERFORMANCE (NEW, ADMIN ONLY) ───
+// ─── GET EMPLOYEE PERFORMANCE (NEW — visible to everyone) ───
 const getEmployeePerformance = async (req, res) => {
   try {
-    if (req.user?.role !== 'ADMIN') {
-      return res.status(403).json({ status: 'error', message: 'Admin access required' });
-    }
     const { team, from, to } = req.query;
 
     const users = await prisma.user.findMany({
@@ -1605,9 +1593,6 @@ const getEmployeePerformance = async (req, res) => {
 // consistently side by side.
 const getMonthlyReport = async (req, res) => {
   try {
-    if (req.user?.role !== 'ADMIN') {
-      return res.status(403).json({ status: 'error', message: 'Admin access required' });
-    }
     const { month } = req.query; // "YYYY-MM", defaults to current IST month
     const IST_OFFSET = 5.5 * 60 * 60 * 1000;
     let y, m;

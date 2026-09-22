@@ -27,7 +27,7 @@ export default function MainLayout({ user }) {
     return localStorage.getItem('pas_dark_mode') === 'true'
   })
 
-  // ✅ SIDEBAR COLLAPSE (NEW) — desktop-only collapse to an icon-only rail,
+  // ✅ SIDEBAR COLLAPSE — desktop-only collapse to an icon-only rail,
   // freeing up width for the dashboard table. Persisted so it stays how
   // the person left it across reloads. Mobile keeps its existing
   // hamburger/overlay behavior untouched — this only affects lg+ screens.
@@ -148,7 +148,13 @@ export default function MainLayout({ user }) {
         { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
       ]
 
-  const adminItems = [
+  // ✅ NO LONGER ADMIN-GATED — Team, Daily Report, and Team Performance
+  // are now visible to everyone in the sidebar, not just Admins. The
+  // backend endpoints behind these pages (getTeamOverview, getDailyReport,
+  // getEmployeePerformance, getMonthlyReport, updateEmployeeTeam) were
+  // also opened up to any logged-in user to match — otherwise the links
+  // would show but clicking them would fail with a 403.
+  const teamItems = [
     { path: '/team', icon: Users, label: 'Team', color: 'text-indigo-500' },
     { path: '/daily-report', icon: BarChart2, label: 'Daily Report', color: 'text-emerald-500' },
     { path: '/team-performance', icon: TrendingUp, label: 'Team Performance', color: 'text-rose-500' },
@@ -255,7 +261,7 @@ export default function MainLayout({ user }) {
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"><X size={16} className="text-[var(--text-secondary)]" /></button>
         </div>
 
-        {/* ✅ COLLAPSE TOGGLE (NEW) — desktop only. Floats on the sidebar's
+        {/* ✅ COLLAPSE TOGGLE — desktop only. Floats on the sidebar's
             right edge so it's reachable whether the rail is expanded or
             collapsed. */}
         <button
@@ -283,12 +289,10 @@ export default function MainLayout({ user }) {
           <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Overview</p>
           {navItems.map((item) => renderNavLink(item))}
 
-          {isAdmin && (
-            <>
-              <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Admin</p>
-              {adminItems.map((item) => renderNavLink(item))}
-            </>
-          )}
+          {/* ✅ Team / Daily Report / Team Performance — now shown to
+              everyone, not just Admins. */}
+          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Team</p>
+          {teamItems.map((item) => renderNavLink(item))}
 
           <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Modules</p>
           {dashboardLinks.map((item) => renderNavLink(item))}
@@ -389,9 +393,6 @@ export default function MainLayout({ user }) {
           <button onClick={handleLogout} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><LogOut size={18} className="text-red-500" /></button>
         </header>
 
-        {/* ✅ Width cap removed (was max-w-[1400px]) — the dashboard now uses
-            the full width freed up by the sidebar, especially noticeable
-            once collapsed. */}
         <main className="p-4 sm:p-6 lg:p-8 w-full"><Outlet /></main>
       </div>
     </div>
