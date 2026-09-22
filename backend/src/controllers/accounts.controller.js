@@ -38,25 +38,60 @@ async function stampAccountsHandler(id, req) {
   }
 }
 
-// ─── MARK INVOICE COMPLETE (NEW) ───
-// Replaces the old "archive immediately" behavior. The moment Invoice No
-// + Invoice Date + Sending Date are ALL present for the first time, this
-// stamps `completedAt` on the Accounts record (once — never overwritten
-// on later edits) and logs a status-history entry. The shipment itself
-// stays in Active; a separate 30-day-matured sweep (in
+// ─── ARCHIVE ELIGIBILITY CHECK (NEW) ───
+// Shared with freightForwarding.controller.js's autoArchiveMatured sweep
+// (duplicated rather than imported, to avoid a circular require between
+// the two controllers — this is a small pure function, cheap to keep in
+// sync). A shipment is only eligible to eventually archive once ALL of
+// its required fields are filled in — not just the invoice. Required
+// fields differ by shipment type, matching what each type's own create/
+// edit form actually collects:
+//   - Full Freight shipments: From, To, Terms, Gross Weight, Chargeable
+//     Weight, HAWB (Freight) + BOE No or SB No (Customs) + Invoice No +
+//     Invoice Date (Accounts)
+//   - CHA Only: BOE No or SB No (Customs) + Invoice No + Invoice Date
+//     (Accounts) — no Freight-tab fields, since CHA Only's own form
+//     never collects From/To/Terms
+//   - Transport / DO Release / FF Only: Invoice No + Invoice Date only
+//     — these simpler workflows don't have a Customs stage at all
+function isArchiveEligible(shipment) {
+  const ff = shipment.freightForwarding || {};
+  const cha = shipment.cha || {};
+  const accounts = shipment.accounts || {};
+
+  if (!accounts.invoiceNumber || !accounts.invoiceDate) return false;
+
+  const simpleTypes = ['Transport', 'DO Release', 'FF Only'];
+  if (simpleTypes.includes(shipment.shipmentType)) return true;
+
+  const hasCustomsDoc = !!(cha.boeNo || cha.sbNo);
+  if (!hasCustomsDoc) return false;
+
+  if (shipment.shipmentType === 'CHA Only') return true;
+
+  // Full Freight shipment — everything required
+  return !!(ff.fromLocation && ff.toLocation && ff.terms && ff.grossWeight && ff.weight && ff.hawb);
+}
+
+// ─── MARK INVOICE COMPLETE (FIXED) ───
+// Now checks ALL required fields for this shipment's type (see
+// isArchiveEligible above), not just the 3 accounts fields. The moment
+// everything required is present for the first time, this stamps
+// `completedAt` on the Accounts record (once — never overwritten on
+// later edits) and logs a status-history entry. The shipment itself
+// stays in Active; the 30-day-matured sweep (in
 // freightForwarding.controller.js, run whenever shipments are listed)
 // is what actually flips isArchived to true, once 30 days have passed
-// since this timestamp. This gives the Accounts team a full month to
-// catch mistakes or amend the invoice before the shipment disappears
-// into Archive.
+// AND the shipment still meets isArchiveEligible at that time.
 async function markInvoiceCompleteIfReady(id, req) {
-  const currentAccounts = await prisma.accounts.findUnique({ where: { shipmentId: id } });
-  const isInvoiceComplete =
-    currentAccounts?.invoiceNumber &&
-    currentAccounts?.invoiceDate &&
-    currentAccounts?.sendingDate;
+  const shipment = await prisma.shipment.findUnique({
+    where: { id },
+    select: { shipmentType: true, freightForwarding: true, cha: true, accounts: true }
+  });
+  if (!shipment || !shipment.accounts) return false;
+  if (shipment.accounts.completedAt) return false; // already stamped
 
-  if (isInvoiceComplete && !currentAccounts.completedAt) {
+  if (isArchiveEligible(shipment)) {
     await prisma.shipment.update({
       where: { id },
       data: {
@@ -64,7 +99,7 @@ async function markInvoiceCompleteIfReady(id, req) {
         statusHistory: {
           create: {
             status: 'INVOICE_COMPLETE',
-            remarks: 'Invoice fully complete (Number, Date, Sending Date) — will move to Archive automatically in 30 days',
+            remarks: 'All required fields complete — will move to Archive automatically in 30 days',
             changedBy: actorName(req)
           }
         }

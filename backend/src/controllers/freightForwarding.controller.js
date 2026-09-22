@@ -88,41 +88,79 @@ async function checkAndStampFreightComplete(shipmentId, req) {
   }
 }
 
-// ─── 30-DAY DELAYED AUTO-ARCHIVE (NEW) ───
+// ─── ARCHIVE ELIGIBILITY CHECK (NEW) ───
+// Duplicated from accounts.controller.js (kept in sync manually — small
+// pure function, not worth a shared-module require cycle between the two
+// controllers). See that file's copy for the full field-by-type
+// rationale. A shipment is only allowed to be archived — or to STAY
+// archived — while all of these are true.
+function isArchiveEligible(shipment) {
+  const ff = shipment.freightForwarding || {};
+  const cha = shipment.cha || {};
+  const accounts = shipment.accounts || {};
+
+  if (!accounts.invoiceNumber || !accounts.invoiceDate) return false;
+
+  const simpleTypes = ['Transport', 'DO Release', 'FF Only'];
+  if (simpleTypes.includes(shipment.shipmentType)) return true;
+
+  const hasCustomsDoc = !!(cha.boeNo || cha.sbNo);
+  if (!hasCustomsDoc) return false;
+
+  if (shipment.shipmentType === 'CHA Only') return true;
+
+  return !!(ff.fromLocation && ff.toLocation && ff.terms && ff.grossWeight && ff.weight && ff.hawb);
+}
+
+// ─── 30-DAY DELAYED AUTO-ARCHIVE (FIXED) ───
 // Runs a lightweight sweep every time shipments are listed or stats are
-// computed — no cron job or server.js changes needed. Finds any active
-// shipment whose invoice was marked complete (accounts.completedAt, set
-// by accounts.controller.js) 30+ days ago and moves it to Archive, with
-// a status-history entry recording the auto-archive.
+// computed — no cron job or server.js changes needed.
 //
-// This replaces the old "archive the instant all 3 invoice fields are
-// filled in" behavior, which was too aggressive — Accounts now gets a
-// full 30-day grace window after completing an invoice before the
-// shipment leaves Active.
+// Two passes:
+//   1. ARCHIVE — any active shipment whose invoice was marked complete
+//      (accounts.completedAt, set by accounts.controller.js) 30+ days
+//      ago, AND that still passes isArchiveEligible right now, moves to
+//      Archive.
+//   2. RESTORE (NEW) — any shipment CURRENTLY in Archive that no longer
+//      passes isArchiveEligible (e.g. it was archived before this
+//      stricter field-completeness rule existed, or a required field
+//      was cleared afterward) moves back to Active automatically. This
+//      is what retroactively fixes shipments that were archived with
+//      missing Freight/Customs/Accounts fields under the old rules.
 async function autoArchiveMatured() {
   try {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const matured = await prisma.shipment.findMany({
-      where: {
-        isArchived: false,
-        isDeleted: false,
-        accounts: { completedAt: { lte: cutoff } }
-      },
-      select: { id: true }
+      where: { isArchived: false, isDeleted: false, accounts: { completedAt: { lte: cutoff } } },
+      select: { id: true, shipmentType: true, freightForwarding: true, cha: true, accounts: true }
     });
-    if (matured.length === 0) return;
-    await Promise.all(matured.map((m) => prisma.shipment.update({
-      where: { id: m.id },
-      data: {
-        isArchived: true,
-        statusHistory: {
-          create: {
-            status: 'COMPLETED',
-            remarks: 'Auto-archived 30 days after invoice was completed'
+    for (const s of matured) {
+      if (isArchiveEligible(s)) {
+        await prisma.shipment.update({
+          where: { id: s.id },
+          data: {
+            isArchived: true,
+            statusHistory: { create: { status: 'COMPLETED', remarks: 'Auto-archived 30 days after invoice was completed' } }
           }
-        }
+        });
       }
-    })));
+    }
+
+    const currentlyArchived = await prisma.shipment.findMany({
+      where: { isArchived: true, isDeleted: false },
+      select: { id: true, shipmentType: true, freightForwarding: true, cha: true, accounts: true }
+    });
+    for (const s of currentlyArchived) {
+      if (!isArchiveEligible(s)) {
+        await prisma.shipment.update({
+          where: { id: s.id },
+          data: {
+            isArchived: false,
+            statusHistory: { create: { status: 'RESTORED', remarks: 'Moved back to Active — required fields are missing (auto-corrected)' } }
+          }
+        });
+      }
+    }
   } catch (error) {
     // Never let a housekeeping sweep break the actual request it's attached to.
     console.error('Error in autoArchiveMatured sweep:', error);

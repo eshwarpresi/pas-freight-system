@@ -8,7 +8,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice']
@@ -139,6 +139,38 @@ function EveryoneInvolved({ contributors }) {
       </div>
     </div>
   )
+}
+
+// ─── STEP COMPLETION CHECK (NEW) ───
+// Fixes a real bug: the workflow stepper used to mark every step "done"
+// just because it sat before the shipment's currentStatus in the list —
+// but currentStatus can jump straight to INVOICE_GENERATED if someone
+// fills in only the invoice, skipping Rates/Nominated/Booked/Scheduled/
+// AWB/Checklist/BOE/etc entirely. That made every skipped step show as
+// falsely "completed" (green). This checks each step's ACTUAL underlying
+// field data instead, so a skipped step shows as genuinely missing (red)
+// regardless of what currentStatus says.
+function isStepComplete(statusKey, ff, cha, accounts) {
+  switch (statusKey) {
+    case 'ENQUIRY': return true
+    case 'RATES_ADDED': return !!(ff.weight || ff.grossWeight || ff.sellingRate)
+    case 'NOMINATED': return !!ff.nominationDate
+    case 'BOOKED': return !!ff.bookingDate
+    case 'SCHEDULED': return !!(ff.etd || ff.eta)
+    case 'AWB_GENERATED': return !!(ff.mawb || ff.hawb)
+    case 'CHECKLIST_APPROVED': return !!cha.checklistDate
+    case 'BOE_FILED': return !!cha.boeNo
+    case 'DO_COLLECTED': return !!cha.doCollectionDate
+    case 'OOC_DONE': return !!cha.oocDate
+    case 'GATE_PASS': return !!cha.gatePassDate
+    case 'DELIVERED': return !!cha.deliveryDate
+    case 'SB_FILED': return !!cha.sbNo
+    case 'LEO_DONE': return !!cha.leoDate
+    case 'HAND_OVER': return !!cha.handOverDate
+    case 'INVOICE_GENERATED': return !!(accounts.invoiceNumber && accounts.invoiceDate)
+    case 'INVOICE_SENT': return !!accounts.sendingDate
+    default: return true
+  }
 }
 
 export default function ShipmentDetail() {
@@ -367,11 +399,11 @@ export default function ShipmentDetail() {
       <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
         <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isFFOnly ? 'FF Only Workflow' : isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
-          {steps.map((step, i) => { const Icon = step.i; const done = i <= cur; const now = i === cur
-            return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${done ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : done ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={step.d}>{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${i < cur ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
+          {steps.map((step, i) => { const Icon = step.i; const complete = isStepComplete(step.s, ff, cha, accounts); const now = i === cur; const missing = !complete && i <= cur
+            return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${complete || missing || now ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${missing ? 'border-red-500 bg-red-50 dark:bg-red-900/30' : now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : complete ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={missing ? `${step.d} — not filled in yet` : step.d}>{missing ? <AlertCircle size={16} className="text-red-500" /> : complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${missing ? 'text-red-600 dark:text-red-400' : now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${complete ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
           })}
         </div>
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--border-color)] justify-center"><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Completed</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Current</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-300 dark:bg-gray-600" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Pending</span></div></div>
+        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--border-color)] justify-center flex-wrap"><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Completed</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Current</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Missing</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-300 dark:bg-gray-600" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Not yet reached</span></div></div>
       </div>
       
       <div className="hidden sm:flex glass rounded-xl p-1 gap-1 border border-[var(--border-color)]">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md':'text-[var(--text-secondary)] hover:text-indigo-500 dark:hover:text-indigo-400'}`}><Icon size={16}/><span>{t.l}</span></button>})}</div>
