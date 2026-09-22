@@ -1188,6 +1188,39 @@ const deleteReferenceInitial = async (req, res) => {
 };
 
 // ─── GENERATE NEXT REFERENCE NUMBER (NEW) ───
+// ─── BACKFILL A PREFIX'S COUNTER FROM EXISTING SHIPMENTS (NEW) ───
+// The first time a prefix generates a number under the new per-prefix
+// counter system, this scans existing shipments starting with that
+// prefix code and finds the highest 4-digit sequence already in use
+// (e.g. "RLI260319-BG" -> sequence 319), so the new counter continues
+// from there instead of resetting to 0 and colliding with numbers
+// already issued under the old shared global counter.
+async function backfillPrefixCounter(code) {
+  const shipments = await prisma.shipment.findMany({
+    where: { refNo: { startsWith: code } },
+    select: { refNo: true }
+  });
+  let maxSeq = 0;
+  const re = new RegExp(`^${code}(\\d+)`);
+  shipments.forEach((s) => {
+    const m = s.refNo.match(re);
+    if (!m) return;
+    const digits = m[1];
+    const seqPart = digits.length >= 4 ? digits.slice(-4) : digits;
+    const seqNum = parseInt(seqPart, 10);
+    if (!isNaN(seqNum) && seqNum > maxSeq) maxSeq = seqNum;
+  });
+  return maxSeq;
+}
+
+// ─── GENERATE NEXT REFERENCE NUMBER (FIXED) ───
+// ✅ Each prefix now has its OWN independent counter (ReferencePrefix.
+// lastNumber), instead of one counter shared across every prefix. That
+// old shared design meant RLI's next number could jump unpredictably
+// whenever PPI, SPI, JD, etc. generated a number in between — this fixes
+// that: RLI always continues ...0319 -> 0320 -> 0321, regardless of any
+// other prefix's activity. Same skip-3-and-7-last-digit rule as before,
+// just applied per-prefix now.
 const generateReferenceNumber = async (req, res) => {
   try {
     const { prefix, initials } = req.body;
@@ -1200,8 +1233,8 @@ const generateReferenceNumber = async (req, res) => {
     const code = prefix.trim().toUpperCase();
     const initialsCode = initials.trim().toUpperCase();
 
-    const prefixExists = await prisma.referencePrefix.findUnique({ where: { code } });
-    if (!prefixExists) {
+    let prefixRow = await prisma.referencePrefix.findUnique({ where: { code } });
+    if (!prefixRow) {
       return res.status(400).json({ status: 'error', message: `Prefix "${code}" doesn't exist yet. Add it first.` });
     }
     const initialsExist = await prisma.referenceInitial.findUnique({ where: { code: initialsCode } });
@@ -1209,17 +1242,28 @@ const generateReferenceNumber = async (req, res) => {
       return res.status(400).json({ status: 'error', message: `Initials "${initialsCode}" don't exist yet. Add them first.` });
     }
 
+    // One-time backfill: if this prefix has never used the new per-prefix
+    // counter (lastNumber still at its default 0), catch it up to the
+    // highest number it's already issued.
+    if (prefixRow.lastNumber === 0) {
+      const backfilled = await backfillPrefixCounter(code);
+      if (backfilled > 0) {
+        prefixRow = await prisma.referencePrefix.update({ where: { code }, data: { lastNumber: backfilled } });
+      }
+    }
+
     let counterValue;
     while (true) {
-      const counter = await prisma.referenceCounter.update({
-        where: { id: 'global' },
-        data: { value: { increment: 1 } }
+      const updated = await prisma.referencePrefix.update({
+        where: { code },
+        data: { lastNumber: { increment: 1 } }
       });
-      const lastDigit = counter.value % 10;
+      const lastDigit = updated.lastNumber % 10;
       if (lastDigit !== 3 && lastDigit !== 7) {
-        counterValue = counter.value;
+        counterValue = updated.lastNumber;
         break;
       }
+      // else: this number ends in 3 or 7 — loop again, incrementing past it
     }
 
     // Display format: YEAR (2 digits) + 4-digit zero-padded sequence
@@ -1231,9 +1275,6 @@ const generateReferenceNumber = async (req, res) => {
     res.json({ status: 'success', data: { refNo, number: formattedNumber, prefix: code, initials: initialsCode } });
   } catch (error) {
     console.error('Error generating reference number:', error);
-    if (error.code === 'P2025') {
-      return res.status(500).json({ status: 'error', message: 'Reference counter not initialized.' });
-    }
     res.status(500).json({ status: 'error', message: 'Failed to generate reference number' });
   }
 };

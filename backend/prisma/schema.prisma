@@ -246,6 +246,11 @@ model Notification {
 // ==========================================
 // REFERENCE NUMBER AUTO-GENERATION (NEW)
 // ==========================================
+// ⚠️ ReferenceCounter (below) is the OLD shared global counter — every
+// prefix drew from this one row, so one prefix's numbers would jump
+// unpredictably whenever ANY other prefix generated a number in
+// between. No longer used by generateReferenceNumber; left in place
+// only so nothing breaks if some old code path still references it.
 model ReferenceCounter {
   id        String   @id @default("global")
   value     Int      @default(0)
@@ -257,6 +262,15 @@ model ReferencePrefix {
   code      String   @unique
   createdBy String?
   createdAt DateTime @default(now())
+
+  // ✅ PER-PREFIX COUNTER (NEW) — each prefix now has its OWN sequential
+  // counter, so RLI always goes ...0319 -> 0320 -> 0321 regardless of
+  // what PPI, SPI, JD, etc. are doing. Starts at 0; the first generation
+  // under this new system auto-detects the highest number already used
+  // by this prefix (scanning existing shipments) and continues from
+  // there, so nothing resets or collides with numbers already issued
+  // under the old shared-counter system.
+  lastNumber Int @default(0)
 }
 
 model ReferenceInitial {
