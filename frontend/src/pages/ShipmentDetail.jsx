@@ -317,7 +317,7 @@ export default function ShipmentDetail() {
                   the moment each team first acts on this shipment. A blank
                   "—" badge means nobody on that team has touched it yet. */}
               <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                <HandledByBadge label="Freight" name={shipment.createdByName} colorClass="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" />
+                <HandledByBadge label="Freight" name={shipment.freightCompletedByName} colorClass="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" />
                 <HandledByBadge label="Customs" name={shipment.customsHandledByName} colorClass="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" />
                 <HandledByBadge label="Accounts" name={shipment.accountsHandledByName} colorClass="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" />
               </div>

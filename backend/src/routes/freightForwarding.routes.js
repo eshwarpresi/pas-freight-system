@@ -47,11 +47,17 @@ router.post('/reference-number/generate', freightController.generateReferenceNum
 // ─── TEAM OVERVIEW (NEW, ADMIN ONLY) ───
 router.get('/team-overview', freightController.getTeamOverview);
 
+// ─── UPDATE EMPLOYEE TEAM (NEW, ADMIN ONLY) ───
+router.put('/employees/:id/team', freightController.updateEmployeeTeam);
+
 // ─── DAILY REPORT (NEW, ADMIN ONLY) ───
 router.get('/daily-report', freightController.getDailyReport);
 
 // ─── EMPLOYEE PERFORMANCE (NEW, ADMIN ONLY) — Team Performance report ───
 router.get('/employee-performance', freightController.getEmployeePerformance);
+
+// ─── MONTHLY REPORT (NEW, ADMIN ONLY) — end-of-month individual scorecard ───
+router.get('/monthly-report', freightController.getMonthlyReport);
 
 // ─── EMPLOYEE LIST (NEW) — for the Co-Handler dropdown, any logged-in user ───
 router.get('/employees', freightController.getEmployeeList);

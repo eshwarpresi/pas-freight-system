@@ -28,6 +28,30 @@ function actorName(req) {
   return req.user?.name || req.user?.email || null;
 }
 
+// ─── FREIGHT "HANDLED BY" COMPLETION STAMP (NEW) ───
+// Mirrors the Customs/Accounts pattern: the Freight badge should only
+// show a name once real freight work is done, not the instant a shipment
+// is opened with nothing filled in. "Complete" here means Consignee +
+// Shipper + at least one of Weight/Gross Weight/Selling Rate are all
+// present. Only fires once per shipment (checks freightCompletedById is
+// still null).
+async function checkAndStampFreightComplete(shipmentId, req) {
+  if (!req.user?.id) return;
+  const shipment = await prisma.shipment.findUnique({
+    where: { id: shipmentId },
+    select: { freightCompletedById: true, freightForwarding: { select: { consigneeName: true, shipperName: true, weight: true, grossWeight: true, sellingRate: true } } }
+  });
+  if (!shipment || shipment.freightCompletedById) return;
+  const ff = shipment.freightForwarding;
+  const isComplete = ff && ff.consigneeName && ff.shipperName && (ff.weight || ff.grossWeight || ff.sellingRate);
+  if (isComplete) {
+    await prisma.shipment.update({
+      where: { id: shipmentId },
+      data: { freightCompletedById: req.user.id, freightCompletedByName: actorName(req) }
+    });
+  }
+}
+
 // ─── 30-DAY DELAYED AUTO-ARCHIVE (NEW) ───
 // Runs a lightweight sweep every time shipments are listed or stats are
 // computed — no cron job or server.js changes needed. Finds any active
@@ -669,7 +693,7 @@ const getAllShipments = async (req, res) => {
         select: { 
           id: true, refNo: true, currentStatus: true, shipmentStage: true, 
           shipmentType: true, importExport: true, createdByName: true, createdAt: true, 
-          customsHandledByName: true, accountsHandledByName: true, // ✅ NEW — Handled By badges on the list
+          customsHandledByName: true, accountsHandledByName: true, freightCompletedByName: true, // ✅ NEW — Handled By badges on the list
           freightForwarding: { 
             select: { 
               consigneeName: true, shipperName: true, hawb: true, mawb: true, agent: true, 
@@ -1345,7 +1369,7 @@ const getTeamOverview = async (req, res) => {
       return res.status(403).json({ status: 'error', message: 'Admin access required' });
     }
     const users = await prisma.user.findMany({
-      select: { id: true, name: true, email: true, role: true }
+      select: { id: true, name: true, email: true, role: true, team: true }
     });
     const shipments = await prisma.shipment.findMany({
       where: { isDeleted: false },
@@ -1373,6 +1397,35 @@ const getTeamOverview = async (req, res) => {
   } catch (error) {
     console.error('Error getting team overview:', error);
     res.status(500).json({ status: 'error', message: 'Failed to get team overview' });
+  }
+};
+
+// ─── UPDATE EMPLOYEE TEAM (NEW, ADMIN ONLY) ───
+// Sets which of the 3 workflow teams (FREIGHT/CUSTOMS/ACCOUNTS) an
+// employee belongs to. This is what the Team Performance report groups
+// by — separate from `role` (ADMIN/OPERATIONS/ACCOUNTS), since OPERATIONS
+// today covers both Freight and Customs people and this is how we tell
+// them apart.
+const VALID_TEAMS = ['FREIGHT', 'CUSTOMS', 'ACCOUNTS'];
+const updateEmployeeTeam = async (req, res) => {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ status: 'error', message: 'Admin access required' });
+    }
+    const { id } = req.params;
+    const { team } = req.body;
+    if (team !== null && !VALID_TEAMS.includes(team)) {
+      return res.status(400).json({ status: 'error', message: `Team must be one of: ${VALID_TEAMS.join(', ')}` });
+    }
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { team: team || null },
+      select: { id: true, name: true, email: true, role: true, team: true }
+    });
+    res.json({ status: 'success', data: updated });
+  } catch (error) {
+    console.error('Error updating employee team:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to update team' });
   }
 };
 
@@ -1451,6 +1504,108 @@ const getEmployeePerformance = async (req, res) => {
   }
 };
 
+// ─── GET MONTHLY REPORT (NEW, ADMIN ONLY) ───
+// The end-of-month scorecard. For a given calendar month (IST-anchored,
+// defaults to the current month), returns per employee:
+//   - created   -> shipments they opened this month
+//   - touched   -> distinct shipments they logged ANY action on this month
+//   - closed    -> of the shipments they touched, how many are currently
+//                  DELIVERED/HAND_OVER/INVOICE_GENERATED/INVOICE_SENT
+//   - totalActions -> raw count of status-history entries attributed to
+//                  them this month (volume, not just breadth)
+//   - activeDays -> distinct calendar days (IST) with at least one
+//                  logged action this month — the actual "is everyone
+//                  working" signal your MD is asking for; low activeDays
+//                  against a full working month stands out immediately
+//   - lastActive -> most recent action this month
+// Grouped by team, same as Team Performance, so the two pages read
+// consistently side by side.
+const getMonthlyReport = async (req, res) => {
+  try {
+    if (req.user?.role !== 'ADMIN') {
+      return res.status(403).json({ status: 'error', message: 'Admin access required' });
+    }
+    const { month } = req.query; // "YYYY-MM", defaults to current IST month
+    const IST_OFFSET = 5.5 * 60 * 60 * 1000;
+    let y, m;
+    if (month && /^\d{4}-\d{2}$/.test(month)) {
+      [y, m] = month.split('-').map(Number);
+      m -= 1; // 0-indexed
+    } else {
+      const nowIST = new Date(Date.now() + IST_OFFSET);
+      y = nowIST.getUTCFullYear();
+      m = nowIST.getUTCMonth();
+    }
+    const monthStart = new Date(Date.UTC(y, m, 1) - IST_OFFSET);
+    const monthEnd = new Date(Date.UTC(y, m + 1, 1) - IST_OFFSET);
+
+    const users = await prisma.user.findMany({
+      select: { id: true, name: true, email: true, role: true, team: true }
+    });
+
+    const createdThisMonth = await prisma.shipment.findMany({
+      where: { isDeleted: false, createdAt: { gte: monthStart, lt: monthEnd } },
+      select: { id: true, createdById: true }
+    });
+    const createdMap = {};
+    createdThisMonth.forEach((s) => {
+      if (s.createdById) createdMap[s.createdById] = (createdMap[s.createdById] || 0) + 1;
+    });
+
+    const historyThisMonth = await prisma.statusHistory.findMany({
+      where: { createdAt: { gte: monthStart, lt: monthEnd }, changedBy: { not: null } },
+      select: { shipmentId: true, changedBy: true, createdAt: true }
+    });
+
+    // Per-name aggregation: touched shipment ids, total actions, active
+    // days (as IST date strings), last active timestamp.
+    const perName = {};
+    historyThisMonth.forEach((h) => {
+      if (!perName[h.changedBy]) perName[h.changedBy] = { shipmentIds: new Set(), totalActions: 0, activeDays: new Set(), lastActive: h.createdAt };
+      const p = perName[h.changedBy];
+      p.shipmentIds.add(h.shipmentId);
+      p.totalActions += 1;
+      const istDay = new Date(h.createdAt.getTime() + IST_OFFSET).toISOString().split('T')[0];
+      p.activeDays.add(istDay);
+      if (h.createdAt > p.lastActive) p.lastActive = h.createdAt;
+    });
+
+    // To compute "closed", we need current status for every touched
+    // shipment across all employees — one batch query for the union.
+    const allTouchedIds = new Set();
+    Object.values(perName).forEach((p) => p.shipmentIds.forEach((id) => allTouchedIds.add(id)));
+    const touchedShipments = allTouchedIds.size > 0
+      ? await prisma.shipment.findMany({ where: { id: { in: Array.from(allTouchedIds) } }, select: { id: true, currentStatus: true } })
+      : [];
+    const statusById = {};
+    touchedShipments.forEach((s) => { statusById[s.id] = s.currentStatus; });
+    const CLOSED = ['DELIVERED', 'HAND_OVER', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+
+    const data = users.map((u) => {
+      const p = perName[u.name];
+      const touched = p ? p.shipmentIds.size : 0;
+      const closed = p ? Array.from(p.shipmentIds).filter((id) => CLOSED.includes(statusById[id])).length : 0;
+      return {
+        userId: u.id,
+        name: u.name,
+        email: u.email,
+        team: u.team || null,
+        created: createdMap[u.id] || 0,
+        touched,
+        closed,
+        totalActions: p ? p.totalActions : 0,
+        activeDays: p ? p.activeDays.size : 0,
+        lastActive: p ? p.lastActive : null
+      };
+    }).sort((a, b) => b.totalActions - a.totalActions);
+
+    res.json({ status: 'success', data: { month: `${y}-${String(m + 1).padStart(2, '0')}`, employees: data } });
+  } catch (error) {
+    console.error('Error getting monthly report:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get monthly report' });
+  }
+};
+
 // ─── GET SINGLE ───
 // ✅ Now also computes `contributors` — EVERY person who has ever acted
 // on this specific shipment (not just who created it, and not just who
@@ -1495,11 +1650,11 @@ const updateRefNo = async (req, res) => {
 };
 
 const updateConsignee = async (req, res) => {
-  try { const val = req.body.consigneeName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { consigneeName: val } } } }); await upsertStatusEntry(req.params.id, 'CONSIGNEE_UPDATED', `Consignee: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.consigneeName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { consigneeName: val } } } }); await upsertStatusEntry(req.params.id, 'CONSIGNEE_UPDATED', `Consignee: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateShipper = async (req, res) => {
-  try { const val = req.body.shipperName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { shipperName: val } } } }); await upsertStatusEntry(req.params.id, 'SHIPPER_UPDATED', `Shipper: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.shipperName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { shipperName: val } } } }); await upsertStatusEntry(req.params.id, 'SHIPPER_UPDATED', `Shipper: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateAgent = async (req, res) => {
@@ -1556,6 +1711,7 @@ const updateRates = async (req, res) => {
     if (Object.keys(data).length > 0) { 
       await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { data } } } }); 
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_UPDATED', parts.join(' | '), actorName(req)); 
+      await checkAndStampFreightComplete(req.params.id, req);
     } 
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); 
     sendStatusEmail(s).catch(() => {}); 
@@ -1614,10 +1770,12 @@ module.exports = {
   deleteReferenceInitial,
   generateReferenceNumber,
   getTeamOverview,
+  updateEmployeeTeam, // ✅ NEW (re-added — was lost in an earlier rebuild)
   getEmployeeList,
   buildDailyReport,
   getDailyReport,
   getEmployeePerformance,
+  getMonthlyReport, // ✅ NEW
   autoArchiveMatured, // ✅ NEW — exported so server.js can also run it on a schedule
   getShipmentById, 
   updateRefNo, 

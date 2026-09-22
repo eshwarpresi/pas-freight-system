@@ -84,6 +84,17 @@ model Shipment {
   customsHandledByName String?
   accountsHandledById   String?
   accountsHandledByName String?
+
+  // ✅ FREIGHT COMPLETION STAMP (NEW) — unlike Customs/Accounts, the
+  // Freight "creator" name was showing on the badge the instant a
+  // shipment was opened, even with nothing filled in yet. This makes
+  // Freight consistent with the other two teams: only stamped once
+  // Consignee + Shipper + at least one of Weight/Gross Weight/Selling
+  // Rate are all present (see checkAndStampFreightComplete in the
+  // controller). Until then, the Freight badge shows blank, same as an
+  // untouched Customs/Accounts badge.
+  freightCompletedById   String?
+  freightCompletedByName String?
   
   freightForwarding FreightForwarding?
   cha               CHA?
