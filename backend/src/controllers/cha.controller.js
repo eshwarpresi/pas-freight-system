@@ -20,6 +20,29 @@ function actorName(req) {
   return req.user?.name || req.user?.email || null;
 }
 
+// ─── PREVENT CLEARING A FIELD THAT ALREADY HAS A VALUE (NEW) ───
+// Same rule as freightForwarding.controller.js: once a field has real
+// data, it can only be REPLACED, never wiped back to blank. This matters
+// most here for jobNo, boeNo, sbNo, and trackingNumber — the only CHA
+// fields where the frontend can send an empty string to explicitly clear
+// them (everything else here only writes when a real value is given).
+function isBlank(v) {
+  return v === undefined || v === null || v === '';
+}
+function guardAgainstClearing(currentRecord, incomingData) {
+  const safeData = {};
+  const blockedFields = [];
+  for (const [key, newVal] of Object.entries(incomingData)) {
+    const currentVal = currentRecord ? currentRecord[key] : undefined;
+    if (!isBlank(currentVal) && isBlank(newVal)) {
+      blockedFields.push(key);
+    } else {
+      safeData[key] = newVal;
+    }
+  }
+  return { safeData, blockedFields };
+}
+
 // ─── CUSTOMS "HANDLED BY" AUTO-STAMP (NEW) ───
 // The first time anyone in Customs acts on a shipment, this stamps their
 // id+name onto the shipment permanently — powers the visible "Customs:
@@ -43,17 +66,22 @@ const updateChecklist = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureCHA(id);
-    const data = {};
+    const rawData = {};
     const parts = [];
-    if (req.body.jobNo !== undefined) { data.jobNo = req.body.jobNo; parts.push(`Job No: ${req.body.jobNo}`); }
-    if (req.body.checklistDate) { data.checklistDate = new Date(req.body.checklistDate); parts.push(`Checklist Date: ${req.body.checklistDate}`); }
-    if (req.body.checklistApprovalDate) { data.checklistApprovalDate = new Date(req.body.checklistApprovalDate); parts.push(`Approval Date: ${req.body.checklistApprovalDate}`); }
+    if (req.body.jobNo !== undefined) { rawData.jobNo = req.body.jobNo; }
+    if (req.body.checklistDate) { rawData.checklistDate = new Date(req.body.checklistDate); parts.push(`Checklist Date: ${req.body.checklistDate}`); }
+    if (req.body.checklistApprovalDate) { rawData.checklistApprovalDate = new Date(req.body.checklistApprovalDate); parts.push(`Approval Date: ${req.body.checklistApprovalDate}`); }
+
+    const current = await prisma.cHA.findUnique({ where: { shipmentId: id }, select: { jobNo: true } });
+    const { safeData: data, blockedFields } = guardAgainstClearing(current, rawData);
+    if (data.jobNo !== undefined) parts.push(`Job No: ${data.jobNo}`);
+
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'CHECKLIST_APPROVED', cha: { update: { data } }, statusHistory: { create: { status: 'CHECKLIST_APPROVED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'CHECKLIST_APPROVED', cha: { update: data }, statusHistory: { create: { status: 'CHECKLIST_APPROVED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
-    res.json({ status: 'success', data: s });
+    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
@@ -62,16 +90,21 @@ const updateBOE = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureCHA(id);
-    const data = {};
+    const rawData = {};
     const parts = [];
-    if (req.body.boeNo !== undefined) { data.boeNo = req.body.boeNo; parts.push(`BOE No: ${req.body.boeNo}`); }
-    if (req.body.boeDate) { data.boeDate = new Date(req.body.boeDate); parts.push(`BOE Date: ${req.body.boeDate}`); }
+    if (req.body.boeNo !== undefined) { rawData.boeNo = req.body.boeNo; }
+    if (req.body.boeDate) { rawData.boeDate = new Date(req.body.boeDate); parts.push(`BOE Date: ${req.body.boeDate}`); }
+
+    const current = await prisma.cHA.findUnique({ where: { shipmentId: id }, select: { boeNo: true } });
+    const { safeData: data, blockedFields } = guardAgainstClearing(current, rawData);
+    if (data.boeNo !== undefined) parts.push(`BOE No: ${data.boeNo}`);
+
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'BOE_FILED', cha: { update: { data } }, statusHistory: { create: { status: 'BOE_FILED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'BOE_FILED', cha: { update: data }, statusHistory: { create: { status: 'BOE_FILED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
-    res.json({ status: 'success', data: s });
+    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
@@ -122,16 +155,21 @@ const updatePOD = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureCHA(id);
-    const data = {};
+    const rawData = {};
     const parts = [];
-    if (req.body.deliveryDate) { data.deliveryDate = new Date(req.body.deliveryDate); parts.push(`Delivery Date: ${req.body.deliveryDate}`); }
-    if (req.body.trackingNumber !== undefined) { data.trackingNumber = req.body.trackingNumber; parts.push(`Tracking No: ${req.body.trackingNumber}`); }
+    if (req.body.deliveryDate) { rawData.deliveryDate = new Date(req.body.deliveryDate); parts.push(`Delivery Date: ${req.body.deliveryDate}`); }
+    if (req.body.trackingNumber !== undefined) { rawData.trackingNumber = req.body.trackingNumber; }
+
+    const current = await prisma.cHA.findUnique({ where: { shipmentId: id }, select: { trackingNumber: true } });
+    const { safeData: data, blockedFields } = guardAgainstClearing(current, rawData);
+    if (data.trackingNumber !== undefined) parts.push(`Tracking No: ${data.trackingNumber}`);
+
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DELIVERED', cha: { update: { data } }, statusHistory: { create: { status: 'DELIVERED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DELIVERED', cha: { update: data }, statusHistory: { create: { status: 'DELIVERED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
-    res.json({ status: 'success', data: s });
+    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
@@ -140,16 +178,21 @@ const updateShippingBill = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureCHA(id);
-    const data = {};
+    const rawData = {};
     const parts = [];
-    if (req.body.sbNo !== undefined) { data.sbNo = req.body.sbNo; parts.push(`SB No: ${req.body.sbNo}`); }
-    if (req.body.sbDate) { data.sbDate = new Date(req.body.sbDate); parts.push(`SB Date: ${req.body.sbDate}`); }
+    if (req.body.sbNo !== undefined) { rawData.sbNo = req.body.sbNo; }
+    if (req.body.sbDate) { rawData.sbDate = new Date(req.body.sbDate); parts.push(`SB Date: ${req.body.sbDate}`); }
+
+    const current = await prisma.cHA.findUnique({ where: { shipmentId: id }, select: { sbNo: true } });
+    const { safeData: data, blockedFields } = guardAgainstClearing(current, rawData);
+    if (data.sbNo !== undefined) parts.push(`SB No: ${data.sbNo}`);
+
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'SB_FILED', cha: { update: { data } }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'SB_FILED', cha: { update: data }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | '), changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
     }
     const s = await getFullShipment(id);
-    res.json({ status: 'success', data: s });
+    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 

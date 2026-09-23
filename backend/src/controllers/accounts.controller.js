@@ -38,6 +38,29 @@ async function stampAccountsHandler(id, req) {
   }
 }
 
+// ─── PREVENT CLEARING A FIELD THAT ALREADY HAS A VALUE (NEW) ───
+// Same rule as freightForwarding.controller.js and cha.controller.js:
+// once a field has real data, it can only be REPLACED, never wiped back
+// to blank. Matters most here for invoiceNumber — the only Accounts
+// field where the frontend can send an empty string to explicitly clear
+// it (invoiceDate/sendingDate only ever write when a real value is given).
+function isBlank(v) {
+  return v === undefined || v === null || v === '';
+}
+function guardAgainstClearing(currentRecord, incomingData) {
+  const safeData = {};
+  const blockedFields = [];
+  for (const [key, newVal] of Object.entries(incomingData)) {
+    const currentVal = currentRecord ? currentRecord[key] : undefined;
+    if (!isBlank(currentVal) && isBlank(newVal)) {
+      blockedFields.push(key);
+    } else {
+      safeData[key] = newVal;
+    }
+  }
+  return { safeData, blockedFields };
+}
+
 // ─── ARCHIVE ELIGIBILITY CHECK (NEW) ───
 // Shared with freightForwarding.controller.js's autoArchiveMatured sweep
 // (duplicated rather than imported, to avoid a circular require between
@@ -115,23 +138,26 @@ const updateInvoice = async (req, res) => {
   try {
     const { id } = req.params;
     await ensureAccounts(id);
-    const data = {};
+    const rawData = {};
     const parts = [];
     if (req.body.invoiceNumber !== undefined) { 
-      data.invoiceNumber = req.body.invoiceNumber; 
-      parts.push(`Invoice No: ${req.body.invoiceNumber}`); 
+      rawData.invoiceNumber = req.body.invoiceNumber; 
     }
     if (req.body.invoiceDate) { 
-      data.invoiceDate = new Date(req.body.invoiceDate); 
+      rawData.invoiceDate = new Date(req.body.invoiceDate); 
       parts.push(`Invoice Date: ${req.body.invoiceDate}`); 
     }
+
+    const current = await prisma.accounts.findUnique({ where: { shipmentId: id }, select: { invoiceNumber: true } });
+    const { safeData: data, blockedFields } = guardAgainstClearing(current, rawData);
+    if (data.invoiceNumber !== undefined) parts.push(`Invoice No: ${data.invoiceNumber}`);
     
     if (Object.keys(data).length > 0) {
       await prisma.shipment.update({ 
         where: { id }, 
         data: { 
           currentStatus: 'INVOICE_GENERATED', 
-          accounts: { update: { data } }, 
+          accounts: { update: data }, 
           statusHistory: { 
             create: { 
               status: 'INVOICE_GENERATED', 
@@ -150,7 +176,7 @@ const updateInvoice = async (req, res) => {
     res.json({ 
       status: 'success', 
       data: s,
-      message: justCompleted ? 'Invoice updated — complete, will archive automatically in 30 days' : 'Invoice updated'
+      message: justCompleted ? 'Invoice updated — complete, will archive automatically in 30 days' : (blockedFields.length > 0 ? 'Already-filled fields cannot be cleared — only changed.' : 'Invoice updated')
     });
   } catch (e) { 
     console.error(e); 
