@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import PipelineBoard from '../components/PipelineBoard'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
 import { useSocket } from '../App'
@@ -12,7 +13,7 @@ import {
   ChevronsLeft, ChevronsRight, Inbox, AlertCircle, RefreshCw,
   FileSearch, ArchiveIcon, TrendingUp, Layers, Filter,
   ArrowUpRight, SlidersHorizontal, Box, FileCheck, Info, User, Pencil, Hash, RotateCcw, MapPin, Weight, Calendar, Zap, ClipboardList, FileText, PlaneTakeoff, PlaneLanding,
-  Trash2, RotateCcw as RotateIcon, History, Mail
+  Trash2, RotateCcw as RotateIcon, History, Mail, LayoutGrid, List
 } from 'lucide-react'
 
 // ─── QUICK TOOLS ───
@@ -711,6 +712,14 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const currentPath = window.location.pathname
   const showModuleSwitcher = !mineOnly && !targetUserId && !referenceGroup
 
+  // ─── PIPELINE VIEW (NEW) ───
+  // A tab on the main Overview page only — scoped views (My Shipments, a
+  // specific employee, a reference group) don't get it, same restriction
+  // as showModuleSwitcher above, since the pipeline board is inherently a
+  // whole-company view.
+  const showPipelineTab = showModuleSwitcher
+  const [viewMode, setViewMode] = useState('list') // 'list' | 'pipeline'
+
   return (
     <div className="w-full space-y-5 animate-fade-in">
       {liveNotification && (
@@ -773,6 +782,25 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
           <Link to="/create" className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg hover:from-indigo-700 hover:to-blue-700 text-xs font-semibold shadow-lg shadow-indigo-200 hover-lift whitespace-nowrap"><Plus size={15}/> New Shipment</Link>
         </div>
       </div>
+
+      {/* ✅ LIST / PIPELINE TAB (NEW) — Overview only. The pipeline board
+          shows shipments as Freight -> Customs -> Invoice -> Done columns,
+          moving automatically as fields get completed. */}
+      {showPipelineTab && (
+        <div className="flex glass rounded-lg p-0.5 border border-[var(--border-color)] w-fit">
+          <button onClick={() => setViewMode('list')} className={`px-4 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>
+            <List size={13} /> List View
+          </button>
+          <button onClick={() => setViewMode('pipeline')} className={`px-4 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all ${viewMode === 'pipeline' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-[var(--text-secondary)]'}`}>
+            <LayoutGrid size={13} /> Pipeline
+          </button>
+        </div>
+      )}
+
+      {viewMode === 'pipeline' && showPipelineTab ? (
+        <PipelineBoard />
+      ) : (
+      <>
 
       {!targetUserId && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1097,6 +1125,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
           </div>
         </div>
       </>)}
+      </>
+      )}
     </div>
   )
 }

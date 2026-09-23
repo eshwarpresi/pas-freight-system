@@ -1746,6 +1746,124 @@ const getEmployeePerformance = async (req, res) => {
 //   - lastActive -> most recent action this month
 // Grouped by team, same as Team Performance, so the two pages read
 // consistently side by side.
+// ─── PIPELINE BOARD (NEW) ───
+// Powers the Kanban-style "Freight → Customs → Invoice → Done" tab on
+// Overview. A shipment's stage isn't a stored field — it's computed live
+// from the exact same field-completion rules used by isArchiveEligible
+// and the workflow stepper, so all three stay consistent with each
+// other automatically. Nobody drags a card between columns; a shipment
+// just stops matching one stage's query and starts matching the next
+// the moment the relevant fields are filled in.
+//
+// Simple shipment types (Transport/DO Release/FF Only) skip Freight and
+// Customs entirely — same tiering as isArchiveEligible — and go straight
+// to Invoice once created.
+//
+// Built with the same scale discipline as the rest of this file: each
+// column is its own small, targeted query (a bounded `take` + a
+// `count`), never "load everything and sort in JS".
+const SIMPLE_PIPELINE_TYPES = ['Transport', 'DO Release', 'FF Only'];
+const PIPELINE_COLUMN_LIMIT = 20;
+
+function freightIncompleteFilter() {
+  return {
+    OR: [
+      { freightForwarding: null },
+      { freightForwarding: { fromLocation: null } },
+      { freightForwarding: { toLocation: null } },
+      { freightForwarding: { terms: null } },
+      { freightForwarding: { grossWeight: null } },
+      { freightForwarding: { weight: null } },
+      { freightForwarding: { hawb: null } }
+    ]
+  };
+}
+function freightCompleteFilter() {
+  return {
+    freightForwarding: {
+      fromLocation: { not: null }, toLocation: { not: null }, terms: { not: null },
+      grossWeight: { not: null }, weight: { not: null }, hawb: { not: null }
+    }
+  };
+}
+function customsIncompleteFilter() {
+  return { OR: [{ cha: null }, { cha: { boeNo: null, sbNo: null } }] };
+}
+function customsCompleteFilter() {
+  return { cha: { OR: [{ boeNo: { not: null } }, { sbNo: { not: null } }] } };
+}
+function invoiceIncompleteFilter() {
+  return { OR: [{ accounts: null }, { accounts: { invoiceNumber: null } }, { accounts: { invoiceDate: null } }] };
+}
+function invoiceCompleteFilter() {
+  return { accounts: { invoiceNumber: { not: null }, invoiceDate: { not: null } } };
+}
+
+const PIPELINE_CARD_SELECT = {
+  id: true, refNo: true, currentStatus: true, shipmentType: true, createdByName: true, createdAt: true,
+  freightForwarding: { select: { consigneeName: true, customerName: true } },
+  cha: { select: { boeNo: true, sbNo: true } },
+  accounts: { select: { invoiceNumber: true } }
+};
+
+const getPipelineBoard = async (req, res) => {
+  try {
+    const baseActive = { isDeleted: false, isArchived: false };
+
+    const freightWhere = {
+      ...baseActive,
+      shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] },
+      ...freightIncompleteFilter()
+    };
+
+    const customsWhere = {
+      ...baseActive,
+      OR: [
+        { AND: [{ shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] } }, freightCompleteFilter(), customsIncompleteFilter()] },
+        { AND: [{ shipmentType: 'CHA Only' }, customsIncompleteFilter()] }
+      ]
+    };
+
+    const invoiceWhere = {
+      ...baseActive,
+      OR: [
+        { AND: [{ shipmentType: { notIn: SIMPLE_PIPELINE_TYPES } }, customsCompleteFilter(), invoiceIncompleteFilter()] },
+        { AND: [{ shipmentType: { in: SIMPLE_PIPELINE_TYPES } }, invoiceIncompleteFilter()] }
+      ]
+    };
+
+    // "Done" intentionally includes both still-active (within the 30-day
+    // grace window) and already-archived shipments whose invoice is
+    // complete — the point of this column is "the work is finished",
+    // regardless of exactly which shelf it's currently sitting on.
+    const doneWhere = { isDeleted: false, ...invoiceCompleteFilter() };
+
+    const [freightCount, customsCount, invoiceCount, doneCount, freightItems, customsItems, invoiceItems, doneItems] = await Promise.all([
+      prisma.shipment.count({ where: freightWhere }),
+      prisma.shipment.count({ where: customsWhere }),
+      prisma.shipment.count({ where: invoiceWhere }),
+      prisma.shipment.count({ where: doneWhere }),
+      prisma.shipment.findMany({ where: freightWhere, select: PIPELINE_CARD_SELECT, orderBy: { createdAt: 'asc' }, take: PIPELINE_COLUMN_LIMIT }),
+      prisma.shipment.findMany({ where: customsWhere, select: PIPELINE_CARD_SELECT, orderBy: { createdAt: 'asc' }, take: PIPELINE_COLUMN_LIMIT }),
+      prisma.shipment.findMany({ where: invoiceWhere, select: PIPELINE_CARD_SELECT, orderBy: { createdAt: 'asc' }, take: PIPELINE_COLUMN_LIMIT }),
+      prisma.shipment.findMany({ where: doneWhere, select: PIPELINE_CARD_SELECT, orderBy: { createdAt: 'desc' }, take: PIPELINE_COLUMN_LIMIT })
+    ]);
+
+    res.json({
+      status: 'success',
+      data: {
+        freight: { count: freightCount, items: freightItems },
+        customs: { count: customsCount, items: customsItems },
+        invoice: { count: invoiceCount, items: invoiceItems },
+        done: { count: doneCount, items: doneItems }
+      }
+    });
+  } catch (error) {
+    console.error('Error getting pipeline board:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get pipeline board' });
+  }
+};
+
 const getMonthlyReport = async (req, res) => {
   try {
     const { month } = req.query; // "YYYY-MM", defaults to current IST month
@@ -2014,6 +2132,7 @@ module.exports = {
   getDailyReport,
   getEmployeePerformance,
   getMonthlyReport, // ✅ NEW
+  getPipelineBoard, // ✅ NEW
   autoArchiveMatured, // back-compat alias (== archiveMaturedInvoices)
   archiveMaturedInvoices, // ✅ NEW — lightweight, safe to call per-request
   restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)

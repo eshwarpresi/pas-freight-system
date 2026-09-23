@@ -60,6 +60,9 @@ router.get('/employee-performance', freightController.getEmployeePerformance);
 // ─── MONTHLY REPORT (NEW, ADMIN ONLY) — end-of-month individual scorecard ───
 router.get('/monthly-report', freightController.getMonthlyReport);
 
+// ─── PIPELINE BOARD (NEW) — Freight/Customs/Invoice/Done Kanban tab ───
+router.get('/pipeline', freightController.getPipelineBoard);
+
 // ─── EMPLOYEE LIST (NEW) — for the Co-Handler dropdown, any logged-in user ───
 router.get('/employees', freightController.getEmployeeList);
 
