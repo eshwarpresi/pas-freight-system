@@ -31,6 +31,8 @@ model User {
   
   shipments     Shipment[]     @relation("CreatedShipments")
   notifications Notification[] // User's notifications
+
+  @@index([team]) // ✅ NEW — Team Performance's team-filter tabs
 }
 
 // ==========================================
@@ -102,6 +104,21 @@ model Shipment {
   
   statusHistory  StatusHistory[]
   notifications  Notification[]  // Notifications related to this shipment
+
+  // ✅ INDEXES (NEW) — without these, every filter/search on this table
+  // forces Postgres to scan every single row. At a few hundred shipments
+  // that's invisible; at 200,000+ it's the difference between an
+  // instant response and a multi-second wait on every click. Each index
+  // here targets a field this app actually filters, sorts, or searches
+  // by somewhere in freightForwarding.controller.js.
+  @@index([isDeleted, isArchived, createdAt]) // the single most common filter combo — getAllShipments' default view
+  @@index([refNo]) // reference-code lookups, prefix searches
+  @@index([currentStatus]) // status filter buttons, In Progress/Delivered/Invoiced cards
+  @@index([createdById]) // "My Shipments", per-employee reports
+  @@index([coHandlerId]) // co-handler "My Shipments" inclusion
+  @@index([shipmentType]) // module dashboards (Freight/CHA/Transport/etc)
+  @@index([isDeleted, createdAt]) // Today's/This Month's Shipments cards
+  @@index([createdByName]) // search-by-employee-name, Team Performance matching
 }
 
 // ==========================================
@@ -150,6 +167,19 @@ model FreightForwarding {
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // ✅ INDEXES (NEW) — these back the search filter (contains, case-
+  // insensitive) across consignee/shipper/HAWB/MAWB/customer name. A
+  // plain btree index still helps Postgres a lot with prefix/equality
+  // lookups even though substring "contains" search can't use it quite
+  // as effectively as a full-text/trigram index would — see the note in
+  // freightForwarding.controller.js about pg_trgm for a further upgrade
+  // if search still feels slow at very large scale.
+  @@index([consigneeName])
+  @@index([shipperName])
+  @@index([hawb])
+  @@index([mawb])
+  @@index([customerName])
 }
 
 // ==========================================
@@ -184,6 +214,11 @@ model CHA {
   
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
+
+  // ✅ INDEXES (NEW) — backs search-by-BOE/SB, and the autoArchiveMatured
+  // / isArchiveEligible checks that filter on these being present.
+  @@index([boeNo])
+  @@index([sbNo])
 }
 
 // ==========================================
@@ -208,6 +243,12 @@ model Accounts {
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  // ✅ INDEXES (NEW) — invoiceNumber for search; completedAt for the
+  // 30-day auto-archive sweep's date-range lookup, which would otherwise
+  // scan every Accounts row to find matured invoices.
+  @@index([invoiceNumber])
+  @@index([completedAt])
 }
 
 // ==========================================
@@ -221,6 +262,19 @@ model StatusHistory {
   remarks     String?
   changedBy   String?
   createdAt   DateTime @default(now())
+
+  // ✅ INDEXES (NEW) — this table takes the heaviest load of any table in
+  // the app: Team Performance, Monthly Report, Daily Report, the
+  // "Everyone Involved" contributor lookup, and the Handled-By badge
+  // grouping all query it repeatedly, usually filtered by shipmentId,
+  // status, changedBy, or a createdAt date range (often several of
+  // these together). At 200,000+ shipments with multiple history rows
+  // each, this table can easily be the single largest one in the
+  // database — these indexes matter most here.
+  @@index([shipmentId])
+  @@index([status, createdAt])
+  @@index([changedBy, createdAt])
+  @@index([createdAt])
 }
 
 // ==========================================

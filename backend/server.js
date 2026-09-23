@@ -157,21 +157,22 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('🗓️ Daily report scheduler enabled (18:30 IST)');
   }
 
-  // ─── 30-DAY AUTO-ARCHIVE SWEEP (NEW) ───
-  // A shipment moves to Archive automatically once its invoice has been
-  // complete (Invoice No + Date + Sending Date all filled in) for 30
-  // days — see accounts.controller.js for where completedAt gets
-  // stamped, and autoArchiveMatured() in freightForwarding.controller.js
-  // for the actual sweep logic. That same sweep also runs opportunistically
-  // whenever the shipment list or stats are loaded, but this scheduled
-  // run guarantees it happens daily even during quiet periods with no
-  // one actively browsing the dashboard.
+  // ─── 30-DAY AUTO-ARCHIVE SWEEP (FIXED) ───
+  // Two functions now, split for performance:
+  //   - archiveMaturedInvoices(): lightweight, also runs on every live
+  //     request in freightForwarding.controller.js — safe, small result set.
+  //   - restoreIneligibleArchives(): the heavy full-archive-table scan
+  //     (retroactively un-archives anything missing required fields).
+  //     This used to ALSO run on every live request, which with 1,300+
+  //     archived shipments made every click on the dashboard noticeably
+  //     slow. It now runs ONLY here, on schedule, never per-request.
   if (process.env.NODE_ENV === 'production') {
-    const { autoArchiveMatured } = require('./src/controllers/freightForwarding.controller');
+    const { archiveMaturedInvoices, restoreIneligibleArchives } = require('./src/controllers/freightForwarding.controller');
 
     setInterval(async () => {
       try {
-        await autoArchiveMatured();
+        await archiveMaturedInvoices();
+        await restoreIneligibleArchives();
       } catch (err) {
         console.error('[AUTO-ARCHIVE] Sweep failed:', err.message);
       }
@@ -181,7 +182,8 @@ server.listen(PORT, '0.0.0.0', () => {
     // server doesn't wait up to 6 hours for the first sweep.
     setTimeout(async () => {
       try {
-        await autoArchiveMatured();
+        await archiveMaturedInvoices();
+        await restoreIneligibleArchives();
         console.log('[AUTO-ARCHIVE] Initial sweep complete');
       } catch (err) {
         console.error('[AUTO-ARCHIVE] Initial sweep failed:', err.message);

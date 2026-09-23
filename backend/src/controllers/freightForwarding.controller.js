@@ -112,22 +112,19 @@ function isArchiveEligible(shipment) {
   return !!(ff.fromLocation && ff.toLocation && ff.terms && ff.grossWeight && ff.weight && ff.hawb);
 }
 
-// ─── 30-DAY DELAYED AUTO-ARCHIVE (FIXED) ───
-// Runs a lightweight sweep every time shipments are listed or stats are
-// computed — no cron job or server.js changes needed.
+// ─── 30-DAY DELAYED AUTO-ARCHIVE — LIGHTWEIGHT PASS (FIXED) ───
+// Runs on every shipment list/stats request. Only looks at ACTIVE
+// shipments whose invoice matured 30+ days ago — normally a small,
+// fast-to-fetch set, safe to run on every click.
 //
-// Two passes:
-//   1. ARCHIVE — any active shipment whose invoice was marked complete
-//      (accounts.completedAt, set by accounts.controller.js) 30+ days
-//      ago, AND that still passes isArchiveEligible right now, moves to
-//      Archive.
-//   2. RESTORE (NEW) — any shipment CURRENTLY in Archive that no longer
-//      passes isArchiveEligible (e.g. it was archived before this
-//      stricter field-completeness rule existed, or a required field
-//      was cleared afterward) moves back to Active automatically. This
-//      is what retroactively fixes shipments that were archived with
-//      missing Freight/Customs/Accounts fields under the old rules.
-async function autoArchiveMatured() {
+// ⚠️ PERFORMANCE FIX: this used to also scan and re-check EVERY currently
+// archived shipment on every single request — with 1,300+ archived
+// shipments and nested Freight/Customs/Accounts data pulled for each one,
+// that made every click noticeably slow. That retroactive "un-archive
+// ineligible shipments" check still exists (see restoreIneligibleArchives
+// below), but now only runs on the periodic background schedule in
+// server.js, not on every page load.
+async function archiveMaturedInvoices() {
   try {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const matured = await prisma.shipment.findMany({
@@ -145,7 +142,19 @@ async function autoArchiveMatured() {
         });
       }
     }
+  } catch (error) {
+    console.error('Error in archiveMaturedInvoices sweep:', error);
+  }
+}
 
+// ─── RETROACTIVE ARCHIVE CLEANUP — HEAVY PASS (NEW, SCHEDULED ONLY) ───
+// Scans EVERY currently-archived shipment and moves back to Active
+// anything that no longer passes isArchiveEligible. This is the
+// expensive full-table-scan part — only called from server.js's periodic
+// schedule (every 6 hours + once on startup), never from a live request,
+// so it doesn't add latency to anyone clicking around the dashboard.
+async function restoreIneligibleArchives() {
+  try {
     const currentlyArchived = await prisma.shipment.findMany({
       where: { isArchived: true, isDeleted: false },
       select: { id: true, shipmentType: true, freightForwarding: true, cha: true, accounts: true }
@@ -162,9 +171,13 @@ async function autoArchiveMatured() {
       }
     }
   } catch (error) {
-    // Never let a housekeeping sweep break the actual request it's attached to.
-    console.error('Error in autoArchiveMatured sweep:', error);
+    console.error('Error in restoreIneligibleArchives sweep:', error);
   }
+}
+
+// Back-compat alias — old name some call sites may still reference.
+async function autoArchiveMatured() {
+  await archiveMaturedInvoices();
 }
 
 // ─── CREATE NEW SHIPMENT ───
@@ -690,7 +703,7 @@ const getAllShipments = async (req, res) => {
     // ✅ Runs the 30-day matured-invoice sweep before building the query,
     // so anything that just crossed the 30-day mark is already reflected
     // in isArchived by the time we filter/count below.
-    await autoArchiveMatured();
+    await archiveMaturedInvoices();
 
     const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, referenceGroup, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
@@ -871,7 +884,7 @@ function getISTMonthBounds() {
 // current page), so progress bars / percentages reflect the whole dataset.
 const getShipmentStats = async (req, res) => {
   try {
-    await autoArchiveMatured();
+    await archiveMaturedInvoices();
 
     const { status, search, isArchived, shipmentType, mine, userId, referenceGroup } = req.query;
 
@@ -984,6 +997,22 @@ const REFERENCE_GROUPS = {
 const CLOSED_STATUSES = ['DELIVERED', 'HAND_OVER', 'COMPLETED', 'INVOICE_SENT'];
 const INVOICED_STATUSES = ['INVOICE_GENERATED', 'INVOICE_SENT'];
 
+// ─── GET REFERENCE CODE STATS ───
+// ⚠️ NOT rewritten for scale, and here's the honest reason why: the
+// "reference code" grouping (e.g. "RLI", "PPI") isn't a stored column —
+// it's derived on the fly from refNo via extractReferenceCode()'s regex.
+// SQL groupBy needs to group by an actual column value, so it can't
+// group by "whatever this regex would extract from refNo" without a
+// stored column to group on. A genuine fix here means adding a
+// `referenceCode` column to Shipment, computing it once at write-time
+// (in createShipment and wherever refNo can change) and backfilling
+// existing rows, then this endpoint could use a simple, fast groupBy
+// exactly like getEmployeeStats above. That's a real, worthwhile
+// improvement, but it's a schema change + backfill, not a same-file
+// rewrite — flagging it rather than leaving it unspoken. Still fetches
+// only 4 small fields (refNo, currentStatus, createdByName — no nested
+// relations), so the per-row cost is low, but it does still scan every
+// non-deleted shipment.
 const getReferenceCodeStats = async (req, res) => {
   try {
     const shipments = await prisma.shipment.findMany({
@@ -1101,28 +1130,46 @@ const getShipmentsByReferenceCode = async (req, res) => {
 };
 
 // ─── GET EMPLOYEE STATS (NEW) ───
+// ─── GET EMPLOYEE STATS (FIXED FOR SCALE) ───
+// ⚠️ PERFORMANCE FIX: this used to fetch EVERY non-deleted shipment
+// (id, createdById, currentStatus) and count totals in a JS loop — fine
+// at a few thousand shipments, but at 200,000+ that's 200,000 rows
+// pulled over the wire and iterated in Node on every request. Rewritten
+// to do the counting in the database via 3 small groupBy queries — each
+// one returns at most "number of employees" rows (dozens), not "number
+// of shipments" (hundreds of thousands), regardless of how large the
+// shipments table grows.
 const getEmployeeStats = async (req, res) => {
   try {
-    const shipments = await prisma.shipment.findMany({
-      where: { isDeleted: false },
-      select: { createdById: true, createdByName: true, currentStatus: true }
-    });
+    const [totalByEmployee, closedByEmployee, invoicedByEmployee, users] = await Promise.all([
+      prisma.shipment.groupBy({ by: ['createdById'], where: { isDeleted: false }, _count: { _all: true } }),
+      prisma.shipment.groupBy({ by: ['createdById'], where: { isDeleted: false, currentStatus: { in: CLOSED_STATUSES } }, _count: { _all: true } }),
+      prisma.shipment.groupBy({ by: ['createdById'], where: { isDeleted: false, currentStatus: { in: INVOICED_STATUSES } }, _count: { _all: true } }),
+      prisma.user.findMany({ select: { id: true, name: true } })
+    ]);
 
-    const groups = {};
-    for (const s of shipments) {
-      const key = s.createdById || 'unknown';
-      if (!groups[key]) {
-        groups[key] = { userId: s.createdById, name: s.createdByName || 'Unknown', total: 0, open: 0, closed: 0, invoiced: 0 };
-      }
-      const g = groups[key];
-      g.total += 1;
-      if (CLOSED_STATUSES.includes(s.currentStatus)) g.closed += 1;
-      else g.open += 1;
-      if (INVOICED_STATUSES.includes(s.currentStatus)) g.invoiced += 1;
-    }
+    const nameById = {};
+    users.forEach((u) => { nameById[u.id] = u.name; });
 
-    const data = Object.values(groups)
-      .map((g) => ({ ...g, closedRate: g.total > 0 ? Math.round((g.closed / g.total) * 100) : 0 }))
+    const closedMap = {};
+    closedByEmployee.forEach((r) => { closedMap[r.createdById] = r._count._all; });
+    const invoicedMap = {};
+    invoicedByEmployee.forEach((r) => { invoicedMap[r.createdById] = r._count._all; });
+
+    const data = totalByEmployee
+      .map((r) => {
+        const total = r._count._all;
+        const closed = closedMap[r.createdById] || 0;
+        return {
+          userId: r.createdById,
+          name: nameById[r.createdById] || 'Unknown',
+          total,
+          open: total - closed,
+          closed,
+          invoiced: invoicedMap[r.createdById] || 0,
+          closedRate: total > 0 ? Math.round((closed / total) * 100) : 0
+        };
+      })
       .sort((a, b) => b.total - a.total);
 
     res.json({ status: 'success', data });
@@ -1133,6 +1180,10 @@ const getEmployeeStats = async (req, res) => {
 };
 
 // ─── GET SHIPMENTS FOR A SPECIFIC EMPLOYEE (NEW) ───
+// Already properly scoped — filters by one employee's createdById/
+// createdByName before fetching, so this only ever returns that one
+// person's own shipments, never the whole table. No change needed for
+// scale here.
 const getShipmentsByEmployee = async (req, res) => {
   try {
     const { userId, name } = req.query;
@@ -1598,6 +1649,26 @@ const updateEmployeeTeam = async (req, res) => {
 };
 
 // ─── GET EMPLOYEE PERFORMANCE (NEW — visible to everyone) ───
+// ─── GET EMPLOYEE PERFORMANCE (FIXED FOR SCALE) ───
+// ⚠️ PERFORMANCE FIX: this used to fetch EVERY matching shipment
+// (id, createdById, coHandlerId) AND EVERY matching status-history row
+// (shipmentId, changedBy, createdAt), then loop through all of it in
+// Node to compute per-employee counts. With no date range selected
+// ("All Teams", lifetime), that meant pulling the ENTIRE shipments table
+// and the ENTIRE status-history table (usually the largest table in the
+// database) into memory on every request.
+//
+// Rewritten to push the counting into the database:
+//   - created / coHandled: 2 small groupBy queries, one row per employee
+//   - touched (distinct shipments touched) + lastActive: a groupBy on
+//     [changedBy, shipmentId] first collapses duplicate actions on the
+//     same shipment by the same person down to one row per unique pair
+//     — this can still be a meaningful number of rows over a very wide
+//     date range, but it's already deduplicated at the database level
+//     and is typically far smaller than the raw history table, and gets
+//     smaller still the narrower the date range (e.g. one month).
+//     lastActive comes from a separate groupBy with _max(createdAt),
+//     which Postgres computes directly without returning any rows to sum.
 const getEmployeePerformance = async (req, res) => {
   try {
     const { team, from, to } = req.query;
@@ -1614,52 +1685,42 @@ const getEmployeePerformance = async (req, res) => {
     const shipmentWhere = { isDeleted: false };
     if (hasDateFilter) shipmentWhere.createdAt = dateFilter;
 
-    const shipments = await prisma.shipment.findMany({
-      where: shipmentWhere,
-      select: { id: true, createdById: true, coHandlerId: true }
-    });
-
-    const historyWhere = {};
+    const historyWhere = { changedBy: { not: null } };
     if (hasDateFilter) historyWhere.createdAt = dateFilter;
 
-    const histories = await prisma.statusHistory.findMany({
-      where: historyWhere,
-      select: { shipmentId: true, changedBy: true, createdAt: true }
-    });
-
-    const touchedMap = {};
-    const lastActiveMap = {};
-    histories.forEach((h) => {
-      if (!h.changedBy) return;
-      if (!touchedMap[h.changedBy]) touchedMap[h.changedBy] = new Set();
-      touchedMap[h.changedBy].add(h.shipmentId);
-      if (!lastActiveMap[h.changedBy] || h.createdAt > lastActiveMap[h.changedBy]) {
-        lastActiveMap[h.changedBy] = h.createdAt;
-      }
-    });
+    const [createdGroups, coHandledGroups, distinctTouchedPairs, lastActiveGroups] = await Promise.all([
+      prisma.shipment.groupBy({ by: ['createdById'], where: shipmentWhere, _count: { _all: true } }),
+      prisma.shipment.groupBy({ by: ['coHandlerId'], where: { ...shipmentWhere, coHandlerId: { not: null } }, _count: { _all: true } }),
+      prisma.statusHistory.groupBy({ by: ['changedBy', 'shipmentId'], where: historyWhere }),
+      prisma.statusHistory.groupBy({ by: ['changedBy'], where: historyWhere, _max: { createdAt: true } })
+    ]);
 
     const createdMap = {};
+    createdGroups.forEach((r) => { if (r.createdById) createdMap[r.createdById] = r._count._all; });
+
     const coHandledMap = {};
-    shipments.forEach((s) => {
-      if (s.createdById) createdMap[s.createdById] = (createdMap[s.createdById] || 0) + 1;
-      if (s.coHandlerId) coHandledMap[s.coHandlerId] = (coHandledMap[s.coHandlerId] || 0) + 1;
+    coHandledGroups.forEach((r) => { coHandledMap[r.coHandlerId] = r._count._all; });
+
+    const touchedCountByName = {};
+    distinctTouchedPairs.forEach((r) => {
+      touchedCountByName[r.changedBy] = (touchedCountByName[r.changedBy] || 0) + 1;
     });
+
+    const lastActiveMap = {};
+    lastActiveGroups.forEach((r) => { lastActiveMap[r.changedBy] = r._max.createdAt; });
 
     const data = users
       .filter((u) => !team || u.team === team)
-      .map((u) => {
-        const touchedSet = touchedMap[u.name] || new Set();
-        return {
-          userId: u.id,
-          name: u.name,
-          email: u.email,
-          team: u.team || null,
-          created: createdMap[u.id] || 0,
-          coHandled: coHandledMap[u.id] || 0,
-          touched: touchedSet.size,
-          lastActive: lastActiveMap[u.name] || null
-        };
-      })
+      .map((u) => ({
+        userId: u.id,
+        name: u.name,
+        email: u.email,
+        team: u.team || null,
+        created: createdMap[u.id] || 0,
+        coHandled: coHandledMap[u.id] || 0,
+        touched: touchedCountByName[u.name] || 0,
+        lastActive: lastActiveMap[u.name] || null
+      }))
       .sort((a, b) => b.touched - a.touched);
 
     res.json({ status: 'success', data });
@@ -1953,7 +2014,9 @@ module.exports = {
   getDailyReport,
   getEmployeePerformance,
   getMonthlyReport, // ✅ NEW
-  autoArchiveMatured, // ✅ NEW — exported so server.js can also run it on a schedule
+  autoArchiveMatured, // back-compat alias (== archiveMaturedInvoices)
+  archiveMaturedInvoices, // ✅ NEW — lightweight, safe to call per-request
+  restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 

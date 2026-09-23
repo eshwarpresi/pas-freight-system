@@ -72,6 +72,28 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const navigate = useNavigate()
   const sticky = loadStickyFilters()
   const [search, setSearch] = useState(sticky.search || '')
+
+  // ─── DEBOUNCED SEARCH (NEW) ───
+  // `search` updates instantly on every keystroke (so typing feels
+  // responsive), but `debouncedSearch` — the value actually sent to the
+  // backend — only updates 350ms after you stop typing. At 200,000+
+  // shipments, firing a full search query on every single keystroke
+  // would mean many wasted, overlapping requests; this cuts that down to
+  // one request per pause in typing. Clearing the box (search === '')
+  // updates immediately, no delay, so "Clear" always feels instant.
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
+  useEffect(() => {
+    if (search === '') {
+      setDebouncedSearch('')
+      setPage(1)
+      return
+    }
+    const t = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [search])
   const [statusFilter, setStatusFilter] = useState(sticky.statusFilter || '')
   const [shipmentTypeFilter, setShipmentTypeFilter] = useState(sticky.shipmentTypeFilter || defaultType)
   const [showArchived, setShowArchived] = useState(false)
@@ -179,10 +201,10 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // same filters as the main shipments query, so the numbers always
   // describe what's on screen.
   const { data: fullStats } = useQuery({
-    queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, search, scopeKey],
+    queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, debouncedSearch, scopeKey],
     queryFn: async () => {
       const params = { isArchived: showArchived ? 'true' : 'false', ...scopeParams }
-      if (search) params.search = search
+      if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter) params.status = statusFilter
       if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
       const res = await api.get('/freight/shipments/stats', { params })
@@ -413,11 +435,11 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   // ─── QUERY FOR SHIPMENTS ───
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, page, perPage, scopeKey],
+    queryKey: ['shipments', debouncedSearch, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
-        if (search) params.search = search
+        if (debouncedSearch) params.search = debouncedSearch
         const res = await api.get('/freight/shipments/bin', { params })
         return res.data
       } else {
@@ -428,7 +450,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         else if (inProgressOnly) params.inProgressOnly = 'true'
         else if (deliveredOnly) params.deliveredOnly = 'true'
         else if (invoicedOnly) params.invoicedThisMonthOnly = 'true'
-        if (search) params.search = search
+        if (debouncedSearch) params.search = debouncedSearch
         if (statusFilter) params.status = statusFilter
         if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
         const res = await api.get('/freight/shipments', { params })
@@ -456,7 +478,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setExporting(true)
     try {
       const params = { ...scopeParams }
-      if (search) params.search = search
+      if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter) params.status = statusFilter
       const res = await api.get('/freight/export', { 
         params,

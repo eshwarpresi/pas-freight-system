@@ -8,7 +8,7 @@ import {
   BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink,
   Layers, Users, Shield, BarChart2, TrendingUp
 } from 'lucide-react'
-import api from '../lib/api'
+import api, { onNetworkStatusChange } from '../lib/api'
 import { useSocket } from '../App'
 import { useToast } from '../components/Toast'
 import LogisticsBackground from '../components/LogisticsBackground'
@@ -39,6 +39,17 @@ export default function MainLayout({ user }) {
   }, [sidebarCollapsed])
 
   const isAdmin = user?.role === 'ADMIN'
+
+  // ─── SLOW NETWORK / OFFLINE BANNER (NEW) ───
+  // Subscribes to the live network-speed tracking in lib/api.js. Shows a
+  // small, non-blocking banner rather than interrupting anything — the
+  // person keeps working, they just know to expect things to take
+  // longer, or that they're fully offline right now.
+  const [networkStatus, setNetworkStatus] = useState({ isSlow: false, isOffline: false })
+  useEffect(() => {
+    const unsubscribe = onNetworkStatusChange(setNetworkStatus)
+    return unsubscribe
+  }, [])
 
   // ✅ Notification sound (FIXED)
   // A single AudioContext, created once and reused, instead of a new one
@@ -245,6 +256,18 @@ export default function MainLayout({ user }) {
   return (
     <div className="min-h-screen bg-[var(--bg-secondary)]">
       <LogisticsBackground />
+
+      {/* ✅ SLOW NETWORK / OFFLINE BANNER (NEW) — fixed to the top of the
+          viewport, above everything, so it's visible no matter which page
+          is open. Offline takes priority over merely-slow. */}
+      {(networkStatus.isOffline || networkStatus.isSlow) && (
+        <div className={`fixed top-0 left-0 right-0 z-[60] px-4 py-1.5 text-center text-xs font-medium text-white ${networkStatus.isOffline ? 'bg-red-600' : 'bg-amber-500'}`}>
+          {networkStatus.isOffline
+            ? "⚠️ You're offline — changes won't save until your connection is back"
+            : '🐢 Slow connection detected — some actions may take longer than usual'}
+        </div>
+      )}
+
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden transition-all" onClick={() => setSidebarOpen(false)} />
       )}
