@@ -28,40 +28,6 @@ function actorName(req) {
   return req.user?.name || req.user?.email || null;
 }
 
-// ─── PREVENT CLEARING A FIELD THAT ALREADY HAS A VALUE (NEW) ───
-// Once a field has real data, it should only ever be REPLACED with a
-// different value — never wiped back to blank. This protects the whole
-// chain of things that depend on a field staying filled in once it's
-// filled in: the Freight/Customs/Accounts "complete" stamps, the
-// workflow stepper (which would flip back to red), and archive
-// eligibility (a shipment could otherwise silently become ineligible
-// again after being correctly archived).
-//
-// Usage: fetch the current record first, then run its old values and
-// the incoming request body through this — it returns only the fields
-// that are safe to actually write (a genuine change, or a field that
-// was empty and is now being filled in for the first time). Any field
-// where someone tried to clear existing data back to blank is silently
-// dropped from the update — the rest of the request still goes through
-// normally.
-function isBlank(v) {
-  return v === undefined || v === null || v === '';
-}
-
-function guardAgainstClearing(currentRecord, incomingData) {
-  const safeData = {};
-  const blockedFields = [];
-  for (const [key, newVal] of Object.entries(incomingData)) {
-    const currentVal = currentRecord ? currentRecord[key] : undefined;
-    if (!isBlank(currentVal) && isBlank(newVal)) {
-      blockedFields.push(key); // keep the existing value — don't include in the write
-    } else {
-      safeData[key] = newVal;
-    }
-  }
-  return { safeData, blockedFields };
-}
-
 // ─── STATUS -> TEAM MAP (NEW) ───
 // Classifies each status-history entry by which of the 3 workflow teams
 // performed it. Used to build "Freight: A, B" / "Customs: C, D, E" /
@@ -2039,44 +2005,15 @@ const updateRefNo = async (req, res) => {
 };
 
 const updateConsignee = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { consigneeName: true } });
-    const { safeData, blockedFields } = guardAgainstClearing(current, { consigneeName: req.body.consigneeName });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'CONSIGNEE_UPDATED', `Consignee: ${safeData.consigneeName}`, actorName(req));
-      await checkAndStampFreightComplete(req.params.id, req);
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.consigneeName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { consigneeName: val } } } }); await upsertStatusEntry(req.params.id, 'CONSIGNEE_UPDATED', `Consignee: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateShipper = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { shipperName: true } });
-    const { safeData, blockedFields } = guardAgainstClearing(current, { shipperName: req.body.shipperName });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'SHIPPER_UPDATED', `Shipper: ${safeData.shipperName}`, actorName(req));
-      await checkAndStampFreightComplete(req.params.id, req);
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.shipperName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { shipperName: val } } } }); await upsertStatusEntry(req.params.id, 'SHIPPER_UPDATED', `Shipper: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateAgent = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { agent: true } });
-    const { safeData, blockedFields } = guardAgainstClearing(current, { agent: req.body.agent });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'AGENT_UPDATED', `Agent: ${safeData.agent}`, actorName(req));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.agent; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { agent: val } } } }); await upsertStatusEntry(req.params.id, 'AGENT_UPDATED', `Agent: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateShipmentType = async (req, res) => {
@@ -2096,71 +2033,36 @@ const updateRemarks = async (req, res) => {
 };
 
 const updateFromLocation = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { fromLocation: true } });
-    const { safeData, blockedFields } = guardAgainstClearing(current, { fromLocation: req.body.fromLocation });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'FROM_LOCATION', `From: ${safeData.fromLocation}`, actorName(req));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.fromLocation; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { fromLocation: val } } } }); await upsertStatusEntry(req.params.id, 'FROM_LOCATION', `From: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateToLocation = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { toLocation: true } });
-    const { safeData, blockedFields } = guardAgainstClearing(current, { toLocation: req.body.toLocation });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'TO_LOCATION', `To: ${safeData.toLocation}`, actorName(req));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.toLocation; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { toLocation: val } } } }); await upsertStatusEntry(req.params.id, 'TO_LOCATION', `To: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateTerms = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { terms: true } });
-    const { safeData, blockedFields } = guardAgainstClearing(current, { terms: req.body.terms });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'TERMS', `Terms: ${safeData.terms}`, actorName(req));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.terms; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { terms: val } } } }); await upsertStatusEntry(req.params.id, 'TERMS', `Terms: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateRates = async (req, res) => {
   try { 
     const { sellingRate, weight, cbm, grossWeight, notificationEmail, enquiryDate, noOfPackages, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation, transportMode } = req.body; 
-    const rawData = {}; const parts = []; 
-    if (sellingRate !== undefined) { rawData.sellingRate = sellingRate === '' ? '' : parseFloat(sellingRate); } 
-    if (weight !== undefined) { rawData.weight = weight === '' ? '' : parseFloat(weight); } 
-    if (cbm !== undefined) { rawData.cbm = cbm === '' ? '' : parseFloat(cbm); } 
-    if (grossWeight !== undefined) { rawData.grossWeight = grossWeight === '' ? '' : parseFloat(grossWeight); } 
-    if (notificationEmail !== undefined) { rawData.notificationEmail = notificationEmail; } 
-    if (enquiryDate !== undefined) { rawData.enquiryDate = enquiryDate ? new Date(enquiryDate) : null; } 
-    if (noOfPackages !== undefined) { rawData.noOfPackages = noOfPackages ? parseInt(noOfPackages) : null; } 
-    if (customerName !== undefined) { rawData.customerName = customerName; } 
-    if (vehicleType !== undefined) { rawData.vehicleType = vehicleType; } 
-    if (noOfContainers !== undefined) { rawData.noOfContainers = noOfContainers ? parseInt(noOfContainers) : null; } 
-    if (packageType !== undefined) { rawData.packageType = packageType; } 
-    if (deliveryDate !== undefined) { rawData.deliveryDate = deliveryDate ? new Date(deliveryDate) : null; } 
-    if (fromLocation !== undefined) { rawData.fromLocation = fromLocation; } 
-    if (toLocation !== undefined) { rawData.toLocation = toLocation; } 
-    if (transportMode !== undefined) { rawData.transportMode = transportMode; } 
-
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: Object.keys(rawData).reduce((acc, k) => ({ ...acc, [k]: true }), {}) });
-    const { safeData: data, blockedFields } = guardAgainstClearing(current, rawData);
-    if (data.sellingRate !== undefined) parts.push(`Rate: ₹${data.sellingRate}`);
-    if (data.weight !== undefined) parts.push(`Chargeable Wt: ${data.weight}kg`);
-    if (data.cbm !== undefined) parts.push(`CBM: ${data.cbm}`);
-    if (data.grossWeight !== undefined) parts.push(`Gross Wt: ${data.grossWeight}kg`);
-
+    const data = {}; const parts = []; 
+    if (sellingRate !== undefined) { data.sellingRate = parseFloat(sellingRate); parts.push(`Rate: ₹${sellingRate}`); } 
+    if (weight !== undefined) { data.weight = parseFloat(weight); parts.push(`Chargeable Wt: ${weight}kg`); } 
+    if (cbm !== undefined) { data.cbm = parseFloat(cbm); parts.push(`CBM: ${cbm}`); } 
+    if (grossWeight !== undefined) { data.grossWeight = parseFloat(grossWeight); parts.push(`Gross Wt: ${grossWeight}kg`); } 
+    if (notificationEmail !== undefined) { data.notificationEmail = notificationEmail; } 
+    if (enquiryDate !== undefined) { data.enquiryDate = enquiryDate ? new Date(enquiryDate) : null; } 
+    if (noOfPackages !== undefined) { data.noOfPackages = noOfPackages ? parseInt(noOfPackages) : null; } 
+    if (customerName !== undefined) { data.customerName = customerName; } 
+    if (vehicleType !== undefined) { data.vehicleType = vehicleType; } 
+    if (noOfContainers !== undefined) { data.noOfContainers = noOfContainers ? parseInt(noOfContainers) : null; } 
+    if (packageType !== undefined) { data.packageType = packageType; } 
+    if (deliveryDate !== undefined) { data.deliveryDate = deliveryDate ? new Date(deliveryDate) : null; } 
+    if (fromLocation !== undefined) { data.fromLocation = fromLocation; } 
+    if (toLocation !== undefined) { data.toLocation = toLocation; } 
+    if (transportMode !== undefined) { data.transportMode = transportMode; } 
     if (Object.keys(data).length > 0) { 
       await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: data } } }); 
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_UPDATED', parts.join(' | '), actorName(req)); 
@@ -2168,35 +2070,16 @@ const updateRates = async (req, res) => {
     } 
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); 
     sendStatusEmail(s).catch(() => {}); 
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) }); 
+    res.json({ status: 'success', data: s }); 
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateCBM = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { cbm: true } });
-    const incoming = req.body.cbm === '' ? '' : parseFloat(req.body.cbm);
-    const { safeData, blockedFields } = guardAgainstClearing(current, { cbm: incoming });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'CBM_UPDATED', `CBM: ${safeData.cbm}`, actorName(req));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.cbm; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { cbm: parseFloat(val) } } } }); await upsertStatusEntry(req.params.id, 'CBM_UPDATED', `CBM: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updatePortLocation = async (req, res) => {
-  try {
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { portLocation: true } });
-    const { safeData, blockedFields } = guardAgainstClearing(current, { portLocation: req.body.portLocation });
-    if (Object.keys(safeData).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: safeData } } });
-      await upsertStatusEntry(req.params.id, 'PORT_LOCATION', `Port: ${safeData.portLocation}`, actorName(req));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.portLocation; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { portLocation: val } } } }); await upsertStatusEntry(req.params.id, 'PORT_LOCATION', `Port: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateSchedule = async (req, res) => {
@@ -2212,25 +2095,7 @@ const updateBooking = async (req, res) => {
 };
 
 const updateAWB = async (req, res) => {
-  try {
-    const rawData = {}; const parts = [];
-    if (req.body.mawb !== undefined) { rawData.mawb = req.body.mawb; }
-    if (req.body.hawb !== undefined) { rawData.hawb = req.body.hawb; }
-    if (req.body.awbDate) { rawData.awbDate = new Date(req.body.awbDate); parts.push(`AWB Date: ${req.body.awbDate}`); }
-
-    const current = await prisma.freightForwarding.findUnique({ where: { shipmentId: req.params.id }, select: { mawb: true, hawb: true } });
-    const { safeData: data, blockedFields } = guardAgainstClearing(current, rawData);
-    if (data.mawb !== undefined) parts.push(`MAWB: ${data.mawb}`);
-    if (data.hawb !== undefined) parts.push(`HAWB: ${data.hawb}`);
-
-    if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'AWB_GENERATED', freightForwarding: { update: data } } });
-      if (parts.length > 0) await upsertStatusEntry(req.params.id, 'AWB_GENERATED', parts.join(' | '), actorName(req));
-    }
-    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
-    sendStatusEmail(s).catch(() => {});
-    res.json({ status: 'success', data: s, ...(blockedFields.length > 0 && { message: 'Already-filled fields cannot be cleared — only changed.' }) });
-  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const data = {}; const parts = []; if (req.body.mawb !== undefined) { data.mawb = req.body.mawb; parts.push(`MAWB: ${req.body.mawb}`); } if (req.body.hawb !== undefined) { data.hawb = req.body.hawb; parts.push(`HAWB: ${req.body.hawb}`); } if (req.body.awbDate) { data.awbDate = new Date(req.body.awbDate); parts.push(`AWB Date: ${req.body.awbDate}`); } if (Object.keys(data).length > 0) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'AWB_GENERATED', freightForwarding: { update: data } } }); if (parts.length > 0) await upsertStatusEntry(req.params.id, 'AWB_GENERATED', parts.join(' | '), actorName(req)); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); sendStatusEmail(s).catch(() => {}); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 module.exports = { 
