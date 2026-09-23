@@ -352,16 +352,16 @@ const getBinShipments = async (req, res) => {
     
     if (search) {
       where.OR = [
-        { refNo: { contains: search } },
-        { freightForwarding: { consigneeName: { contains: search } } },
-        { freightForwarding: { shipperName: { contains: search } } },
-        { freightForwarding: { hawb: { contains: search } } },
-        { freightForwarding: { mawb: { contains: search } } },
-        { cha: { boeNo: { contains: search } } },
-        { cha: { sbNo: { contains: search } } },
-        { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } },
-        { createdByName: { contains: search } }
+        { refNo: { contains: search, mode: 'insensitive' } },
+        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
+        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
+        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
+        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
+        { createdByName: { contains: search, mode: 'insensitive' } }
       ];
     }
 
@@ -525,16 +525,16 @@ const exportShipments = async (req, res) => {
     if (status) activeWhere.currentStatus = status;
     if (search) {
       activeWhere.OR = [
-        { refNo: { contains: search } },
-        { freightForwarding: { consigneeName: { contains: search } } },
-        { freightForwarding: { shipperName: { contains: search } } },
-        { freightForwarding: { hawb: { contains: search } } },
-        { freightForwarding: { mawb: { contains: search } } },
-        { cha: { boeNo: { contains: search } } },
-        { cha: { sbNo: { contains: search } } },
-        { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } },
-        { createdByName: { contains: search } }
+        { refNo: { contains: search, mode: 'insensitive' } },
+        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
+        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
+        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
+        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
+        { createdByName: { contains: search, mode: 'insensitive' } }
       ];
     }
     
@@ -547,16 +547,16 @@ const exportShipments = async (req, res) => {
     if (status) archivedWhere.currentStatus = status;
     if (search) {
       archivedWhere.OR = [
-        { refNo: { contains: search } },
-        { freightForwarding: { consigneeName: { contains: search } } },
-        { freightForwarding: { shipperName: { contains: search } } },
-        { freightForwarding: { hawb: { contains: search } } },
-        { freightForwarding: { mawb: { contains: search } } },
-        { cha: { boeNo: { contains: search } } },
-        { cha: { sbNo: { contains: search } } },
-        { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } },
-        { createdByName: { contains: search } }
+        { refNo: { contains: search, mode: 'insensitive' } },
+        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
+        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
+        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
+        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
+        { createdByName: { contains: search, mode: 'insensitive' } }
       ];
     }
 
@@ -692,7 +692,7 @@ const getAllShipments = async (req, res) => {
     // in isArchived by the time we filter/count below.
     await autoArchiveMatured();
 
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, inProgressOnly, deliveredOnly, invoicedOnly, referenceGroup, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, referenceGroup, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -700,7 +700,7 @@ const getAllShipments = async (req, res) => {
       isDeleted: false // Exclude bin items from normal view
     };
 
-    // ─── TODAY / CUSTOM DATE FILTER ───
+    // ─── TODAY / CUSTOM DATE / THIS MONTH FILTER ───
     const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
     if (today === 'true' || date) {
       let istDateStr;
@@ -711,6 +711,14 @@ const getAllShipments = async (req, res) => {
       }
       const start = new Date(`${istDateStr}T00:00:00+05:30`);
       const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      where.createdAt = { gte: start, lt: end };
+    } else if (thisMonthOnly === 'true') {
+      // ✅ NEW — "This Month Shipments" card click. Same IST month bounds
+      // as the stats endpoint's monthlyShipments count, so the number on
+      // the card always matches what this filter returns. Like today/date,
+      // this intentionally shows both active and archived shipments
+      // created this month, ignoring the isArchived toggle.
+      const { start, end } = getISTMonthBounds();
       where.createdAt = { gte: start, lt: end };
     } else {
       where.isArchived = isArchived === 'true';
@@ -724,6 +732,21 @@ const getAllShipments = async (req, res) => {
     }
     if (invoicedOnly === 'true' && !status) {
       where.currentStatus = { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] };
+    }
+    // ✅ NEW — "This Month Invoice" card click. The card's NUMBER counts
+    // shipments whose invoice status-change happened this month (matches
+    // getShipmentStats' monthlyInvoiced calc exactly) — this is different
+    // from invoicedOnly above, which matches CURRENT status lifetime-wide
+    // regardless of when. Using invoicedOnly here would show a different,
+    // usually much larger, set than the number on the card.
+    if (invoicedThisMonthOnly === 'true' && !status) {
+      const { start, end } = getISTMonthBounds();
+      const monthlyInvoiceHistory = await prisma.statusHistory.findMany({
+        where: { status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] }, createdAt: { gte: start, lt: end } },
+        select: { shipmentId: true }
+      });
+      const invoicedIds = [...new Set(monthlyInvoiceHistory.map((h) => h.shipmentId))];
+      where.id = { in: invoicedIds.length > 0 ? invoicedIds : ['__none__'] };
     }
     if (shipmentType) {
       if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
@@ -739,16 +762,16 @@ const getAllShipments = async (req, res) => {
     // matches Shipper Name and the shipment's createdByName, so searching
     // by an employee's name or a shipper's name actually returns results.
     if (search) where.OR = [
-      { refNo: { contains: search } },
-      { freightForwarding: { consigneeName: { contains: search } } },
-      { freightForwarding: { shipperName: { contains: search } } },
-      { freightForwarding: { hawb: { contains: search } } },
-      { freightForwarding: { mawb: { contains: search } } },
-      { cha: { boeNo: { contains: search } } },
-      { cha: { sbNo: { contains: search } } },
-      { accounts: { invoiceNumber: { contains: search } } },
-      { freightForwarding: { customerName: { contains: search } } },
-      { createdByName: { contains: search } }
+      { refNo: { contains: search, mode: 'insensitive' } },
+      { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
+      { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
+      { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
+      { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
+      { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
+      { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
+      { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
+      { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
+      { createdByName: { contains: search, mode: 'insensitive' } }
     ];
     if (mine === 'true' && req.user?.id) {
       where.AND = [...(where.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
@@ -869,16 +892,16 @@ const getShipmentStats = async (req, res) => {
     }
     if (search) {
       where.OR = [
-        { refNo: { contains: search } },
-        { freightForwarding: { consigneeName: { contains: search } } },
-        { freightForwarding: { shipperName: { contains: search } } },
-        { freightForwarding: { hawb: { contains: search } } },
-        { freightForwarding: { mawb: { contains: search } } },
-        { cha: { boeNo: { contains: search } } },
-        { cha: { sbNo: { contains: search } } },
-        { accounts: { invoiceNumber: { contains: search } } },
-        { freightForwarding: { customerName: { contains: search } } },
-        { createdByName: { contains: search } }
+        { refNo: { contains: search, mode: 'insensitive' } },
+        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
+        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
+        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
+        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
+        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
+        { createdByName: { contains: search, mode: 'insensitive' } }
       ];
     }
     if (mine === 'true' && req.user?.id) {

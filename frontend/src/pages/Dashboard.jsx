@@ -81,6 +81,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const [inProgressOnly, setInProgressOnly] = useState(false)
   const [deliveredOnly, setDeliveredOnly] = useState(false)
   const [invoicedOnly, setInvoicedOnly] = useState(false)
+  const [thisMonthOnly, setThisMonthOnly] = useState(false)
   const [selected, setSelected] = useState([])
   const [page, setPage] = useState(sticky.page || 1)
   const [perPage, setPerPage] = useState(sticky.perPage || 25)
@@ -270,6 +271,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setShowArchived(view === 'archived')
     setShowBin(view === 'bin')
     setTodayOnly(false)
+    setThisMonthOnly(false)
     setCustomDate('')
     setInProgressOnly(false)
     setDeliveredOnly(false)
@@ -285,6 +287,24 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // ─── SHOW TODAY'S SHIPMENTS ───
   const showTodayShipments = () => {
     setTodayOnly(true)
+    setThisMonthOnly(false)
+    setCustomDate('')
+    setInProgressOnly(false)
+    setDeliveredOnly(false)
+    setInvoicedOnly(false)
+    setShowArchived(false)
+    setShowBin(false)
+    setSearch('')
+    setStatusFilter('')
+    setPage(1)
+    setSelected([])
+  }
+
+  // ─── SHOW THIS MONTH'S SHIPMENTS (NEW) ───
+  // Fixes a real bug: this card previously had no click handler at all.
+  const showThisMonthShipments = () => {
+    setThisMonthOnly(true)
+    setTodayOnly(false)
     setCustomDate('')
     setInProgressOnly(false)
     setDeliveredOnly(false)
@@ -300,6 +320,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // ─── TOTAL SHIPMENTS CARD ───
   const showAllShipments = () => {
     setTodayOnly(false)
+    setThisMonthOnly(false)
     setCustomDate('')
     setInProgressOnly(false)
     setDeliveredOnly(false)
@@ -316,6 +337,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const showInProgressShipments = () => {
     setInProgressOnly(true)
     setTodayOnly(false)
+    setThisMonthOnly(false)
     setCustomDate('')
     setDeliveredOnly(false)
     setInvoicedOnly(false)
@@ -331,6 +353,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const showDeliveredShipments = () => {
     setDeliveredOnly(true)
     setTodayOnly(false)
+    setThisMonthOnly(false)
     setCustomDate('')
     setInProgressOnly(false)
     setInvoicedOnly(false)
@@ -342,10 +365,18 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setSelected([])
   }
 
-  // ─── INVOICED CARD (NEW) ───
+  // ─── THIS MONTH INVOICE CARD (FIXED) ───
+  // Previously reused the lifetime "currentStatus IN (INVOICE_GENERATED,
+  // INVOICE_SENT)" filter — which shows a totally different, usually much
+  // larger set than the number displayed on the card (which counts only
+  // invoices completed THIS calendar month). Now sends a dedicated
+  // invoicedThisMonthOnly flag the backend resolves the same way it
+  // computes the card's own number, so what you see always matches what
+  // you click into.
   const showInvoicedShipments = () => {
     setInvoicedOnly(true)
     setTodayOnly(false)
+    setThisMonthOnly(false)
     setCustomDate('')
     setInProgressOnly(false)
     setDeliveredOnly(false)
@@ -361,6 +392,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const updateCustomDate = (val) => {
     setCustomDate(val)
     setTodayOnly(false)
+    setThisMonthOnly(false)
     setInProgressOnly(false)
     setDeliveredOnly(false)
     setInvoicedOnly(false)
@@ -375,13 +407,13 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   const clearAllFilters = () => {
-    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setCustomDate(''); setInProgressOnly(false); setDeliveredOnly(false); setInvoicedOnly(false); setPage(1)
+    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setThisMonthOnly(false); setCustomDate(''); setInProgressOnly(false); setDeliveredOnly(false); setInvoicedOnly(false); setPage(1)
     addToast('Filters cleared', 'info')
   }
 
   // ─── QUERY FOR SHIPMENTS ───
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, page, perPage, scopeKey],
+    queryKey: ['shipments', search, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
@@ -392,9 +424,10 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         const params = { isArchived: showArchived ? 'true' : 'false', page, limit: perPage, ...scopeParams }
         if (customDate) params.date = customDate
         else if (todayOnly) params.today = 'true'
+        else if (thisMonthOnly) params.thisMonthOnly = 'true'
         else if (inProgressOnly) params.inProgressOnly = 'true'
         else if (deliveredOnly) params.deliveredOnly = 'true'
-        else if (invoicedOnly) params.invoicedOnly = 'true'
+        else if (invoicedOnly) params.invoicedThisMonthOnly = 'true'
         if (search) params.search = search
         if (statusFilter) params.status = statusFilter
         if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
@@ -610,7 +643,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
-  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
+  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||thisMonthOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 
   const statGradients = ['from-blue-500 to-indigo-600','from-amber-500 to-orange-600','from-emerald-500 to-teal-600','from-violet-500 to-purple-600']
   
@@ -618,7 +651,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // Invoice" (calendar-month scoped), and a new "This Month Shipments"
   // card added alongside "Today's Shipments". Now 6 cards total.
   const statCards = [
-    { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments', onClick: showAllShipments, active: !todayOnly && !customDate && !inProgressOnly && !showArchived && !showBin && !search && !statusFilter },
+    { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments', onClick: showAllShipments, active: !todayOnly && !thisMonthOnly && !customDate && !inProgressOnly && !showArchived && !showBin && !search && !statusFilter },
     { 
       label: showArchived ? 'Completed' : 'In Progress', 
       value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pendingTotal, 
@@ -631,16 +664,17 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed', onClick: showDeliveredShipments, active: deliveredOnly },
     { label: 'This Month Invoice', value: analytics.monthlyInvoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoiced this calendar month', onClick: showInvoicedShipments, active: invoicedOnly },
     { label: "Today's Shipments", value: todayCount || 0, icon: Calendar, gradient: 'from-rose-500 to-pink-600', desc: 'Created today', onClick: showTodayShipments, active: todayOnly },
-    { label: 'This Month Shipments', value: analytics.monthlyShipments, icon: TrendingUp, gradient: 'from-cyan-500 to-sky-600', desc: 'Created this calendar month' },
+    { label: 'This Month Shipments', value: analytics.monthlyShipments, icon: TrendingUp, gradient: 'from-cyan-500 to-sky-600', desc: 'Created this calendar month', onClick: showThisMonthShipments, active: thisMonthOnly },
   ]
 
   const getTitle = () => {
     if (showBin) return 'Bin / Trash'
     if (customDate) return `Shipments on ${new Date(customDate + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
     if (todayOnly) return "Today's Shipments"
+    if (thisMonthOnly) return "This Month's Shipments"
     if (inProgressOnly) return 'In Progress Shipments'
     if (deliveredOnly) return 'Delivered / Hand Over Shipments'
-    if (invoicedOnly) return 'Invoiced Shipments'
+    if (invoicedOnly) return 'Invoiced This Month'
     if (showArchived) return 'Archive'
     if (targetUserName) return pendingOnly ? `${targetUserName}'s Pending Shipments` : `${targetUserName}'s Shipments`
     if (mineOnly) return 'My Shipments'
