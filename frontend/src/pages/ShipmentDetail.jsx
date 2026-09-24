@@ -186,6 +186,21 @@ function isStepComplete(statusKey, ff, cha, accounts, shipmentStage) {
   }
 }
 
+// ✅ NEW — maps an update mutation's `section` key to the slug of the
+// Section title it lives in, so after saving we know which DOM block to
+// scroll back to next time. Keys with no Section (header quick-edit
+// fields like stage/remarks are always visible, no scrolling needed)
+// are simply left out.
+const SECTION_KEY_TO_SLUG = {
+  rates: 'weight-details', cbm: 'weight-details',
+  nomination: 'nomination', booking: 'booking', schedule: 'schedule', awb: 'awb-details',
+  checklist: 'checklist', boe: 'boe', do: 'do-collection', ooc: 'ooc', gatepass: 'gate-pass',
+  pod: 'pod-delivery', leo: 'leo', handover: 'hand-over', shippingbill: 'shipping-bill',
+  invoice: 'invoice', invoiceSend: 'invoice-sending',
+  fromlocation: 'route-details', tolocation: 'route-details', terms: 'route-details', portlocation: 'route-details',
+  notificationemail: 'notification-settings',
+}
+
 export default function ShipmentDetail() {
   const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -254,6 +269,28 @@ export default function ShipmentDetail() {
     }
   }, [shipment, initialTabSet, searchParams, id])
 
+  // ✅ NEW — "continue where I left off", the field-level part: once the
+  // correct tab is showing, scroll straight to whichever Section the last
+  // save touched and give it a brief highlight ring, so there's no
+  // hunting back down the page for where you stopped. One-time per
+  // visit — consumed immediately so it doesn't keep re-scrolling every
+  // re-render.
+  useEffect(() => {
+    if (!initialTabSet) return
+    let slug = null
+    try { slug = localStorage.getItem(`pas_last_field_${id}`) } catch {}
+    if (!slug) return
+    try { localStorage.removeItem(`pas_last_field_${id}`) } catch {}
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`section-${slug}`)
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('ring-4', 'ring-amber-400', 'dark:ring-amber-500', 'ring-offset-2')
+      setTimeout(() => el.classList.remove('ring-4', 'ring-amber-400', 'dark:ring-amber-500', 'ring-offset-2'), 2200)
+    }, 250) // small delay so the tab's content has actually mounted first
+    return () => clearTimeout(timer)
+  }, [initialTabSet, activeTab, id])
+
   // ✅ NEW — remember whichever tab is active for this shipment, so
   // reopening it later resumes here instead of always resetting to the
   // type-based default.
@@ -275,6 +312,11 @@ export default function ShipmentDetail() {
       if (updatedShipment) { queryClient.setQueryData(['shipment', id], updatedShipment) }
       else { queryClient.invalidateQueries({ queryKey: ['shipment', id] }) }
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      // ✅ NEW — "continue where I left off": remember which section this
+      // save touched, so reopening this shipment scrolls straight back to
+      // it with a brief highlight instead of landing at the top.
+      const slug = SECTION_KEY_TO_SLUG[variables.section]
+      if (slug) { try { localStorage.setItem(`pas_last_field_${id}`, slug) } catch {} }
       if (socket && shipment) {
         socket.emit('shipment:updated', { id, refNo: shipment.refNo, user: shipment.createdByName || 'Someone' })
         const newStatus = SECTION_TO_STATUS[variables.section]
@@ -518,7 +560,8 @@ export default function ShipmentDetail() {
 }
 
 function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 rounded-lg border border-indigo-100 dark:border-indigo-900"><I size={16} className="text-indigo-400 dark:text-indigo-300 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-indigo-400 dark:text-indigo-300">{l}</p><p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{v||'—'}</p></div></div>}
-function Section({ title, icon: Icon, children }) { return <div className="border border-[var(--border-color)] rounded-xl overflow-hidden shadow-sm"><div className="flex items-center gap-2 p-4 bg-gradient-to-r from-indigo-50 to-blue-50/50 dark:from-indigo-950/30 dark:to-blue-950/20 border-b border-[var(--border-color)]"><Icon size={14} className="text-indigo-400 dark:text-indigo-300" /><p className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{title}</p></div><div className="p-4">{children}</div></div> }
+function slugifyTitle(title) { return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') }
+function Section({ title, icon: Icon, children }) { return <div id={`section-${slugifyTitle(title)}`} className="border border-[var(--border-color)] rounded-xl overflow-hidden shadow-sm"><div className="flex items-center gap-2 p-4 bg-gradient-to-r from-indigo-50 to-blue-50/50 dark:from-indigo-950/30 dark:to-blue-950/20 border-b border-[var(--border-color)]"><Icon size={14} className="text-indigo-400 dark:text-indigo-300" /><p className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{title}</p></div><div className="p-4">{children}</div></div> }
 function Field({ label, value, onSave, type = 'text', placeholder = 'Not set' }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
