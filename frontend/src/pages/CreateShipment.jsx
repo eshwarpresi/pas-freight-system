@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
+import { useSocket } from '../App'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
@@ -21,6 +22,7 @@ export default function CreateShipment() {
   const [searchParams] = useSearchParams()
   const { addToast } = useToast()
   const queryClient = useQueryClient()
+  const socket = useSocket()
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
   const [touched, setTouched] = useState({})
@@ -409,6 +411,12 @@ export default function CreateShipment() {
         }
         await Promise.all(updatePromises)
         addToast('Shipment updated successfully!', 'success')
+        // ✅ LIVE EVERYWHERE (NEW) — this edit path (the full Create/Edit
+        // form, as opposed to inline field edits on the detail page) also
+        // didn't broadcast anything before.
+        if (socket) {
+          socket.emit('shipment:updated', { id: editId, refNo: formData.refNo, user: 'Someone' })
+        }
         queryClient.removeQueries({ queryKey: ['shipment', editId] })
         queryClient.removeQueries({ queryKey: ['shipments'] })
         const returnParams = new URLSearchParams()
@@ -441,6 +449,14 @@ export default function CreateShipment() {
         const response = await api.post('/freight/shipments', submitData)
         localStorage.removeItem(DRAFT_KEY)
         addToast(isFFOnly ? 'FF Only shipment created!' : isDORelease ? 'DO Release created!' : isTransport ? 'Transport shipment created!' : isCHA ? 'CHA Bill created successfully!' : 'Shipment created successfully!', 'success')
+        // ✅ LIVE EVERYWHERE (NEW) — previously only EDITING an existing
+        // shipment broadcast a live update; creating a brand new one
+        // broadcast nothing at all, so it never showed up on anyone
+        // else's Dashboard/Analytics/Pipeline until they manually
+        // refreshed. This makes creation live too, matching edits.
+        if (socket) {
+          socket.emit('shipment:created', { refNo: response.data.data.refNo, id: response.data.data.id })
+        }
         if (isTransport) {
           setTimeout(() => navigate(`/shipment/${response.data.data.id}?tab=accounts`), 500)
         } else if (isDORelease) {

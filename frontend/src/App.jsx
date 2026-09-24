@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useEffect, createContext, useContext, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import Layout from './layouts/MainLayout'
 import api from './lib/api'
 import { io } from 'socket.io-client'
@@ -126,6 +127,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [socket, setSocket] = useState(null)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     const token = localStorage.getItem('pas_token')
@@ -144,6 +146,37 @@ function App() {
       return () => { newSocket.disconnect() }
     }
   }, [user])
+
+  // ✅ LIVE EVERYWHERE (NEW) — one central listener, instead of adding
+  // socket handling to every single page individually. Previously only
+  // the single shipment detail page listened for live events at all;
+  // Dashboard, Analytics, Team Performance, Pipeline, Daily/Monthly
+  // Report, Employee Stats — none of them refreshed on their own when
+  // someone elsewhere created or changed a shipment, only on manual
+  // reload or whenever their normal refetch timer happened to fire.
+  //
+  // Whenever ANY shipment is created, edited, has its status change, or
+  // is archived/restored — anywhere in the app, by anyone — this clears
+  // React Query's entire cache of "not currently being looked at"
+  // freshness, so every page currently open silently refetches with the
+  // latest data next time it's due to render. Deliberately broad (no
+  // specific query keys listed) rather than trying to keep an exact list
+  // of every page's query key in sync by hand — simpler, and guaranteed
+  // not to miss a page as new ones get added later.
+  useEffect(() => {
+    if (!socket) return
+    const refreshEverything = () => { queryClient.invalidateQueries() }
+    socket.on('shipment:new', refreshEverything)
+    socket.on('shipment:update', refreshEverything)
+    socket.on('shipment:statusUpdate', refreshEverything)
+    socket.on('shipment:archiveUpdate', refreshEverything)
+    return () => {
+      socket.off('shipment:new', refreshEverything)
+      socket.off('shipment:update', refreshEverything)
+      socket.off('shipment:statusUpdate', refreshEverything)
+      socket.off('shipment:archiveUpdate', refreshEverything)
+    }
+  }, [socket, queryClient])
 
   if (loading) return <PageLoader />
 
