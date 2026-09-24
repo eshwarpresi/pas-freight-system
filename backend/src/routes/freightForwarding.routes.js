@@ -37,7 +37,7 @@ router.get('/shipments/by-employee', freightController.getShipmentsByEmployee);
 router.get('/reference-prefixes', freightController.getReferencePrefixes);
 router.post('/reference-prefixes', freightController.createReferencePrefix);
 router.put('/reference-prefixes/:code', freightController.updateReferencePrefix);
-router.put('/reference-prefixes/:code/counter', freightController.setPrefixCounter);
+router.put('/reference-counter', freightController.setPrefixCounter); // shared global counter, all prefixes together
 router.delete('/reference-prefixes/:code', freightController.deleteReferencePrefix);
 router.get('/reference-initials', freightController.getReferenceInitials);
 router.post('/reference-initials', freightController.createReferenceInitial);
