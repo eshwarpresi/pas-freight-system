@@ -1,4 +1,5 @@
 const prisma = require('../utils/prisma');
+const { recomputeCurrentStatus } = require('./freightForwarding.controller'); // ✅ NEW — shared dynamic status logic
 
 async function ensureAccounts(shipmentId) {
   const existing = await prisma.accounts.findUnique({ where: { shipmentId } });
@@ -130,7 +131,6 @@ const updateInvoice = async (req, res) => {
       await prisma.shipment.update({ 
         where: { id }, 
         data: { 
-          currentStatus: 'INVOICE_GENERATED', 
           accounts: { update: data }, 
           statusHistory: { 
             create: { 
@@ -142,6 +142,7 @@ const updateInvoice = async (req, res) => {
         } 
       });
       await stampAccountsHandler(id, req);
+      await recomputeCurrentStatus(id); // ✅ NEW — moves status forward or back based on what's actually filled in
     }
 
     const justCompleted = await markInvoiceCompleteIfReady(id, req);
@@ -172,7 +173,6 @@ const updateInvoiceSending = async (req, res) => {
       await prisma.shipment.update({ 
         where: { id }, 
         data: { 
-          currentStatus: 'INVOICE_SENT', 
           accounts: { update: { sendingDate: sendingDate } }, 
           statusHistory: { 
             create: { 
@@ -184,6 +184,7 @@ const updateInvoiceSending = async (req, res) => {
         } 
       });
       await stampAccountsHandler(id, req);
+      await recomputeCurrentStatus(id); // ✅ NEW
       
       justCompleted = await markInvoiceCompleteIfReady(id, req);
     }

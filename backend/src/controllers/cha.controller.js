@@ -1,4 +1,5 @@
 const prisma = require('../utils/prisma');
+const { recomputeCurrentStatus } = require('./freightForwarding.controller'); // ✅ NEW — shared dynamic status logic
 
 async function ensureCHA(shipmentId) {
   const existing = await prisma.cHA.findUnique({ where: { shipmentId } });
@@ -30,11 +31,10 @@ async function stampCustomsHandler(id, req) {
   }
 }
 
-// ✅ DATE-CLEARING FIX — every date field below used to check
-// `if (req.body.x)`, which is falsy for an empty string, so clearing a
-// date back to blank was silently ignored — the exact "I delete the date
-// but it comes back" bug. Now checks `!== undefined` instead, so an
-// explicit clear (empty string) correctly saves as null.
+// ✅ Every function below now calls recomputeCurrentStatus after saving,
+// instead of manually forcing currentStatus forward — so clearing a date
+// correctly moves the shipment's status back too, not just the frontend
+// stepper icons.
 
 // UPDATE CHECKLIST
 const updateChecklist = async (req, res) => {
@@ -47,8 +47,9 @@ const updateChecklist = async (req, res) => {
     if (req.body.checklistDate !== undefined) { data.checklistDate = req.body.checklistDate ? new Date(req.body.checklistDate) : null; if (req.body.checklistDate) parts.push(`Checklist Date: ${req.body.checklistDate}`); }
     if (req.body.checklistApprovalDate !== undefined) { data.checklistApprovalDate = req.body.checklistApprovalDate ? new Date(req.body.checklistApprovalDate) : null; if (req.body.checklistApprovalDate) parts.push(`Approval Date: ${req.body.checklistApprovalDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'CHECKLIST_APPROVED', cha: { update: data }, statusHistory: { create: { status: 'CHECKLIST_APPROVED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: data }, statusHistory: { create: { status: 'CHECKLIST_APPROVED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -65,8 +66,9 @@ const updateBOE = async (req, res) => {
     if (req.body.boeNo !== undefined) { data.boeNo = req.body.boeNo; parts.push(`BOE No: ${req.body.boeNo}`); }
     if (req.body.boeDate !== undefined) { data.boeDate = req.body.boeDate ? new Date(req.body.boeDate) : null; if (req.body.boeDate) parts.push(`BOE Date: ${req.body.boeDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'BOE_FILED', cha: { update: data }, statusHistory: { create: { status: 'BOE_FILED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: data }, statusHistory: { create: { status: 'BOE_FILED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -80,8 +82,9 @@ const updateDOCollection = async (req, res) => {
     await ensureCHA(id);
     if (req.body.doCollectionDate !== undefined) {
       const val = req.body.doCollectionDate ? new Date(req.body.doCollectionDate) : null;
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DO_COLLECTED', cha: { update: { doCollectionDate: val } }, statusHistory: { create: { status: 'DO_COLLECTED', remarks: val ? `DO Collection Date: ${req.body.doCollectionDate}` : 'DO Collection date cleared', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { doCollectionDate: val } }, statusHistory: { create: { status: 'DO_COLLECTED', remarks: val ? `DO Collection Date: ${req.body.doCollectionDate}` : 'DO Collection date cleared', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -95,8 +98,9 @@ const updateOOC = async (req, res) => {
     await ensureCHA(id);
     if (req.body.oocDate !== undefined) {
       const val = req.body.oocDate ? new Date(req.body.oocDate) : null;
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'OOC_DONE', cha: { update: { oocDate: val } }, statusHistory: { create: { status: 'OOC_DONE', remarks: val ? `OOC Date: ${req.body.oocDate}` : 'OOC date cleared', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { oocDate: val } }, statusHistory: { create: { status: 'OOC_DONE', remarks: val ? `OOC Date: ${req.body.oocDate}` : 'OOC date cleared', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -110,8 +114,9 @@ const updateGatePass = async (req, res) => {
     await ensureCHA(id);
     if (req.body.gatePassDate !== undefined) {
       const val = req.body.gatePassDate ? new Date(req.body.gatePassDate) : null;
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'GATE_PASS', cha: { update: { gatePassDate: val } }, statusHistory: { create: { status: 'GATE_PASS', remarks: val ? `Gate Pass Date: ${req.body.gatePassDate}` : 'Gate Pass date cleared', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { gatePassDate: val } }, statusHistory: { create: { status: 'GATE_PASS', remarks: val ? `Gate Pass Date: ${req.body.gatePassDate}` : 'Gate Pass date cleared', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -128,8 +133,9 @@ const updatePOD = async (req, res) => {
     if (req.body.deliveryDate !== undefined) { data.deliveryDate = req.body.deliveryDate ? new Date(req.body.deliveryDate) : null; if (req.body.deliveryDate) parts.push(`Delivery Date: ${req.body.deliveryDate}`); }
     if (req.body.trackingNumber !== undefined) { data.trackingNumber = req.body.trackingNumber; parts.push(`Tracking No: ${req.body.trackingNumber}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'DELIVERED', cha: { update: data }, statusHistory: { create: { status: 'DELIVERED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: data }, statusHistory: { create: { status: 'DELIVERED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -146,8 +152,9 @@ const updateShippingBill = async (req, res) => {
     if (req.body.sbNo !== undefined) { data.sbNo = req.body.sbNo; parts.push(`SB No: ${req.body.sbNo}`); }
     if (req.body.sbDate !== undefined) { data.sbDate = req.body.sbDate ? new Date(req.body.sbDate) : null; if (req.body.sbDate) parts.push(`SB Date: ${req.body.sbDate}`); }
     if (Object.keys(data).length > 0) {
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'SB_FILED', cha: { update: data }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: data }, statusHistory: { create: { status: 'SB_FILED', remarks: parts.join(' | ') || 'Updated', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -161,8 +168,9 @@ const updateLEO = async (req, res) => {
     await ensureCHA(id);
     if (req.body.leoDate !== undefined) {
       const val = req.body.leoDate ? new Date(req.body.leoDate) : null;
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'LEO_DONE', cha: { update: { leoDate: val } }, statusHistory: { create: { status: 'LEO_DONE', remarks: val ? `LEO Date: ${req.body.leoDate}` : 'LEO date cleared', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { leoDate: val } }, statusHistory: { create: { status: 'LEO_DONE', remarks: val ? `LEO Date: ${req.body.leoDate}` : 'LEO date cleared', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });
@@ -176,8 +184,9 @@ const updateHandOver = async (req, res) => {
     await ensureCHA(id);
     if (req.body.handOverDate !== undefined) {
       const val = req.body.handOverDate ? new Date(req.body.handOverDate) : null;
-      await prisma.shipment.update({ where: { id }, data: { currentStatus: 'HAND_OVER', cha: { update: { handOverDate: val } }, statusHistory: { create: { status: 'HAND_OVER', remarks: val ? `Hand Over Date: ${req.body.handOverDate}` : 'Hand Over date cleared', changedBy: actorName(req) } } } });
+      await prisma.shipment.update({ where: { id }, data: { cha: { update: { handOverDate: val } }, statusHistory: { create: { status: 'HAND_OVER', remarks: val ? `Hand Over Date: ${req.body.handOverDate}` : 'Hand Over date cleared', changedBy: actorName(req) } } } });
       await stampCustomsHandler(id, req);
+      await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
     res.json({ status: 'success', data: s });

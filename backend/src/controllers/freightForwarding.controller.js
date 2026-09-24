@@ -28,6 +28,79 @@ function actorName(req) {
   return req.user?.name || req.user?.email || null;
 }
 
+// ─── DYNAMIC CURRENT STATUS (NEW) ───
+// Previously, each update function manually set currentStatus forward
+// (e.g. "if a nomination date was given, set status to NOMINATED") —
+// which meant clearing that same date back to blank never moved the
+// status back down. This replaces that entirely: after any change,
+// recomputeCurrentStatus looks at what's ACTUALLY filled in right now
+// and sets currentStatus to the furthest step that's genuinely complete
+// — so it naturally moves both forward AND backward with the real data,
+// mirroring exactly what the workflow stepper on the frontend shows.
+//
+// Step orders mirror the frontend's FULL_STEPS/CHA_IMPORT_STEPS/etc
+// exactly (see ShipmentDetail.jsx) — keep these in sync if that ever
+// changes.
+const FULL_STEP_ORDER = ['ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'SCHEDULED', 'AWB_GENERATED', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const CHA_IMPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const CHA_EXPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'SB_FILED', 'LEO_DONE', 'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const TRANSPORT_STEP_ORDER = ['ENQUIRY', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const DO_RELEASE_STEP_ORDER = ['ENQUIRY', 'DO_COLLECTED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const FF_ONLY_STEP_ORDER = ['ENQUIRY', 'AWB_GENERATED', 'DO_COLLECTED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const STAGE_ORDER_FOR_STATUS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice'];
+
+function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
+  switch (statusKey) {
+    case 'ENQUIRY': return true;
+    case 'RATES_ADDED': {
+      const stageIdx = STAGE_ORDER_FOR_STATUS.indexOf(shipmentStage);
+      const quotedIdx = STAGE_ORDER_FOR_STATUS.indexOf('Quoted');
+      const stagePastQuoted = stageIdx !== -1 && stageIdx >= quotedIdx;
+      return !!(ff.weight || ff.grossWeight || ff.sellingRate) || stagePastQuoted;
+    }
+    case 'NOMINATED': return !!ff.nominationDate;
+    case 'BOOKED': return !!ff.bookingDate;
+    case 'SCHEDULED': return !!(ff.etd || ff.eta);
+    case 'AWB_GENERATED': return !!(ff.mawb || ff.hawb);
+    case 'CHECKLIST_APPROVED': return !!cha.checklistDate;
+    case 'BOE_FILED': return !!cha.boeNo;
+    case 'DO_COLLECTED': return !!cha.doCollectionDate;
+    case 'OOC_DONE': return !!cha.oocDate;
+    case 'GATE_PASS': return !!cha.gatePassDate;
+    case 'DELIVERED': return !!cha.deliveryDate;
+    case 'SB_FILED': return !!cha.sbNo;
+    case 'LEO_DONE': return !!cha.leoDate;
+    case 'HAND_OVER': return !!cha.handOverDate;
+    case 'INVOICE_GENERATED': return !!(accounts.invoiceNumber && accounts.invoiceDate);
+    case 'INVOICE_SENT': return !!accounts.sendingDate;
+    default: return true;
+  }
+}
+
+async function recomputeCurrentStatus(shipmentId) {
+  const s = await prisma.shipment.findUnique({
+    where: { id: shipmentId },
+    select: { shipmentType: true, importExport: true, shipmentStage: true, freightForwarding: true, cha: true, accounts: true }
+  });
+  if (!s) return;
+  const ff = s.freightForwarding || {};
+  const cha = s.cha || {};
+  const accounts = s.accounts || {};
+
+  let order;
+  if (s.shipmentType === 'FF Only') order = FF_ONLY_STEP_ORDER;
+  else if (s.shipmentType === 'DO Release') order = DO_RELEASE_STEP_ORDER;
+  else if (s.shipmentType === 'Transport') order = TRANSPORT_STEP_ORDER;
+  else if (s.shipmentType === 'CHA Only') order = s.importExport === 'Export' ? CHA_EXPORT_STEP_ORDER : CHA_IMPORT_STEP_ORDER;
+  else order = FULL_STEP_ORDER;
+
+  let lastComplete = 'ENQUIRY';
+  for (const key of order) {
+    if (isStepCompleteBackend(key, ff, cha, accounts, s.shipmentStage)) lastComplete = key;
+  }
+  await prisma.shipment.update({ where: { id: shipmentId }, data: { currentStatus: lastComplete } });
+}
+
 // ─── STATUS -> TEAM MAP (NEW) ───
 // Classifies each status-history entry by which of the 3 workflow teams
 // performed it. Used to build "Freight: A, B" / "Customs: C, D, E" /
@@ -2072,6 +2145,7 @@ const updateRates = async (req, res) => {
       await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: data } } }); 
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_UPDATED', parts.join(' | '), actorName(req)); 
       await checkAndStampFreightComplete(req.params.id, req);
+      await recomputeCurrentStatus(req.params.id); // ✅ NEW — lets status move through RATES_ADDED, and move back if rate/weight is cleared
     } 
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); 
     sendStatusEmail(s).catch(() => {}); 
@@ -2089,18 +2163,17 @@ const updatePortLocation = async (req, res) => {
 
 const updateSchedule = async (req, res) => {
   try {
-    const data = {}; const parts = []; let advancesStatus = false;
+    const data = {}; const parts = [];
     // ✅ FIX — was `if (req.body.etd)`, which silently ignored attempts to
     // CLEAR the date (an empty string is falsy). Now `!== undefined`
     // catches both "a real date was given" and "the field was cleared",
     // writing null for the latter instead of doing nothing.
-    if (req.body.etd !== undefined) { data.etd = req.body.etd ? new Date(req.body.etd) : null; if (req.body.etd) { parts.push(`ETD: ${req.body.etd}`); advancesStatus = true; } }
-    if (req.body.eta !== undefined) { data.eta = req.body.eta ? new Date(req.body.eta) : null; if (req.body.eta) { parts.push(`ETA: ${req.body.eta}`); advancesStatus = true; } }
+    if (req.body.etd !== undefined) { data.etd = req.body.etd ? new Date(req.body.etd) : null; if (req.body.etd) parts.push(`ETD: ${req.body.etd}`); }
+    if (req.body.eta !== undefined) { data.eta = req.body.eta ? new Date(req.body.eta) : null; if (req.body.eta) parts.push(`ETA: ${req.body.eta}`); }
     if (Object.keys(data).length > 0) {
-      const updatePayload = { freightForwarding: { update: data } };
-      if (advancesStatus) updatePayload.currentStatus = 'SCHEDULED';
-      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
+      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: data } } });
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'SCHEDULED', parts.join(' | '), actorName(req));
+      await recomputeCurrentStatus(req.params.id); // ✅ NEW — moves status forward OR back based on what's actually filled in now
     }
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
     sendStatusEmail(s).catch(() => {});
@@ -2112,10 +2185,9 @@ const updateNomination = async (req, res) => {
   try {
     if (req.body.nominationDate !== undefined) {
       const val = req.body.nominationDate ? new Date(req.body.nominationDate) : null;
-      const updatePayload = { freightForwarding: { update: { nominationDate: val } } };
-      if (val) updatePayload.currentStatus = 'NOMINATED';
-      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
-      if (val) await upsertStatusEntry(req.params.id, 'NOMINATED', `Nomination: ${req.body.nominationDate}`, actorName(req));
+      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { nominationDate: val } } } });
+      await upsertStatusEntry(req.params.id, 'NOMINATED', val ? `Nomination: ${req.body.nominationDate}` : 'Nomination date cleared', actorName(req));
+      await recomputeCurrentStatus(req.params.id); // ✅ NEW
     }
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
     sendStatusEmail(s).catch(() => {});
@@ -2127,10 +2199,9 @@ const updateBooking = async (req, res) => {
   try {
     if (req.body.bookingDate !== undefined) {
       const val = req.body.bookingDate ? new Date(req.body.bookingDate) : null;
-      const updatePayload = { freightForwarding: { update: { bookingDate: val } } };
-      if (val) updatePayload.currentStatus = 'BOOKED';
-      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
-      if (val) await upsertStatusEntry(req.params.id, 'BOOKED', `Booking: ${req.body.bookingDate}`, actorName(req));
+      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { bookingDate: val } } } });
+      await upsertStatusEntry(req.params.id, 'BOOKED', val ? `Booking: ${req.body.bookingDate}` : 'Booking date cleared', actorName(req));
+      await recomputeCurrentStatus(req.params.id); // ✅ NEW
     }
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
     sendStatusEmail(s).catch(() => {});
@@ -2140,15 +2211,14 @@ const updateBooking = async (req, res) => {
 
 const updateAWB = async (req, res) => {
   try {
-    const data = {}; const parts = []; let advancesStatus = false;
+    const data = {}; const parts = [];
     if (req.body.mawb !== undefined) { data.mawb = req.body.mawb; parts.push(`MAWB: ${req.body.mawb}`); }
     if (req.body.hawb !== undefined) { data.hawb = req.body.hawb; parts.push(`HAWB: ${req.body.hawb}`); }
-    if (req.body.awbDate !== undefined) { data.awbDate = req.body.awbDate ? new Date(req.body.awbDate) : null; if (req.body.awbDate) { parts.push(`AWB Date: ${req.body.awbDate}`); advancesStatus = true; } }
+    if (req.body.awbDate !== undefined) { data.awbDate = req.body.awbDate ? new Date(req.body.awbDate) : null; if (req.body.awbDate) parts.push(`AWB Date: ${req.body.awbDate}`); }
     if (Object.keys(data).length > 0) {
-      const updatePayload = { freightForwarding: { update: data } };
-      if (advancesStatus) updatePayload.currentStatus = 'AWB_GENERATED';
-      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
+      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: data } } });
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'AWB_GENERATED', parts.join(' | '), actorName(req));
+      await recomputeCurrentStatus(req.params.id); // ✅ NEW
     }
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
     sendStatusEmail(s).catch(() => {});
@@ -2157,6 +2227,7 @@ const updateAWB = async (req, res) => {
 };
 
 module.exports = { 
+  recomputeCurrentStatus, // ✅ NEW — shared by cha.controller.js and accounts.controller.js
   createShipment, 
   deleteShipment, 
   deleteAllShipments, 
