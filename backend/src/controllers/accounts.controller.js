@@ -121,9 +121,9 @@ const updateInvoice = async (req, res) => {
       data.invoiceNumber = req.body.invoiceNumber; 
       parts.push(`Invoice No: ${req.body.invoiceNumber}`); 
     }
-    if (req.body.invoiceDate) { 
-      data.invoiceDate = new Date(req.body.invoiceDate); 
-      parts.push(`Invoice Date: ${req.body.invoiceDate}`); 
+    if (req.body.invoiceDate !== undefined) { 
+      data.invoiceDate = req.body.invoiceDate ? new Date(req.body.invoiceDate) : null; 
+      if (req.body.invoiceDate) parts.push(`Invoice Date: ${req.body.invoiceDate}`); 
     }
     
     if (Object.keys(data).length > 0) {
@@ -166,8 +166,8 @@ const updateInvoiceSending = async (req, res) => {
     
     let justCompleted = false;
     
-    if (req.body.sendingDate) {
-      const sendingDate = new Date(req.body.sendingDate);
+    if (req.body.sendingDate !== undefined) {
+      const sendingDate = req.body.sendingDate ? new Date(req.body.sendingDate) : null;
       
       await prisma.shipment.update({ 
         where: { id }, 
@@ -177,7 +177,7 @@ const updateInvoiceSending = async (req, res) => {
           statusHistory: { 
             create: { 
               status: 'INVOICE_SENT', 
-              remarks: `Invoice Sent Date: ${req.body.sendingDate}`,
+              remarks: sendingDate ? `Invoice Sent Date: ${req.body.sendingDate}` : 'Invoice sent date cleared',
               changedBy: actorName(req)
             } 
           } 

@@ -2088,19 +2088,72 @@ const updatePortLocation = async (req, res) => {
 };
 
 const updateSchedule = async (req, res) => {
-  try { const data = {}; const parts = []; if (req.body.etd) { data.etd = new Date(req.body.etd); parts.push(`ETD: ${req.body.etd}`); } if (req.body.eta) { data.eta = new Date(req.body.eta); parts.push(`ETA: ${req.body.eta}`); } if (Object.keys(data).length > 0) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'SCHEDULED', freightForwarding: { update: { data } } } }); if (parts.length > 0) await upsertStatusEntry(req.params.id, 'SCHEDULED', parts.join(' | '), actorName(req)); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); sendStatusEmail(s).catch(() => {}); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try {
+    const data = {}; const parts = []; let advancesStatus = false;
+    // ✅ FIX — was `if (req.body.etd)`, which silently ignored attempts to
+    // CLEAR the date (an empty string is falsy). Now `!== undefined`
+    // catches both "a real date was given" and "the field was cleared",
+    // writing null for the latter instead of doing nothing.
+    if (req.body.etd !== undefined) { data.etd = req.body.etd ? new Date(req.body.etd) : null; if (req.body.etd) { parts.push(`ETD: ${req.body.etd}`); advancesStatus = true; } }
+    if (req.body.eta !== undefined) { data.eta = req.body.eta ? new Date(req.body.eta) : null; if (req.body.eta) { parts.push(`ETA: ${req.body.eta}`); advancesStatus = true; } }
+    if (Object.keys(data).length > 0) {
+      const updatePayload = { freightForwarding: { update: data } };
+      if (advancesStatus) updatePayload.currentStatus = 'SCHEDULED';
+      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
+      if (parts.length > 0) await upsertStatusEntry(req.params.id, 'SCHEDULED', parts.join(' | '), actorName(req));
+    }
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    sendStatusEmail(s).catch(() => {});
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateNomination = async (req, res) => {
-  try { if (req.body.nominationDate) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'NOMINATED', freightForwarding: { update: { nominationDate: new Date(req.body.nominationDate) } } } }); await upsertStatusEntry(req.params.id, 'NOMINATED', `Nomination: ${req.body.nominationDate}`, actorName(req)); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); sendStatusEmail(s).catch(() => {}); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try {
+    if (req.body.nominationDate !== undefined) {
+      const val = req.body.nominationDate ? new Date(req.body.nominationDate) : null;
+      const updatePayload = { freightForwarding: { update: { nominationDate: val } } };
+      if (val) updatePayload.currentStatus = 'NOMINATED';
+      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
+      if (val) await upsertStatusEntry(req.params.id, 'NOMINATED', `Nomination: ${req.body.nominationDate}`, actorName(req));
+    }
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    sendStatusEmail(s).catch(() => {});
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateBooking = async (req, res) => {
-  try { if (req.body.bookingDate) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'BOOKED', freightForwarding: { update: { bookingDate: new Date(req.body.bookingDate) } } } }); await upsertStatusEntry(req.params.id, 'BOOKED', `Booking: ${req.body.bookingDate}`, actorName(req)); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); sendStatusEmail(s).catch(() => {}); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try {
+    if (req.body.bookingDate !== undefined) {
+      const val = req.body.bookingDate ? new Date(req.body.bookingDate) : null;
+      const updatePayload = { freightForwarding: { update: { bookingDate: val } } };
+      if (val) updatePayload.currentStatus = 'BOOKED';
+      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
+      if (val) await upsertStatusEntry(req.params.id, 'BOOKED', `Booking: ${req.body.bookingDate}`, actorName(req));
+    }
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    sendStatusEmail(s).catch(() => {});
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateAWB = async (req, res) => {
-  try { const data = {}; const parts = []; if (req.body.mawb !== undefined) { data.mawb = req.body.mawb; parts.push(`MAWB: ${req.body.mawb}`); } if (req.body.hawb !== undefined) { data.hawb = req.body.hawb; parts.push(`HAWB: ${req.body.hawb}`); } if (req.body.awbDate) { data.awbDate = new Date(req.body.awbDate); parts.push(`AWB Date: ${req.body.awbDate}`); } if (Object.keys(data).length > 0) { await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: 'AWB_GENERATED', freightForwarding: { update: data } } }); if (parts.length > 0) await upsertStatusEntry(req.params.id, 'AWB_GENERATED', parts.join(' | '), actorName(req)); } const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); sendStatusEmail(s).catch(() => {}); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try {
+    const data = {}; const parts = []; let advancesStatus = false;
+    if (req.body.mawb !== undefined) { data.mawb = req.body.mawb; parts.push(`MAWB: ${req.body.mawb}`); }
+    if (req.body.hawb !== undefined) { data.hawb = req.body.hawb; parts.push(`HAWB: ${req.body.hawb}`); }
+    if (req.body.awbDate !== undefined) { data.awbDate = req.body.awbDate ? new Date(req.body.awbDate) : null; if (req.body.awbDate) { parts.push(`AWB Date: ${req.body.awbDate}`); advancesStatus = true; } }
+    if (Object.keys(data).length > 0) {
+      const updatePayload = { freightForwarding: { update: data } };
+      if (advancesStatus) updatePayload.currentStatus = 'AWB_GENERATED';
+      await prisma.shipment.update({ where: { id: req.params.id }, data: updatePayload });
+      if (parts.length > 0) await upsertStatusEntry(req.params.id, 'AWB_GENERATED', parts.join(' | '), actorName(req));
+    }
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    sendStatusEmail(s).catch(() => {});
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 module.exports = { 
