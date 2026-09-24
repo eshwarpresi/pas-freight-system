@@ -125,6 +125,7 @@ function isArchiveEligible(shipment) {
 // below), but now only runs on the periodic background schedule in
 // server.js, not on every page load.
 async function archiveMaturedInvoices() {
+  let archivedCount = 0;
   try {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const matured = await prisma.shipment.findMany({
@@ -140,20 +141,25 @@ async function archiveMaturedInvoices() {
             statusHistory: { create: { status: 'COMPLETED', remarks: 'Auto-archived 30 days after invoice was completed' } }
           }
         });
+        archivedCount++;
       }
     }
   } catch (error) {
     console.error('Error in archiveMaturedInvoices sweep:', error);
   }
+  return archivedCount;
 }
 
-// ─── RETROACTIVE ARCHIVE CLEANUP — HEAVY PASS (NEW, SCHEDULED ONLY) ───
+// ─── RETROACTIVE ARCHIVE CLEANUP — HEAVY PASS (SCHEDULED, OR ON-DEMAND) ───
 // Scans EVERY currently-archived shipment and moves back to Active
 // anything that no longer passes isArchiveEligible. This is the
-// expensive full-table-scan part — only called from server.js's periodic
-// schedule (every 6 hours + once on startup), never from a live request,
-// so it doesn't add latency to anyone clicking around the dashboard.
+// expensive full-table-scan part — normally only called from server.js's
+// periodic schedule (every 6 hours + once on startup) so it doesn't add
+// latency to live requests, but also exposed via a manual-trigger
+// endpoint (POST /freight/run-archive-cleanup) for whenever you want it
+// to happen immediately rather than waiting for the schedule.
 async function restoreIneligibleArchives() {
+  let restoredCount = 0;
   try {
     const currentlyArchived = await prisma.shipment.findMany({
       where: { isArchived: true, isDeleted: false },
@@ -168,12 +174,34 @@ async function restoreIneligibleArchives() {
             statusHistory: { create: { status: 'RESTORED', remarks: 'Moved back to Active — required fields are missing (auto-corrected)' } }
           }
         });
+        restoredCount++;
       }
     }
   } catch (error) {
     console.error('Error in restoreIneligibleArchives sweep:', error);
   }
+  return restoredCount;
 }
+
+// ─── RUN ARCHIVE CLEANUP NOW (NEW) ───
+// Runs both sweeps immediately and reports exactly what happened —
+// no waiting for the 6-hour schedule, and no dependency on NODE_ENV
+// being set to 'production' (the scheduled version in server.js only
+// runs in production; this always runs when called).
+const runArchiveCleanupNow = async (req, res) => {
+  try {
+    const archived = await archiveMaturedInvoices();
+    const restored = await restoreIneligibleArchives();
+    res.json({
+      status: 'success',
+      data: { archived, restored },
+      message: `Done — ${archived} shipment(s) archived, ${restored} shipment(s) moved back to Active.`
+    });
+  } catch (error) {
+    console.error('Error running archive cleanup:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to run archive cleanup' });
+  }
+};
 
 // Back-compat alias — old name some call sites may still reference.
 async function autoArchiveMatured() {
@@ -2107,6 +2135,7 @@ module.exports = {
   autoArchiveMatured, // back-compat alias (== archiveMaturedInvoices)
   archiveMaturedInvoices, // ✅ NEW — lightweight, safe to call per-request
   restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)
+  runArchiveCleanupNow, // ✅ NEW — on-demand trigger, no NODE_ENV dependency
   getShipmentById, 
   updateRefNo, 
   updateConsignee, 
