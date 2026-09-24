@@ -346,7 +346,7 @@ export default function ShipmentDetail() {
 
   const handlePrint = () => {
     const ff = shipment?.freightForwarding || {}; const cha = shipment?.cha || {}; const acc = shipment?.accounts || {}
-    const fmd = d => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+    const fmd = d => { if (!d) return '—'; const dt = new Date(d); const dd = String(dt.getDate()).padStart(2,'0'); const mm = String(dt.getMonth()+1).padStart(2,'0'); const yyyy = dt.getFullYear(); return `${dd}-${mm}-${yyyy}` }
     const pw = window.open('', '_blank', 'width=900,height=700')
     pw.document.write(`<!DOCTYPE html><html><head><title>${shipment.refNo} - PAS Freight</title><style>
       *{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial;padding:40px;color:#1a1a1a;max-width:900px;margin:auto}
@@ -358,7 +358,7 @@ export default function ShipmentDetail() {
       .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.item{padding:6px 0;border-bottom:1px solid #f3f4f6}.item label{font-size:9px;color:#9ca3af;display:block;text-transform:uppercase}.item span{font-size:13px;color:#1f2937;font-weight:500}
       .remarks-box{margin-top:10px;padding:10px;background:#fffbeb;border-left:3px solid #f59e0b;font-size:12px}.footer{margin-top:30px;border-top:1px solid #e5e7eb;padding-top:10px;font-size:10px;color:#9ca3af;text-align:center}
       @media print{body{padding:20px}}</style></head><body>
-      <div class="header"><div><h1>PAS Freight Services Pvt Ltd</h1><p>Shipment Details Report</p></div><p>${new Date().toLocaleDateString()}</p></div>
+      <div class="header"><div><h1>PAS Freight Services Pvt Ltd</h1><p>Shipment Details Report</p></div><p>${fmd(new Date())}</p></div>
       <div class="ref-box"><div class="ref">${shipment.refNo}</div><div class="stage">${shipment.currentStatus.replace(/_/g,' ')}</div></div>
       ${isDORelease ? `
       <div class="section"><h2>DO Release Details</h2><div class="grid">
@@ -387,7 +387,12 @@ export default function ShipmentDetail() {
 
   if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-12 h-12 border-3 border-indigo-200 dark:border-indigo-800 border-t-indigo-600 rounded-full animate-spin" /></div>
   if (!shipment) return <div className="text-center py-16"><div className="w-16 h-16 bg-gradient-to-br from-indigo-400 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Package size={32} className="text-white"/></div><h3 className="text-lg font-semibold text-[var(--text-primary)]">Shipment not found</h3><button onClick={goBack} className="inline-flex items-center gap-1 mt-4 text-indigo-600 dark:text-indigo-400"><ArrowLeft size={14} />Back</button></div>
-  const ff = shipment.freightForwarding || {}; const cha = shipment.cha || {}; const accounts = shipment.accounts || {}; const Fmt = d => d ? new Date(d).toLocaleDateString() : null
+  const ff = shipment.freightForwarding || {}; const cha = shipment.cha || {}; const accounts = shipment.accounts || {};
+  // ✅ FIX — this used to output locale format (e.g. "9/24/2026" in the
+  // US), but <input type="date"> requires ISO format ("2026-09-24") to
+  // pre-fill and for its native picker to work at all. toISOString()
+  // then slicing to just the date part gives the correct format.
+  const Fmt = d => d ? new Date(d).toISOString().split('T')[0] : null
 
   const tabs = [
     { k: 'freight', l: 'Freight Forwarding', i: Ship },
@@ -424,7 +429,7 @@ export default function ShipmentDetail() {
                 <HandledByBadge label="Customs" name={(shipment.teamContributors?.CUSTOMS || []).join(', ')} colorClass="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" />
                 <HandledByBadge label="Accounts" name={(shipment.teamContributors?.ACCOUNTS || []).join(', ')} colorClass="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" />
               </div>
-              <p className="text-sm text-[var(--text-secondary)] mt-1">Created {new Date(shipment.createdAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</p>
+              <p className="text-sm text-[var(--text-secondary)] mt-1">Created {toDDMMYYYY(new Date(shipment.createdAt).toISOString().split('T')[0])}</p>
             </div>
             <div className="flex items-center gap-2">
               <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200 hover-lift"><Pencil size={16} />Edit</Link>
@@ -562,14 +567,29 @@ export default function ShipmentDetail() {
 function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 rounded-lg border border-indigo-100 dark:border-indigo-900"><I size={16} className="text-indigo-400 dark:text-indigo-300 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-indigo-400 dark:text-indigo-300">{l}</p><p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{v||'—'}</p></div></div>}
 function slugifyTitle(title) { return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') }
 function Section({ title, icon: Icon, children }) { return <div id={`section-${slugifyTitle(title)}`} className="border border-[var(--border-color)] rounded-xl overflow-hidden shadow-sm"><div className="flex items-center gap-2 p-4 bg-gradient-to-r from-indigo-50 to-blue-50/50 dark:from-indigo-950/30 dark:to-blue-950/20 border-b border-[var(--border-color)]"><Icon size={14} className="text-indigo-400 dark:text-indigo-300" /><p className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{title}</p></div><div className="p-4">{children}</div></div> }
+// ✅ NEW — converts an ISO date (yyyy-mm-dd, what the actual <input
+// type="date"> needs internally to work at all) into dd-mm-yyyy for
+// display only. The two must stay separate: browsers require ISO format
+// for the date input's value to pre-fill and for its native picker to
+// work — showing dd-mm-yyyy directly in that value would silently break
+// the picker.
+function toDDMMYYYY(isoDate) {
+  if (!isoDate) return null
+  const parts = isoDate.split('-')
+  if (parts.length !== 3) return isoDate
+  const [y, m, d] = parts
+  return `${d}-${m}-${y}`
+}
+
 function Field({ label, value, onSave, type = 'text', placeholder = 'Not set' }) {
   const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
   useEffect(() => { setVal(value || '') }, [value])
   const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
+  const displayValue = type === 'date' ? toDDMMYYYY(value) : value
   return <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label>{editing ? (
     <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="w-full px-3 py-2 border border-indigo-300 dark:border-indigo-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100" step={type === 'number' ? '0.01' : undefined} />
   ) : (
-    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-[var(--border-color)] rounded-lg text-sm cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between group"><span className={value ? 'font-medium text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
+    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-[var(--border-color)] rounded-lg text-sm cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between group"><span className={value ? 'font-medium text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500 italic'}>{displayValue || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
   )}</div>
 }

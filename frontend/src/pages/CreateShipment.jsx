@@ -16,6 +16,8 @@ const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
 const VEHICLE_TYPES = ['10ft', '20ft', '32ft', '40ft']
 const PACKAGE_TYPES = ['Box / Carton', 'Envelope / Document', 'Parcel', 'Pallet', 'Crate', 'Bag / Sack', 'Drum / Barrel', 'Tube', 'Container', 'Wooden Box', 'Plastic Bin', 'Roll', 'Bundle', 'Cargo Package', 'Freight Package']
 const TRANSPORT_MODE_OPTIONS = ['Air', 'Sea', 'Courier']
+// ✅ NEW — standard shipping container type/size codes
+const CONTAINER_TYPES = ['1x20GP', '1x20FR', '1x20RF', '1x20OT', '1x40HQ', '1x40FR', '1x40RF', '1x40OT']
 
 export default function CreateShipment() {
   const navigate = useNavigate()
@@ -260,7 +262,7 @@ export default function CreateShipment() {
       importExport: '', mode: '',
       hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '',
       notificationEmail: '',
-      customerName: '', vehicleType: '', noOfContainers: '', packageType: '',
+      customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '',
       fromLocation: '', toLocation: '', deliveryDate: '',
       transportMode: '',
       chaName: ''
@@ -323,6 +325,7 @@ export default function CreateShipment() {
         customerName: ff.customerName || '',
         vehicleType: ff.vehicleType || '',
         noOfContainers: ff.noOfContainers || '',
+        containerType: ff.containerType || '',
         packageType: ff.packageType || '',
         fromLocation: ff.fromLocation || '',
         toLocation: ff.toLocation || '',
@@ -380,6 +383,7 @@ export default function CreateShipment() {
           customerName: formData.customerName || null,
           vehicleType: formData.vehicleType || null,
           noOfContainers: formData.noOfContainers ? parseInt(formData.noOfContainers) : null,
+          containerType: formData.containerType || null,
           packageType: formData.packageType || null,
           fromLocation: formData.fromLocation || null,
           toLocation: formData.toLocation || null,
@@ -438,6 +442,7 @@ export default function CreateShipment() {
           customerName: formData.customerName || null,
           vehicleType: formData.vehicleType || null,
           noOfContainers: formData.noOfContainers ? parseInt(formData.noOfContainers) : null,
+          containerType: formData.containerType || null,
           packageType: formData.packageType || null,
           deliveryDate: formData.deliveryDate || null,
           fromLocation: formData.fromLocation || null,
@@ -473,7 +478,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '', chaName: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '', chaName: '' })
     setErrors({}); setTouched({})
   }
 
@@ -761,7 +766,12 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Containers</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Container Type</label>
+                    <div className="flex gap-2">
+                      <select name="containerType" value={CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{CONTAINER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="containerType" value={!CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
@@ -869,7 +879,12 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Containers</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Container Type</label>
+                    <div className="flex gap-2">
+                      <select name="containerType" value={CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{CONTAINER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="containerType" value={!CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">

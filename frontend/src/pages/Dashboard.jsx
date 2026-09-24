@@ -2,6 +2,16 @@ import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import PipelineBoard from '../components/PipelineBoard'
+
+// ✅ NEW — dd-mm-yyyy everywhere on this page, instead of the previous
+// mixed locale-dependent formats.
+function fmtDDMMYYYY(dateInput) {
+  const d = new Date(dateInput)
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  return `${dd}-${mm}-${yyyy}`
+}
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
 import { useSocket } from '../App'
@@ -692,7 +702,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const getTitle = () => {
     if (showBin) return 'Bin / Trash'
-    if (customDate) return `Shipments on ${new Date(customDate + 'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`
+    if (customDate) return `Shipments on ${fmtDDMMYYYY(customDate + 'T00:00:00')}`
     if (todayOnly) return "Today's Shipments"
     if (thisMonthOnly) return "This Month's Shipments"
     if (inProgressOnly) return 'In Progress Shipments'
@@ -1037,7 +1047,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.weight ? `${s.freightForwarding.weight} kg` : <span className="text-[var(--text-muted)]">—</span>}</td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.fromLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] whitespace-nowrap">{s.freightForwarding?.toLocation || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.deliveryDate ? new Date(s.freightForwarding.deliveryDate).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.deliveryDate ? fmtDDMMYYYY(s.freightForwarding.deliveryDate) : <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       ) : (
                         <>
@@ -1063,13 +1073,13 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                           <td className="px-2.5 py-2.5 text-xs text-[var(--text-secondary)] whitespace-nowrap"><span className="flex items-center gap-1"><User size={10} className="text-[var(--text-muted)]"/>{s.createdByName||<span className="text-[var(--text-muted)]">—</span>}</span></td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.hawb||<span className="text-[var(--text-muted)]">—</span>}</td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.cha?.sbNo || s.cha?.boeNo || <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.etd ? new Date(s.freightForwarding.etd).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.eta ? new Date(s.freightForwarding.eta).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.etd ? fmtDDMMYYYY(s.freightForwarding.etd) : <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.eta ? fmtDDMMYYYY(s.freightForwarding.eta) : <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       )}
                       <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
                       <td className="px-2.5 py-2.5 whitespace-nowrap">{s.shipmentStage ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
-                      <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{new Date(s.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+                      <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{fmtDDMMYYYY(s.createdAt)}</td>
                       {showBin && (
                         <td className="px-2.5 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium whitespace-nowrap">{s.deletedBy || 'Unknown'}</td>
                       )}

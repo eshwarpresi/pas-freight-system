@@ -211,7 +211,7 @@ async function autoArchiveMatured() {
 // ─── CREATE NEW SHIPMENT ───
 const createShipment = async (req, res) => {
   try {
-    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation, coHandlerId } = req.body;
+    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, coHandlerId } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const createdById = req.user?.id || null;
     const createdByName = req.user?.name || req.user?.email || null;
@@ -229,7 +229,7 @@ const createShipment = async (req, res) => {
         refNo, currentStatus: 'ENQUIRY', shipmentType, importExport,
         createdById, createdByName,
         coHandlerId: coHandlerId || null, coHandlerName,
-        freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null, notificationEmail: notificationEmail || null, customerName: customerName || null, vehicleType: vehicleType || null, noOfContainers: noOfContainers ? parseInt(noOfContainers) : null, packageType: packageType || null, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, fromLocation: fromLocation || null, toLocation: toLocation || null } }, 
+        freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null, notificationEmail: notificationEmail || null, customerName: customerName || null, vehicleType: vehicleType || null, noOfContainers: noOfContainers ? parseInt(noOfContainers) : null, containerType: containerType || null, packageType: packageType || null, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, fromLocation: fromLocation || null, toLocation: toLocation || null } }, 
         statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}`, changedBy: createdByName } } 
       },
       include: { freightForwarding: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
@@ -2045,18 +2045,24 @@ const updateTerms = async (req, res) => {
 
 const updateRates = async (req, res) => {
   try { 
-    const { sellingRate, weight, cbm, grossWeight, notificationEmail, enquiryDate, noOfPackages, customerName, vehicleType, noOfContainers, packageType, deliveryDate, fromLocation, toLocation, transportMode } = req.body; 
+    const { sellingRate, weight, cbm, grossWeight, notificationEmail, enquiryDate, noOfPackages, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, transportMode } = req.body; 
     const data = {}; const parts = []; 
-    if (sellingRate !== undefined) { data.sellingRate = parseFloat(sellingRate); parts.push(`Rate: ₹${sellingRate}`); } 
-    if (weight !== undefined) { data.weight = parseFloat(weight); parts.push(`Chargeable Wt: ${weight}kg`); } 
-    if (cbm !== undefined) { data.cbm = parseFloat(cbm); parts.push(`CBM: ${cbm}`); } 
-    if (grossWeight !== undefined) { data.grossWeight = parseFloat(grossWeight); parts.push(`Gross Wt: ${grossWeight}kg`); } 
+    // ✅ FIX — parseFloat('') is NaN, and Prisma rejects writing NaN to a
+    // Float column, which was silently failing the WHOLE update whenever
+    // someone cleared Rate/Weight/CBM/Gross Weight back to blank — the
+    // exact "I clear it but it comes back" bug. Empty string now saves
+    // as null (a real, valid "cleared" value) instead of invalid NaN.
+    if (sellingRate !== undefined) { data.sellingRate = sellingRate === '' ? null : parseFloat(sellingRate); parts.push(`Rate: ₹${sellingRate}`); } 
+    if (weight !== undefined) { data.weight = weight === '' ? null : parseFloat(weight); parts.push(`Chargeable Wt: ${weight}kg`); } 
+    if (cbm !== undefined) { data.cbm = cbm === '' ? null : parseFloat(cbm); parts.push(`CBM: ${cbm}`); } 
+    if (grossWeight !== undefined) { data.grossWeight = grossWeight === '' ? null : parseFloat(grossWeight); parts.push(`Gross Wt: ${grossWeight}kg`); } 
     if (notificationEmail !== undefined) { data.notificationEmail = notificationEmail; } 
     if (enquiryDate !== undefined) { data.enquiryDate = enquiryDate ? new Date(enquiryDate) : null; } 
     if (noOfPackages !== undefined) { data.noOfPackages = noOfPackages ? parseInt(noOfPackages) : null; } 
     if (customerName !== undefined) { data.customerName = customerName; } 
     if (vehicleType !== undefined) { data.vehicleType = vehicleType; } 
     if (noOfContainers !== undefined) { data.noOfContainers = noOfContainers ? parseInt(noOfContainers) : null; } 
+    if (containerType !== undefined) { data.containerType = containerType || null; } 
     if (packageType !== undefined) { data.packageType = packageType; } 
     if (deliveryDate !== undefined) { data.deliveryDate = deliveryDate ? new Date(deliveryDate) : null; } 
     if (fromLocation !== undefined) { data.fromLocation = fromLocation; } 
@@ -2074,7 +2080,7 @@ const updateRates = async (req, res) => {
 };
 
 const updateCBM = async (req, res) => {
-  try { const val = req.body.cbm; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { cbm: parseFloat(val) } } } }); await upsertStatusEntry(req.params.id, 'CBM_UPDATED', `CBM: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.cbm; const cbmVal = val === '' ? null : parseFloat(val); await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { cbm: cbmVal } } } }); await upsertStatusEntry(req.params.id, 'CBM_UPDATED', `CBM: ${val}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updatePortLocation = async (req, res) => {
