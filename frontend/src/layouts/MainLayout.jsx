@@ -51,6 +51,34 @@ export default function MainLayout({ user }) {
     return unsubscribe
   }, [])
 
+  // ─── NEW VERSION AVAILABLE BANNER (NEW) ───
+  // Whenever you deploy, Vite generates a fresh index.html referencing
+  // new hashed JS/CSS files — but anyone with the app already open in
+  // their browser keeps running the OLD JS in memory until they actually
+  // reload the page. This quietly fetches the live index.html every 5
+  // minutes and compares it to the one this session originally loaded;
+  // if they differ, a deploy has happened, and everyone still on the old
+  // version sees a banner prompting them to refresh — no need to tell
+  // people manually anymore.
+  const [updateAvailable, setUpdateAvailable] = useState(false)
+  useEffect(() => {
+    let initialHtml = null
+    const checkForUpdate = async () => {
+      try {
+        const res = await fetch(`/index.html?_=${Date.now()}`, { cache: 'no-store' })
+        const html = await res.text()
+        if (initialHtml === null) {
+          initialHtml = html // first check just records the baseline, this session's own version
+        } else if (html !== initialHtml) {
+          setUpdateAvailable(true)
+        }
+      } catch (e) {} // a failed check (e.g. offline) just tries again next interval
+    }
+    checkForUpdate()
+    const interval = setInterval(checkForUpdate, 5 * 60 * 1000) // every 5 minutes
+    return () => clearInterval(interval)
+  }, [])
+
   // ✅ Notification sound (FIXED)
   // A single AudioContext, created once and reused, instead of a new one
   // per notification — browsers require it to be "unlocked" by a real
@@ -257,14 +285,27 @@ export default function MainLayout({ user }) {
     <div className="min-h-screen bg-[var(--bg-secondary)]">
       <LogisticsBackground />
 
-      {/* ✅ SLOW NETWORK / OFFLINE BANNER (NEW) — fixed to the top of the
-          viewport, above everything, so it's visible no matter which page
-          is open. Offline takes priority over merely-slow. */}
-      {(networkStatus.isOffline || networkStatus.isSlow) && (
-        <div className={`fixed top-0 left-0 right-0 z-[60] px-4 py-1.5 text-center text-xs font-medium text-white ${networkStatus.isOffline ? 'bg-red-600' : 'bg-amber-500'}`}>
-          {networkStatus.isOffline
-            ? "⚠️ You're offline — changes won't save until your connection is back"
-            : '🐢 Slow connection detected — some actions may take longer than usual'}
+      {/* ✅ NEW VERSION / SLOW NETWORK / OFFLINE BANNERS — stacked in one
+          fixed container at the top of the viewport, above everything,
+          visible no matter which page is open. New-version takes the top
+          slot since it's the most actionable. */}
+      {(updateAvailable || networkStatus.isOffline || networkStatus.isSlow) && (
+        <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col">
+          {updateAvailable && (
+            <div className="px-4 py-1.5 text-center text-xs font-medium text-white bg-indigo-600 flex items-center justify-center gap-2">
+              <span>🔄 A new version of PAS Freight is available</span>
+              <button onClick={() => window.location.reload()} className="px-2.5 py-0.5 bg-white text-indigo-700 rounded-full font-semibold hover:bg-indigo-50 transition-colors">
+                Refresh now
+              </button>
+            </div>
+          )}
+          {(networkStatus.isOffline || networkStatus.isSlow) && (
+            <div className={`px-4 py-1.5 text-center text-xs font-medium text-white ${networkStatus.isOffline ? 'bg-red-600' : 'bg-amber-500'}`}>
+              {networkStatus.isOffline
+                ? "⚠️ You're offline — changes won't save until your connection is back"
+                : '🐢 Slow connection detected — some actions may take longer than usual'}
+            </div>
+          )}
         </div>
       )}
 
