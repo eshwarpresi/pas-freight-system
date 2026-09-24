@@ -745,7 +745,7 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Containers</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
@@ -853,7 +853,7 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Containers</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">

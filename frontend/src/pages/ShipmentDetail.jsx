@@ -150,10 +150,23 @@ function EveryoneInvolved({ contributors }) {
 // falsely "completed" (green). This checks each step's ACTUAL underlying
 // field data instead, so a skipped step shows as genuinely missing (red)
 // regardless of what currentStatus says.
-function isStepComplete(statusKey, ff, cha, accounts) {
+// ✅ NEW — manually setting the Stage dropdown to "Quoted" (or any later
+// stage — Nomination, Checklist, BOE, etc.) also satisfies the Rates
+// step, even with no numeric rate/weight typed in yet. Reaching "Quoted"
+// implies rates were worked out with the customer, whether or not that
+// number ever got typed into this system — the stepper shouldn't show
+// red for something that's genuinely done just because it wasn't logged
+// as a number.
+function isStageAtOrPastQuoted(shipmentStage) {
+  const idx = STAGE_OPTIONS.indexOf(shipmentStage)
+  const quotedIdx = STAGE_OPTIONS.indexOf('Quoted')
+  return idx !== -1 && idx >= quotedIdx
+}
+
+function isStepComplete(statusKey, ff, cha, accounts, shipmentStage) {
   switch (statusKey) {
     case 'ENQUIRY': return true
-    case 'RATES_ADDED': return !!(ff.weight || ff.grossWeight || ff.sellingRate)
+    case 'RATES_ADDED': return !!(ff.weight || ff.grossWeight || ff.sellingRate) || isStageAtOrPastQuoted(shipmentStage)
     case 'NOMINATED': return !!ff.nominationDate
     case 'BOOKED': return !!ff.bookingDate
     case 'SCHEDULED': return !!(ff.etd || ff.eta)
@@ -224,14 +237,30 @@ export default function ShipmentDetail() {
   useEffect(() => {
     if (shipment && !initialTabSet) {
       const tabParam = searchParams.get('tab')
+      // ✅ NEW — "continue where I left off": if the URL doesn't explicitly
+      // say which tab to open (e.g. a notification linking straight to
+      // Accounts), restore whichever tab was last open for THIS specific
+      // shipment, remembered per-shipment in localStorage. Falls back to
+      // the usual type-based default only if nothing was saved yet.
+      let lastTab = null
+      try { lastTab = localStorage.getItem(`pas_last_tab_${id}`) } catch {}
       if (tabParam && ['freight', 'cha', 'accounts', 'history'].includes(tabParam)) setActiveTab(tabParam)
+      else if (lastTab && ['freight', 'cha', 'accounts', 'history', 'do-release'].includes(lastTab)) setActiveTab(lastTab)
       else if (shipment.shipmentType === 'CHA Only') setActiveTab('cha')
       else if (shipment.shipmentType === 'Transport') setActiveTab('accounts')
       else if (shipment.shipmentType === 'DO Release') setActiveTab('accounts')
       else if (shipment.shipmentType === 'FF Only') setActiveTab('freight')
       setInitialTabSet(true)
     }
-  }, [shipment, initialTabSet, searchParams])
+  }, [shipment, initialTabSet, searchParams, id])
+
+  // ✅ NEW — remember whichever tab is active for this shipment, so
+  // reopening it later resumes here instead of always resetting to the
+  // type-based default.
+  useEffect(() => {
+    if (!initialTabSet) return // don't persist the very first programmatic set on load
+    try { localStorage.setItem(`pas_last_tab_${id}`, activeTab) } catch {}
+  }, [activeTab, initialTabSet, id])
 
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
@@ -399,7 +428,7 @@ export default function ShipmentDetail() {
       <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
         <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isFFOnly ? 'FF Only Workflow' : isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
-          {steps.map((step, i) => { const Icon = step.i; const complete = isStepComplete(step.s, ff, cha, accounts); const now = i === cur; const missing = !complete && i <= cur
+          {steps.map((step, i) => { const Icon = step.i; const complete = isStepComplete(step.s, ff, cha, accounts, shipment.shipmentStage); const now = i === cur; const missing = !complete && i <= cur
             return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${complete || missing || now ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${missing ? 'border-red-500 bg-red-50 dark:bg-red-900/30' : now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : complete ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={missing ? `${step.d} — not filled in yet` : step.d}>{missing ? <AlertCircle size={16} className="text-red-500" /> : complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${missing ? 'text-red-600 dark:text-red-400' : now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${complete ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
           })}
         </div>
