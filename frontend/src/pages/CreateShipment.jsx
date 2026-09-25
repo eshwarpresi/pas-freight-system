@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
 import { useSocket } from '../App'
+import FloatingLogisticsBackground from '../components/FloatingLogisticsBackground'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
@@ -173,6 +174,61 @@ function ChargeableWeightModal({ isOpen, onClose, onApply, transportMode, grossW
           >
             Use This Value
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── LIVE SUMMARY PANEL (NEW) ───
+// Fills in as you type, so creating a shipment feels like watching
+// something take shape rather than filling out a static form. Sticky on
+// desktop; hidden on smaller screens where there isn't room for it
+// without crowding the actual form.
+function LiveSummaryPanel({ formData, shipmentMode, accentBg }) {
+  const checklist = [
+    { label: 'Reference Number', done: !!formData.refNo },
+    { label: 'Consignee', done: !!formData.consigneeName },
+    { label: 'Shipper', done: !!formData.shipperName },
+    { label: 'Route', done: !!(formData.fromLocation && formData.toLocation) },
+    { label: 'Weight', done: !!formData.weight },
+  ]
+  const filledCount = checklist.filter(c => c.done).length
+
+  return (
+    <div className="hidden xl:block sticky top-6 self-start">
+      <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 shadow-2xl p-6 text-white">
+        <p className="text-[11px] uppercase tracking-wide text-white/50 mb-1">Building shipment</p>
+        <h3 className="text-xl font-bold mb-4 truncate">{formData.refNo || 'Not yet named'}</h3>
+
+        <div className="space-y-2.5 mb-6">
+          {formData.consigneeName && (
+            <div><p className="text-[11px] text-white/50">Consignee</p><p className="text-sm font-medium truncate">{formData.consigneeName}</p></div>
+          )}
+          {formData.shipperName && (
+            <div><p className="text-[11px] text-white/50">Shipper</p><p className="text-sm font-medium truncate">{formData.shipperName}</p></div>
+          )}
+          {(formData.fromLocation || formData.toLocation) && (
+            <div><p className="text-[11px] text-white/50">Route</p><p className="text-sm font-medium">{formData.fromLocation || '—'} → {formData.toLocation || '—'}</p></div>
+          )}
+          {(formData.weight || formData.grossWeight) && (
+            <div><p className="text-[11px] text-white/50">Weight</p><p className="text-sm font-medium">{formData.weight ? `${formData.weight} kg chargeable` : `${formData.grossWeight} kg gross`}</p></div>
+          )}
+        </div>
+
+        <div className="pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[11px] uppercase tracking-wide text-white/50">Progress</p>
+            <p className="text-[11px] text-white/50">{filledCount}/{checklist.length}</p>
+          </div>
+          <div className="space-y-1.5">
+            {checklist.map(item => (
+              <div key={item.label} className="flex items-center gap-2 text-xs">
+                <div className={`w-1.5 h-1.5 rounded-full ${item.done ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                <span className={item.done ? 'text-white/90' : 'text-white/40'}>{item.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -860,15 +916,18 @@ export default function CreateShipment() {
   )
 
   return (
-    <div className="max-w-3xl mx-auto">
+    <div className="relative -m-4 sm:-m-6 p-4 sm:p-6 min-h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-950 via-indigo-950 to-slate-900 overflow-hidden">
+      <FloatingLogisticsBackground />
+      <div className="relative z-10 max-w-[1400px] mx-auto grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
+        <div className="min-w-0">
       <div className="mb-8">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-700 mb-4"><ArrowLeft size={15} /> Back to shipments</Link>
+        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-300 hover:text-white mb-4"><ArrowLeft size={15} /> Back to shipments</Link>
         <div className="flex items-center gap-3">
           <div className={`w-12 h-12 bg-gradient-to-br ${accentBg} rounded-xl flex items-center justify-center shadow-lg`}>
             {isEditMode ? <Pencil size={22} className="text-white" /> : isFFOnly ? <FileText size={22} className="text-white" /> : isDORelease ? <ClipboardList size={22} className="text-white" /> : isTransport ? <Truck size={22} className="text-white" /> : isCHA ? <FileCheck size={22} className="text-white" /> : <Ship size={22} className="text-white" />}
           </div>
           <div className="flex-1">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
+            <h2 className="text-2xl font-bold text-white">
               {isEditMode ? `Edit: ${formData.refNo}` : isFFOnly ? 'New FF Only Shipment' : isDORelease ? 'New DO Release' : isTransport ? 'New Transport Shipment' : isCHAExport ? 'New CHA Bill Export' : isCHA ? 'New CHA Bill Import' : 'New Freight Shipment'}
             </h2>
           </div>
@@ -878,26 +937,26 @@ export default function CreateShipment() {
 
       {!isEditMode && (
         <div className="mb-6">
-          <div className="flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 border border-indigo-100 flex-wrap">
-            <button type="button" onClick={() => setShipmentMode('ff-only')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'ff-only' ? 'bg-white text-purple-700 shadow-md' : 'text-gray-500 hover:text-purple-600'}`}>📋 FF Only</button>
-            <button type="button" onClick={() => setShipmentMode('freight')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'freight' ? 'bg-white text-indigo-700 shadow-md' : 'text-gray-500 hover:text-indigo-600'}`}>🚢 Freight</button>
-            <button type="button" onClick={() => setShipmentMode('cha-import')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-import' ? 'bg-white text-emerald-700 shadow-md' : 'text-gray-500 hover:text-emerald-600'}`}>🛃 CHA Import</button>
-            <button type="button" onClick={() => setShipmentMode('cha-export')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-export' ? 'bg-white text-amber-700 shadow-md' : 'text-gray-500 hover:text-amber-600'}`}>📤 CHA Export</button>
-            <button type="button" onClick={() => setShipmentMode('transport')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'transport' ? 'bg-white text-sky-700 shadow-md' : 'text-gray-500 hover:text-sky-600'}`}>🚛 Transport</button>
-            <button type="button" onClick={() => setShipmentMode('do-release')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'do-release' ? 'bg-white text-teal-700 shadow-md' : 'text-gray-500 hover:text-teal-600'}`}>📋 DO Release</button>
+          <div className="flex bg-white/10 backdrop-blur-sm rounded-xl p-1 border border-white/15 flex-wrap">
+            <button type="button" onClick={() => setShipmentMode('ff-only')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'ff-only' ? 'bg-white text-purple-700 shadow-md' : 'text-white/60 hover:text-white'}`}>📋 FF Only</button>
+            <button type="button" onClick={() => setShipmentMode('freight')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'freight' ? 'bg-white text-indigo-700 shadow-md' : 'text-white/60 hover:text-white'}`}>🚢 Freight</button>
+            <button type="button" onClick={() => setShipmentMode('cha-import')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-import' ? 'bg-white text-emerald-700 shadow-md' : 'text-white/60 hover:text-white'}`}>🛃 CHA Import</button>
+            <button type="button" onClick={() => setShipmentMode('cha-export')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-export' ? 'bg-white text-amber-700 shadow-md' : 'text-white/60 hover:text-white'}`}>📤 CHA Export</button>
+            <button type="button" onClick={() => setShipmentMode('transport')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'transport' ? 'bg-white text-sky-700 shadow-md' : 'text-white/60 hover:text-white'}`}>🚛 Transport</button>
+            <button type="button" onClick={() => setShipmentMode('do-release')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'do-release' ? 'bg-white text-teal-700 shadow-md' : 'text-white/60 hover:text-white'}`}>📋 DO Release</button>
           </div>
         </div>
       )}
 
       {hasDraft && !loading && (
-        <div className="mb-4 flex items-center justify-between p-3 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg text-sm">
-          <span className="text-amber-700 flex items-center gap-2"><Sparkles size={14} />You have a saved draft</span>
-          <button onClick={clearDraft} className="text-amber-600 hover:text-amber-800 text-xs font-medium">Clear draft</button>
+        <div className="mb-4 flex items-center justify-between p-3 bg-amber-400/10 backdrop-blur-sm border border-amber-300/30 rounded-lg text-sm">
+          <span className="text-amber-200 flex items-center gap-2"><Sparkles size={14} />You have a saved draft</span>
+          <button onClick={clearDraft} className="text-amber-300 hover:text-amber-100 text-xs font-medium">Clear draft</button>
         </div>
       )}
 
       <form onSubmit={handleSubmit}>
-        <div className="bg-white rounded-xl border border-indigo-100 shadow-lg overflow-hidden">
+        <div className="bg-white/95 backdrop-blur-sm rounded-xl border border-white/20 shadow-2xl overflow-hidden">
 
           {/* FF ONLY — same as FREIGHT form */}
           {isFFOnly && (
@@ -1299,6 +1358,11 @@ export default function CreateShipment() {
           addToast('Chargeable weight applied', 'success')
         }}
       />
+        </div>
+
+        {/* ✅ NEW — live summary sidebar, fills in as you type */}
+        <LiveSummaryPanel formData={formData} shipmentMode={shipmentMode} accentBg={accentBg} />
+      </div>
     </div>
   )
 }
