@@ -806,7 +806,7 @@ const getAllShipments = async (req, res) => {
     // in isArchived by the time we filter/count below.
     await archiveMaturedInvoices();
 
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, referenceGroup, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, pipelineStage, referenceGroup, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -861,6 +861,17 @@ const getAllShipments = async (req, res) => {
       });
       const invoicedIds = [...new Set(monthlyInvoiceHistory.map((h) => h.shipmentId))];
       where.id = { in: invoicedIds.length > 0 ? invoicedIds : ['__none__'] };
+    }
+    // ✅ NEW — "Pending Customs" / "Pending Invoice" style stat card
+    // clicks on the main Dashboard. Reuses the EXACT same stage
+    // definition as the Pipeline board, so a card's count and what you
+    // see after clicking it always match precisely.
+    if (pipelineStage && !status) {
+      const stageWhere = getPipelineStageWhere(pipelineStage);
+      if (stageWhere) {
+        delete where.isArchived; // the stage's own definition controls this instead (e.g. "done" spans both)
+        Object.assign(where, stageWhere);
+      }
     }
     if (shipmentType) {
       if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
@@ -1030,7 +1041,7 @@ const getShipmentStats = async (req, res) => {
     // same scope (mine/team/search/status/etc) as everything else here.
     const { start: monthStart, end: monthEnd } = getISTMonthBounds();
 
-    const [total, delivered, invoiced, weightAgg, monthlyShipments, matchingForMonth] = await Promise.all([
+    const [total, delivered, invoiced, weightAgg, monthlyShipments, matchingForMonth, pipelineFreight, pipelineCustoms, pipelineInvoice] = await Promise.all([
       prisma.shipment.count({ where }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
@@ -1039,7 +1050,14 @@ const getShipmentStats = async (req, res) => {
         _sum: { noOfPackages: true, grossWeight: true }
       }),
       prisma.shipment.count({ where: { ...where, createdAt: { gte: monthStart, lt: monthEnd } } }),
-      prisma.shipment.findMany({ where, select: { id: true } })
+      prisma.shipment.findMany({ where, select: { id: true } }),
+      // ✅ NEW — "Pending Customs" / "Pending Invoice" stat cards. Counted
+      // globally (matching the Pipeline board exactly), not scoped by the
+      // current isArchived/search/mine filters — these two cards are
+      // meant to answer "how many company-wide", same as the Pipeline tab.
+      prisma.shipment.count({ where: getPipelineStageWhere('freight') }),
+      prisma.shipment.count({ where: getPipelineStageWhere('customs') }),
+      prisma.shipment.count({ where: getPipelineStageWhere('invoice') })
     ]);
 
     // Monthly invoiced = shipments matching the current filter whose
@@ -1070,7 +1088,10 @@ const getShipmentStats = async (req, res) => {
         totalPkgs: weightAgg._sum.noOfPackages || 0,
         totalWt: weightAgg._sum.grossWeight || 0,
         monthlyShipments, // ✅ NEW
-        monthlyInvoiced // ✅ NEW
+        monthlyInvoiced, // ✅ NEW
+        pipelineFreight, // ✅ NEW — Freight not yet complete, company-wide
+        pipelineCustoms, // ✅ NEW — Freight done, waiting on Customs, company-wide
+        pipelineInvoice // ✅ NEW — Customs done, waiting on Invoice, company-wide
       }
     });
   } catch (error) {
@@ -1878,37 +1899,53 @@ const PIPELINE_CARD_SELECT = {
   accounts: { select: { invoiceNumber: true } }
 };
 
-const getPipelineBoard = async (req, res) => {
-  try {
-    const baseActive = { isDeleted: false, isArchived: false };
-
-    const freightWhere = {
+// ✅ NEW — shared by getPipelineBoard (the Kanban tab) AND getAllShipments
+// (so clicking a stat card on the main Dashboard filters to the exact
+// same set of shipments the Pipeline board's column shows). One
+// definition, used both places, so they can never quietly drift apart.
+function getPipelineStageWhere(stage) {
+  const baseActive = { isDeleted: false, isArchived: false };
+  if (stage === 'freight') {
+    return {
       ...baseActive,
       shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] },
       ...freightIncompleteFilter()
     };
-
-    const customsWhere = {
+  }
+  if (stage === 'customs') {
+    return {
       ...baseActive,
       OR: [
         { AND: [{ shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] } }, freightCompleteFilter(), customsIncompleteFilter()] },
         { AND: [{ shipmentType: 'CHA Only' }, customsIncompleteFilter()] }
       ]
     };
-
-    const invoiceWhere = {
+  }
+  if (stage === 'invoice') {
+    return {
       ...baseActive,
       OR: [
         { AND: [{ shipmentType: { notIn: SIMPLE_PIPELINE_TYPES } }, customsCompleteFilter(), invoiceIncompleteFilter()] },
         { AND: [{ shipmentType: { in: SIMPLE_PIPELINE_TYPES } }, invoiceIncompleteFilter()] }
       ]
     };
-
+  }
+  if (stage === 'done') {
     // "Done" intentionally includes both still-active (within the 30-day
     // grace window) and already-archived shipments whose invoice is
-    // complete — the point of this column is "the work is finished",
+    // complete — the point of this stage is "the work is finished",
     // regardless of exactly which shelf it's currently sitting on.
-    const doneWhere = { isDeleted: false, ...invoiceCompleteFilter() };
+    return { isDeleted: false, ...invoiceCompleteFilter() };
+  }
+  return null;
+}
+
+const getPipelineBoard = async (req, res) => {
+  try {
+    const freightWhere = getPipelineStageWhere('freight');
+    const customsWhere = getPipelineStageWhere('customs');
+    const invoiceWhere = getPipelineStageWhere('invoice');
+    const doneWhere = getPipelineStageWhere('done');
 
     const [freightCount, customsCount, invoiceCount, doneCount, freightItems, customsItems, invoiceItems, doneItems] = await Promise.all([
       prisma.shipment.count({ where: freightWhere }),
