@@ -69,6 +69,14 @@ router.get('/pipeline', freightController.getPipelineBoard);
 // ─── EMPLOYEE LIST (NEW) — for the Co-Handler dropdown, any logged-in user ───
 router.get('/employees', freightController.getEmployeeList);
 
+// ─── PARTY NAMES — CONSIGNEE / SHIPPER AUTOCOMPLETE (NEW) ───
+// ─── PARTY NAMES — CONSIGNEE / SHIPPER MANAGED LIST (NEW) ───
+router.get('/party-names', freightController.getPartyNames);
+router.post('/party-names', freightController.createPartyName);
+router.post('/party-names/bulk', freightController.bulkCreatePartyNames);
+router.put('/party-names/:id', freightController.updatePartyName);
+router.delete('/party-names/:id', freightController.deletePartyName);
+
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);
 

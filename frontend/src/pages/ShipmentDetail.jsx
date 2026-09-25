@@ -83,6 +83,77 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
   return <div onClick={() => setEditing(true)} className={`cursor-pointer group flex items-center gap-1 ${className}`}><span className={value ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
 }
 
+// ─── PARTY FIELD (NEW) ───
+// Same searchable-dropdown-plus-manual-entry idea as CreateShipment.jsx's
+// PartyAutocomplete, adapted to this page's click-to-edit pattern (shows
+// as plain text until clicked, like Field/InlineField above). A newly
+// typed name that isn't in the master list yet is added to it
+// automatically on save, same as at creation time.
+function PartyField({ label, value, onSave, type }) {
+  const [editing, setEditing] = useState(false)
+  const [val, setVal] = useState(value || '')
+  const [options, setOptions] = useState([])
+  const [open, setOpen] = useState(false)
+  const inputRef = useRef(null)
+  const wrapRef = useRef(null)
+
+  useEffect(() => { setVal(value || '') }, [value])
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
+  useEffect(() => {
+    if (!editing) return
+    api.get('/freight/party-names', { params: { type } })
+      .then(res => setOptions((res.data?.data || []).map(p => p.name)))
+      .catch(() => {})
+  }, [editing, type])
+  useEffect(() => {
+    const onClickOutside = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false) } }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
+
+  const commit = async (finalVal) => {
+    setEditing(false); setOpen(false)
+    if (finalVal !== (value || '')) onSave(finalVal)
+    const trimmed = (finalVal || '').trim()
+    if (trimmed && !options.some(o => o.toLowerCase() === trimmed.toLowerCase())) {
+      try { await api.post('/freight/party-names', { type, name: trimmed }) } catch {}
+    }
+  }
+
+  const filtered = val ? options.filter(o => o.toLowerCase().includes(val.toLowerCase())).slice(0, 20) : options.slice(0, 20)
+
+  if (editing) {
+    return (
+      <div className="relative" ref={wrapRef}>
+        <input
+          ref={inputRef}
+          type="text"
+          value={val}
+          onChange={(e) => { setVal(e.target.value); setOpen(true) }}
+          onBlur={() => setTimeout(() => commit(val), 150)}
+          onKeyDown={(e) => { if (e.key === 'Enter') commit(val); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
+          className="border border-indigo-300 dark:border-indigo-600 rounded px-2 py-1 text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 w-full"
+        />
+        {open && filtered.length > 0 && (
+          <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl">
+            {filtered.map((name) => (
+              <button key={name} type="button" onMouseDown={(e) => { e.preventDefault(); commit(name) }} className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border-b border-gray-50 dark:border-slate-700 last:border-0">
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div onClick={() => setEditing(true)} className="cursor-pointer group flex items-center gap-1">
+      <span className={value ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}>{value || '—'}</span>
+      <Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" />
+    </div>
+  )
+}
+
 function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }) {
   const isInOptions = options.includes(value || '')
   return (<div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label><div className="flex gap-2"><div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div><div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div></div></div>)
@@ -246,6 +317,11 @@ export default function ShipmentDetail() {
   const isCHAExport = isCHAOnly && shipment?.importExport === 'Export'
   const isDORelease = shipment?.shipmentType === 'DO Release'
   const isFFOnly = shipment?.shipmentType === 'FF Only'
+  // ✅ NEW — the plain "Freight" shipment type (full Freight -> Customs ->
+  // Accounts pipeline, Import or Export), as distinct from CHA Only/FF
+  // Only/Transport/DO Release. A few fields (Commodity Name, Pre-Alerts,
+  // DO Collection shown under Freight instead of Customs) apply only here.
+  const isStandardFreight = !isTransport && !isDORelease && !isFFOnly && !isCHAOnly
   const steps = isFFOnly ? FF_ONLY_STEPS : isDORelease ? DO_RELEASE_STEPS : isTransport ? TRANSPORT_STEPS : isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
   const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
 
@@ -302,7 +378,7 @@ export default function ShipmentDetail() {
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
-        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'}
+        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},consignee:{u:`/freight/shipments/${id}/consignee`,m:'put'},shipper:{u:`/freight/shipments/${id}/shipper`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'}
       }
       return api[eps[section].m](eps[section].u, data)
     },
@@ -487,14 +563,31 @@ export default function ShipmentDetail() {
 
       <div className="glass rounded-xl border border-[var(--border-color)] p-4 sm:p-6 shadow-sm">
         {/* FREIGHT TAB */}
-        {activeTab==='freight'&&!isTransport&&!isDORelease&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={User} l="Consignee" v={ff.consigneeName}/><C icon={User} l="Shipper" v={ff.shipperName}/><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/></div>
+        {activeTab==='freight'&&!isTransport&&!isDORelease&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/>{isStandardFreight && <C icon={Box} l="Commodity" v={ff.commodityName}/>}</div>
+          {/* ✅ NEW — Consignee/Shipper are now actually editable here
+              (previously display-only on this page — could only ever be
+              set once, at creation), using the same searchable master
+              list as the Create Shipment page. */}
+          <Section title="Parties Involved" icon={User}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Consignee Name</label><PartyField value={ff.consigneeName} type="CONSIGNEE" onSave={v => updateMutation.mutate({ section: 'consignee', data: { consigneeName: v } })} /></div>
+            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Shipper Name</label><PartyField value={ff.shipperName} type="SHIPPER" onSave={v => updateMutation.mutate({ section: 'shipper', data: { shipperName: v } })} /></div>
+          </div></Section>
           <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
           <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>
           <Section title="Weight Details" icon={Scale}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => updateMutation.mutate({ section: 'rates', data: { grossWeight: v } })} type="number" /><Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" /><Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" /></div></Section>
+          {/* ✅ NEW — Commodity Name field (standard Freight type only) */}
+          {isStandardFreight && <Section title="Commodity" icon={Box}><Field label="Commodity Name" value={ff.commodityName} onSave={v => updateMutation.mutate({ section: 'rates', data: { commodityName: v } })} placeholder="e.g. Electronic Components" /></Section>}
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
-          <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section></div>}
+          <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section>
+          {/* ✅ NEW — Pre-Alerts + DO Collection, moved here from the
+              Customs tab (standard Freight type only — CHA Only still
+              has DO Collection under its own Customs tab, unchanged).
+              DO Collection uses the same '/cha/.../do-collection'
+              endpoint as before — only WHERE it's shown has moved, not
+              which backend record it lives on. */}
+          {isStandardFreight && <Section title="Pre-Alerts & DO Collection" icon={ClipboardList}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Pre-Alerts Sent On" value={Fmt(ff.preAlertsSentDate)} onSave={v => updateMutation.mutate({ section: 'rates', data: { preAlertsSentDate: v } })} type="date" /><Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></div></Section>}</div>}
 
         {/* DO RELEASE TAB */}
         {isDORelease && activeTab==='do-release'&&<div className="space-y-4">
@@ -540,7 +633,10 @@ export default function ShipmentDetail() {
           <Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => updateMutation.mutate({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
           {!isCHAExport && (<>
             <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
-            <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>
+            {/* ✅ MOVED — for the standard Freight type, DO Collection now
+                lives on the Freight tab instead (see below). CHA Only
+                keeps it here, unchanged. */}
+            {!isStandardFreight && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
             <Section title="OOC" icon={CheckCircle2}><Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => updateMutation.mutate({ section: 'ooc', data: { oocDate: v } })} type="date" /></Section>
             <Section title="Gate Pass" icon={Truck}><Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => updateMutation.mutate({ section: 'gatepass', data: { gatePassDate: v } })} type="date" /></Section>
             <Section title="POD (Delivery)" icon={MapPin}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'pod', data: { deliveryDate: v } })} type="date" /><Field label="Tracking No" value={cha.trackingNumber} onSave={v => updateMutation.mutate({ section: 'pod', data: { trackingNumber: v } })} /></div></Section>

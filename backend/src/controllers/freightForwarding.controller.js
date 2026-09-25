@@ -284,11 +284,11 @@ async function autoArchiveMatured() {
 // ─── CREATE NEW SHIPMENT ───
 const createShipment = async (req, res) => {
   try {
-    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, coHandlerId } = req.body;
+    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, terms, portLocation, cbm, commodityName, preAlertsSentDate, doCollectionDate, coHandlerId } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const createdById = req.user?.id || null;
     const createdByName = req.user?.name || req.user?.email || null;
-    // ✅ Co-Handler (NEW) — an optional second employee who should also
+    // ✅ Co-Handler — an optional second employee who should also
     // see this shipment in their own "My Shipments". Resolved to a real
     // user account, not just text, so it stays accurate even if two
     // people share the same initials.
@@ -297,15 +297,24 @@ const createShipment = async (req, res) => {
       const coHandler = await prisma.user.findUnique({ where: { id: coHandlerId }, select: { name: true, email: true } });
       coHandlerName = coHandler ? (coHandler.name || coHandler.email) : null;
     }
+    const shipmentData = { 
+      refNo, currentStatus: 'ENQUIRY', shipmentType, importExport,
+      createdById, createdByName,
+      coHandlerId: coHandlerId || null, coHandlerName,
+      freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null, notificationEmail: notificationEmail || null, customerName: customerName || null, vehicleType: vehicleType || null, noOfContainers: noOfContainers ? parseInt(noOfContainers) : null, containerType: containerType || null, packageType: packageType || null, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, fromLocation: fromLocation || null, toLocation: toLocation || null, terms: terms || null, portLocation: portLocation || null, cbm: cbm ? parseFloat(cbm) : null, commodityName: commodityName || null, preAlertsSentDate: preAlertsSentDate ? new Date(preAlertsSentDate) : null } }, 
+      statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}`, changedBy: createdByName } } 
+    };
+    // ✅ NEW — DO Collection Date can now be filled in at creation time
+    // for the standard Freight shipment type (shown on its Freight tab
+    // for this type specifically). Only creates the CHA relation at all
+    // if a date was actually given — otherwise it's created lazily later
+    // (ensureCHA), exactly as before.
+    if (doCollectionDate) {
+      shipmentData.cha = { create: { doCollectionDate: new Date(doCollectionDate) } };
+    }
     const shipment = await prisma.shipment.create({
-      data: { 
-        refNo, currentStatus: 'ENQUIRY', shipmentType, importExport,
-        createdById, createdByName,
-        coHandlerId: coHandlerId || null, coHandlerName,
-        freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null, notificationEmail: notificationEmail || null, customerName: customerName || null, vehicleType: vehicleType || null, noOfContainers: noOfContainers ? parseInt(noOfContainers) : null, containerType: containerType || null, packageType: packageType || null, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, fromLocation: fromLocation || null, toLocation: toLocation || null } }, 
-        statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}`, changedBy: createdByName } } 
-      },
-      include: { freightForwarding: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
+      data: shipmentData,
+      include: { freightForwarding: true, cha: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
     });
     res.status(201).json({ status: 'success', data: shipment });
   } catch (error) { console.error('Error creating shipment:', error); res.status(500).json({ status: 'error', message: 'Failed to create shipment' }); }
@@ -1718,6 +1727,100 @@ const getEmployeeList = async (req, res) => {
   }
 };
 
+// ─── PARTY NAMES — MANAGED CONSIGNEE / SHIPPER LIST (NEW) ───
+// Same idea as Reference Prefixes/Initials: a real list the company
+// maintains directly (bulk-add your existing names, add/rename/delete
+// individually), not something guessed from shipment history. Powers
+// the searchable dropdown on the Create Shipment page for both fields —
+// `type` ('CONSIGNEE' or 'SHIPPER') picks which list.
+const getPartyNames = async (req, res) => {
+  try {
+    const type = (req.query.type || '').toUpperCase();
+    if (!['CONSIGNEE', 'SHIPPER'].includes(type)) {
+      return res.status(400).json({ status: 'error', message: 'type must be CONSIGNEE or SHIPPER' });
+    }
+    const rows = await prisma.partyName.findMany({ where: { type }, orderBy: { name: 'asc' } });
+    res.json({ status: 'success', data: rows });
+  } catch (error) {
+    console.error('Error getting party names:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to get party names' });
+  }
+};
+
+// Add one name — used both by the "Manage" panel's Add button, and
+// automatically whenever someone types a brand-new name (not already in
+// the list) while creating a shipment, so the list grows organically too.
+const createPartyName = async (req, res) => {
+  try {
+    const type = (req.body.type || '').toUpperCase();
+    const name = (req.body.name || '').trim();
+    if (!['CONSIGNEE', 'SHIPPER'].includes(type)) {
+      return res.status(400).json({ status: 'error', message: 'type must be CONSIGNEE or SHIPPER' });
+    }
+    if (!name) return res.status(400).json({ status: 'error', message: 'Name is required' });
+    const existing = await prisma.partyName.findUnique({ where: { type_name: { type, name } } });
+    if (existing) return res.json({ status: 'success', data: existing }); // already there — no error, just hand it back
+    const created = await prisma.partyName.create({ data: { type, name, createdBy: actorName(req) } });
+    res.status(201).json({ status: 'success', data: created });
+  } catch (error) {
+    console.error('Error creating party name:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to add name' });
+  }
+};
+
+// ✅ NEW — bulk-add many names at once (paste a whole list), for
+// importing an existing master list in one go rather than one at a time.
+const bulkCreatePartyNames = async (req, res) => {
+  try {
+    const type = (req.body.type || '').toUpperCase();
+    const names = Array.isArray(req.body.names) ? req.body.names : [];
+    if (!['CONSIGNEE', 'SHIPPER'].includes(type)) {
+      return res.status(400).json({ status: 'error', message: 'type must be CONSIGNEE or SHIPPER' });
+    }
+    const cleaned = [...new Set(names.map((n) => (n || '').trim()).filter(Boolean))];
+    if (cleaned.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'No valid names provided' });
+    }
+    const createdBy = actorName(req);
+    let added = 0;
+    for (const name of cleaned) {
+      const existing = await prisma.partyName.findUnique({ where: { type_name: { type, name } } });
+      if (!existing) {
+        await prisma.partyName.create({ data: { type, name, createdBy } });
+        added++;
+      }
+    }
+    res.json({ status: 'success', message: `Added ${added} new name(s) (${cleaned.length - added} already existed)`, data: { added, skipped: cleaned.length - added } });
+  } catch (error) {
+    console.error('Error bulk-adding party names:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to bulk-add names' });
+  }
+};
+
+const updatePartyName = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const name = (req.body.name || '').trim();
+    if (!name) return res.status(400).json({ status: 'error', message: 'Name is required' });
+    const updated = await prisma.partyName.update({ where: { id }, data: { name } });
+    res.json({ status: 'success', data: updated });
+  } catch (error) {
+    console.error('Error updating party name:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to rename' });
+  }
+};
+
+const deletePartyName = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await prisma.partyName.delete({ where: { id } });
+    res.json({ status: 'success', message: 'Deleted' });
+  } catch (error) {
+    console.error('Error deleting party name:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to delete' });
+  }
+};
+
 // ─── GET TEAM OVERVIEW (NEW — visible to everyone) ───
 const getTeamOverview = async (req, res) => {
   try {
@@ -2230,7 +2333,7 @@ const updateTerms = async (req, res) => {
 
 const updateRates = async (req, res) => {
   try { 
-    const { sellingRate, weight, cbm, grossWeight, notificationEmail, enquiryDate, noOfPackages, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, transportMode } = req.body; 
+    const { sellingRate, weight, cbm, grossWeight, notificationEmail, enquiryDate, noOfPackages, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, transportMode, commodityName, preAlertsSentDate } = req.body; 
     const data = {}; const parts = []; 
     // ✅ FIX — parseFloat('') is NaN, and Prisma rejects writing NaN to a
     // Float column, which was silently failing the WHOLE update whenever
@@ -2253,6 +2356,8 @@ const updateRates = async (req, res) => {
     if (fromLocation !== undefined) { data.fromLocation = fromLocation; } 
     if (toLocation !== undefined) { data.toLocation = toLocation; } 
     if (transportMode !== undefined) { data.transportMode = transportMode; } 
+    if (commodityName !== undefined) { data.commodityName = commodityName || null; } 
+    if (preAlertsSentDate !== undefined) { data.preAlertsSentDate = preAlertsSentDate ? new Date(preAlertsSentDate) : null; } 
     if (Object.keys(data).length > 0) { 
       await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: data } } }); 
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_UPDATED', parts.join(' | '), actorName(req)); 
@@ -2369,6 +2474,11 @@ module.exports = {
   getTeamOverview,
   updateEmployeeTeam, // ✅ NEW (re-added — was lost in an earlier rebuild)
   getEmployeeList,
+  getPartyNames, // ✅ NEW
+  createPartyName, // ✅ NEW
+  bulkCreatePartyNames, // ✅ NEW
+  updatePartyName, // ✅ NEW
+  deletePartyName, // ✅ NEW
   buildDailyReport,
   getDailyReport,
   getEmployeePerformance,

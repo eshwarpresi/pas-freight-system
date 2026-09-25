@@ -161,7 +161,9 @@ model FreightForwarding {
   customerName    String?   // Customer name for transport
   vehicleType     String?   // 10ft, 20ft, 32ft, 40ft, or custom
   noOfContainers  Int?      // Number of containers (Transport module)
-  containerType   String?   // ✅ NEW — e.g. 1x20GP, 1x40HQ, etc. (Freight/FF Only)
+  containerType   String?   // e.g. 1x20GP, 1x40HQ, etc. (Freight/FF Only)
+  commodityName   String?   // ✅ NEW — Freight module only (standard Import/Export shipments)
+  preAlertsSentDate DateTime? // ✅ NEW — Freight module only (standard Import/Export shipments)
   packageType     String?   // Box/Carton, Envelope, Parcel, Pallet, etc
   deliveryDate    DateTime? // Delivery date
   transportMode   String?   // Air, Sea, Courier, or custom
@@ -333,4 +335,20 @@ model ReferenceInitial {
   code      String   @unique
   createdBy String?
   createdAt DateTime @default(now())
+}
+
+// ✅ NEW — managed master list for Consignee and Shipper names, same
+// pattern as ReferencePrefix/ReferenceInitial above: a real list the
+// company maintains (add/rename/delete), not something auto-guessed from
+// past shipments. One shared table for both, distinguished by `type`, so
+// the same dropdown component works for either field.
+model PartyName {
+  id        String   @id @default(uuid())
+  type      String   // 'CONSIGNEE' | 'SHIPPER'
+  name      String
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([type, name])
+  @@index([type])
 }

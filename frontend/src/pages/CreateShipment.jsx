@@ -18,6 +18,166 @@ const PACKAGE_TYPES = ['Box / Carton', 'Envelope / Document', 'Parcel', 'Pallet'
 const TRANSPORT_MODE_OPTIONS = ['Air', 'Sea', 'Courier']
 // ✅ NEW — standard shipping container type/size codes
 const CONTAINER_TYPES = ['1x20GP', '1x20FR', '1x20RF', '1x20OT', '1x40HQ', '1x40FR', '1x40RF', '1x40OT']
+// ✅ NEW — Route Details, only used in the standard Freight section.
+// Same lists as ShipmentDetail.jsx's Route Details editor, kept in sync
+// so a value picked here looks identical once you're on the detail page.
+const COUNTRY_PORTS = ['SINGAPORE', 'MALAYSIA', 'CHINA', 'HONG KONG', 'JAPAN', 'SOUTH KOREA', 'TAIWAN', 'THAILAND', 'VIETNAM', 'INDONESIA', 'USA', 'UK', 'GERMANY', 'NETHERLANDS', 'FRANCE', 'ITALY', 'SPAIN', 'UAE', 'SAUDI ARABIA', 'AUSTRALIA']
+const INDIA_PORTS = ['BANGALORE', 'CHENNAI', 'MUMBAI', 'DELHI', 'HYDERABAD', 'KOLKATA', 'AHMEDABAD', 'PUNE', 'COCHIN', 'TUTICORIN', 'VISAKHAPATNAM', 'MUNDRA', 'NHAVA SHEVA', 'KATTUPALLI', 'ENNORE']
+const TERMS_OPTIONS = ['EXW', 'FOB', 'FCA', 'CIF', 'DDP', 'DAP', 'DAT', 'CPT', 'CIP', 'FAS', 'CFR']
+const PORT_LOCATIONS = ['SIN', 'INBLR4', 'INMAA4', 'INBOM4', 'INDEA4', 'INHYD4', 'INCCU4', 'INAMD4', 'INPNQ4', 'INCOK4', 'INTUT4', 'INVTZ4', 'INMUN4', 'INNSV4', 'INKAT4', 'INENR4']
+
+// ─── PARTY AUTOCOMPLETE (NEW) ───
+// Searchable dropdown + free typing, shared by both Consignee Name and
+// Shipper Name (pass type="CONSIGNEE" or "SHIPPER"). Fetches the managed
+// master list once, filters it live as you type, and if you type a name
+// that isn't in the list yet, it's added to the master list automatically
+// on blur — so the list grows on its own over time, the same way the
+// Reference Prefix/Initials lists already do in this app.
+function PartyAutocomplete({ type, value, onChange, placeholder, inputClass, iconColor }) {
+  const [options, setOptions] = useState([])
+  const [open, setOpen] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    api.get('/freight/party-names', { params: { type } })
+      .then(res => setOptions((res.data?.data || []).map(p => p.name)))
+      .catch(() => {})
+      .finally(() => setLoaded(true))
+  }, [type])
+
+  useEffect(() => {
+    const onClickOutside = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', onClickOutside)
+    return () => document.removeEventListener('mousedown', onClickOutside)
+  }, [])
+
+  const filtered = value
+    ? options.filter(o => o.toLowerCase().includes(value.toLowerCase())).slice(0, 30)
+    : options.slice(0, 30)
+
+  const commitNewNameIfNeeded = async () => {
+    const trimmed = (value || '').trim()
+    if (!trimmed) return
+    if (options.some(o => o.toLowerCase() === trimmed.toLowerCase())) return
+    try {
+      await api.post('/freight/party-names', { type, name: trimmed })
+      setOptions(prev => [...prev, trimmed])
+    } catch {}
+  }
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${iconColor} z-10`} />
+      <input
+        type="text"
+        value={value || ''}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={commitNewNameIfNeeded}
+        placeholder={placeholder}
+        className={inputClass}
+        autoComplete="off"
+      />
+      {open && loaded && filtered.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl">
+          {filtered.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); onChange(name); setOpen(false) }}
+              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 border-b border-gray-50 last:border-0"
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+      {open && loaded && filtered.length === 0 && value && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl px-3 py-2 text-xs text-gray-400 italic">
+          No match — this will be saved as a new name
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── CHARGEABLE WEIGHT CALCULATOR (NEW) ───
+// Standard freight industry dimensional-weight calculation:
+//   Air/Courier: Volumetric Weight (kg) = (L x W x H x Pieces) / 6000
+//                — this is the IATA standard divisor; some individual
+//                airlines use 5000 instead, so double-check with your
+//                employees/carriers if numbers ever look off and adjust
+//                the constant below if needed.
+//   Sea (FCL/LCL): 1 CBM = 1000 kg is the standard sea freight
+//                conversion (dimensions are still entered in cm here for
+//                a consistent input experience; converted to CBM
+//                internally).
+// Chargeable Weight is always whichever is HIGHER: actual/gross weight,
+// or the volumetric weight calculated here.
+const AIR_VOLUMETRIC_DIVISOR = 6000
+const SEA_CBM_TO_KG = 1000
+
+function ChargeableWeightModal({ isOpen, onClose, onApply, transportMode, grossWeight }) {
+  const [length, setLength] = useState('')
+  const [width, setWidth] = useState('')
+  const [height, setHeight] = useState('')
+  const [pieces, setPieces] = useState('1')
+
+  if (!isOpen) return null
+
+  const isSea = transportMode === 'Sea FCL' || transportMode === 'Sea LCL'
+  const L = parseFloat(length) || 0
+  const W = parseFloat(width) || 0
+  const H = parseFloat(height) || 0
+  const P = parseFloat(pieces) || 1
+  const cbm = (L * W * H * P) / 1000000 // cm³ -> m³
+  const volumetricWeight = isSea ? cbm * SEA_CBM_TO_KG : (L * W * H * P) / AIR_VOLUMETRIC_DIVISOR
+  const actualWeight = parseFloat(grossWeight) || 0
+  const chargeableWeight = Math.max(actualWeight, volumetricWeight)
+  const hasInput = L > 0 && W > 0 && H > 0
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-lg font-bold text-gray-800">Chargeable Weight Calculator</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Using {isSea ? 'Sea freight (1 CBM = 1000 kg)' : `Air/Courier (÷ ${AIR_VOLUMETRIC_DIVISOR}, IATA standard)`} — based on your selected Transport Mode.
+        </p>
+        <div className="grid grid-cols-3 gap-3 mb-3">
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Length (cm)</label><input type="number" value={length} onChange={e => setLength(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Width (cm)</label><input type="number" value={width} onChange={e => setWidth(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+          <div><label className="block text-xs font-medium text-gray-600 mb-1">Height (cm)</label><input type="number" value={height} onChange={e => setHeight(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" /></div>
+        </div>
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-gray-600 mb-1">No. of Pieces</label>
+          <input type="number" min="1" value={pieces} onChange={e => setPieces(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
+        </div>
+        {hasInput && (
+          <div className="bg-indigo-50 rounded-lg p-3 mb-4 space-y-1.5 text-sm">
+            <div className="flex justify-between"><span className="text-gray-600">CBM</span><span className="font-semibold text-gray-800">{cbm.toFixed(3)} m³</span></div>
+            <div className="flex justify-between"><span className="text-gray-600">Volumetric Weight</span><span className="font-semibold text-gray-800">{volumetricWeight.toFixed(2)} kg</span></div>
+            <div className="flex justify-between"><span className="text-gray-600">Actual (Gross) Weight</span><span className="font-semibold text-gray-800">{actualWeight.toFixed(2)} kg</span></div>
+            <div className="flex justify-between pt-1.5 border-t border-indigo-200"><span className="text-indigo-700 font-semibold">Chargeable Weight</span><span className="font-bold text-indigo-700">{chargeableWeight.toFixed(2)} kg</span></div>
+          </div>
+        )}
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium">Cancel</button>
+          <button
+            onClick={() => { onApply({ chargeableWeight: chargeableWeight.toFixed(2), cbm: cbm.toFixed(3) }); onClose() }}
+            disabled={!hasInput}
+            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40"
+          >
+            Use This Value
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function CreateShipment() {
   const navigate = useNavigate()
@@ -26,6 +186,7 @@ export default function CreateShipment() {
   const queryClient = useQueryClient()
   const socket = useSocket()
   const [loading, setLoading] = useState(false)
+  const [showWeightCalc, setShowWeightCalc] = useState(false)
   const [errors, setErrors] = useState({})
   const [touched, setTouched] = useState({})
   const [shipmentMode, setShipmentMode] = useState(() => {
@@ -265,7 +426,9 @@ export default function CreateShipment() {
       customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '',
       fromLocation: '', toLocation: '', deliveryDate: '',
       transportMode: '',
-      chaName: ''
+      chaName: '',
+      // ✅ NEW — Freight module only (standard Import/Export shipments)
+      terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: ''
     }
   })
 
@@ -299,6 +462,7 @@ export default function CreateShipment() {
       const res = await api.get(`/freight/shipments/${id}`)
       const s = res.data.data
       const ff = s.freightForwarding || {}
+      const cha = s.cha || {}
       
       let mode = 'freight'
       if (s.shipmentType === 'CHA Only') mode = s.importExport === 'Export' ? 'cha-export' : 'cha-import'
@@ -331,7 +495,14 @@ export default function CreateShipment() {
         toLocation: ff.toLocation || '',
         deliveryDate: ff.deliveryDate ? new Date(ff.deliveryDate).toISOString().split('T')[0] : '',
         transportMode: s.shipmentType === 'Transport' ? s.shipmentType : '',
-        chaName: ff.agent || ''
+        chaName: ff.agent || '',
+        // ✅ NEW — Freight module only
+        terms: ff.terms || '',
+        portLocation: ff.portLocation || '',
+        cbm: ff.cbm || '',
+        commodityName: ff.commodityName || '',
+        preAlertsSentDate: ff.preAlertsSentDate ? new Date(ff.preAlertsSentDate).toISOString().split('T')[0] : '',
+        doCollectionDate: cha.doCollectionDate ? new Date(cha.doCollectionDate).toISOString().split('T')[0] : ''
       })
     } catch (err) {
       addToast('Failed to load shipment for editing', 'error')
@@ -387,8 +558,21 @@ export default function CreateShipment() {
           packageType: formData.packageType || null,
           fromLocation: formData.fromLocation || null,
           toLocation: formData.toLocation || null,
-          deliveryDate: formData.deliveryDate || null
+          deliveryDate: formData.deliveryDate || null,
+          // ✅ NEW — Freight module only
+          cbm: formData.cbm ? parseFloat(formData.cbm) : undefined,
+          commodityName: formData.commodityName || null,
+          preAlertsSentDate: formData.preAlertsSentDate || null
         }))
+        // ✅ NEW — Terms and Port Location go through their own dedicated
+        // endpoints (matching how ShipmentDetail.jsx edits them), only
+        // sent for the standard Freight type since that's the only mode
+        // with these fields on this page.
+        if (!isTransport && !isDORelease && !isCHA && !isFFOnly) {
+          if (formData.terms) updatePromises.push(api.put(`/freight/shipments/${editId}/terms`, { terms: formData.terms }))
+          if (formData.portLocation) updatePromises.push(api.put(`/freight/shipments/${editId}/portlocation`, { portLocation: formData.portLocation }))
+          if (formData.doCollectionDate) updatePromises.push(api.put(`/cha/shipments/${editId}/do-collection`, { doCollectionDate: formData.doCollectionDate }))
+        }
         updatePromises.push(api.put(`/freight/shipments/${editId}/shipmenttype`, { shipmentType: shipmentTypeVal }))
         updatePromises.push(api.put(`/freight/shipments/${editId}/importexport`, { importExport: importExportVal }))
         // ✅ FIX — only send AWB fields (and only fire the AWB update call)
@@ -478,7 +662,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '', chaName: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '', chaName: '', terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: '' })
     setErrors({}); setTouched({})
   }
 
@@ -856,35 +1040,100 @@ export default function CreateShipment() {
                     </div>
                   </div>
                 </div>
-                <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
-                  <div className="flex gap-2">
-                    <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select type...</option>{IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                    <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
+                    <div className="flex gap-2">
+                      <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select type...</option>{IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
                   </div>
+                  {/* ✅ NEW — Commodity Name (Freight module only) */}
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Commodity Name</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="commodityName" value={formData.commodityName} onChange={handleChange} placeholder="e.g. Electronic Components" className={`${inputClass}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Parties Involved</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                  {/* ✅ NEW — searchable dropdown + manual entry, same list for both fields */}
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
+                    <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor="text-indigo-400" />
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
+                    <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor="text-indigo-400" />
+                  </div>
                 </div>
               </div>
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Globe size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Agent Information</h3></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className={`${inputClass}`} /></div></div>
               </div>
+              {/* ✅ NEW — Route Details (Freight module only). Previously
+                  these fields (From/To/Terms/Port Location) could only be
+                  filled in AFTER creating the shipment, on the detail
+                  page — now available right here at creation time. */}
+              <div className="p-6 border-b border-indigo-100">
+                <div className="flex items-center gap-2 mb-1"><MapPin size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Route Details</h3></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">From (Origin)</label>
+                    <div className="flex gap-2">
+                      <select name="fromLocation" value={COUNTRY_PORTS.includes(formData.fromLocation) ? formData.fromLocation : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{COUNTRY_PORTS.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="fromLocation" value={!COUNTRY_PORTS.includes(formData.fromLocation) ? formData.fromLocation : ''} onChange={handleChange} placeholder="Custom country/port..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
+                  </div>
+                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">To (Destination)</label>
+                    <div className="flex gap-2">
+                      <select name="toLocation" value={INDIA_PORTS.includes(formData.toLocation) ? formData.toLocation : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{INDIA_PORTS.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="toLocation" value={!INDIA_PORTS.includes(formData.toLocation) ? formData.toLocation : ''} onChange={handleChange} placeholder="Custom city/port..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
+                  </div>
+                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">Terms</label>
+                    <div className="flex gap-2">
+                      <select name="terms" value={TERMS_OPTIONS.includes(formData.terms) ? formData.terms : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="terms" value={!TERMS_OPTIONS.includes(formData.terms) ? formData.terms : ''} onChange={handleChange} placeholder="Custom terms..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
+                  </div>
+                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">Port Location</label>
+                    <div className="flex gap-2">
+                      <select name="portLocation" value={PORT_LOCATIONS.includes(formData.portLocation) ? formData.portLocation : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{PORT_LOCATIONS.map(t => <option key={t} value={t}>{t}</option>)}</select>
+                      <input type="text" name="portLocation" value={!PORT_LOCATIONS.includes(formData.portLocation) ? formData.portLocation : ''} onChange={handleChange} placeholder="Custom port code..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div className="p-6 border-b border-indigo-100">
                 <div className="flex items-center gap-2 mb-1"><Scale size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Weight Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-sm font-medium text-gray-700">Chargeable Weight (kg)</label>
+                      {/* ✅ NEW — Chargeable Weight calculator popup */}
+                      <button type="button" onClick={() => setShowWeightCalc(true)} className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1"><Weight size={11} />Calculate</button>
+                    </div>
+                    <div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  {/* ✅ NEW — CBM, previously only editable after creation */}
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">CBM</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="cbm" value={formData.cbm} onChange={handleChange} step="0.001" className={`${inputClass}`} /></div></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Container Type</label>
                     <div className="flex gap-2">
                       <select name="containerType" value={CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{CONTAINER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
                       <input type="text" name="containerType" value={!CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
                     </div>
                   </div>
+                </div>
+              </div>
+              {/* ✅ NEW — Pre-Alerts + DO Collection (Freight module only).
+                  DO Collection is normally a Customs-tab field (see
+                  ShipmentDetail.jsx), but for this shipment type it's
+                  surfaced here in Freight instead, matching how this
+                  company's Freight team actually handles it. */}
+              <div className="p-6 border-b border-indigo-100">
+                <div className="flex items-center gap-2 mb-1"><ClipboardList size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Pre-Alerts & DO Collection</h3></div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Pre-Alerts Sent On</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="preAlertsSentDate" value={formData.preAlertsSentDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">DO Collection Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="doCollectionDate" value={formData.doCollectionDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
                 </div>
               </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
@@ -1038,6 +1287,18 @@ export default function CreateShipment() {
           </div>
         </div>
       </form>
+
+      {/* ✅ NEW — Chargeable Weight calculator popup, Freight module only */}
+      <ChargeableWeightModal
+        isOpen={showWeightCalc}
+        onClose={() => setShowWeightCalc(false)}
+        transportMode={formData.mode}
+        grossWeight={formData.grossWeight}
+        onApply={({ chargeableWeight, cbm }) => {
+          setFormData(prev => ({ ...prev, weight: chargeableWeight, cbm: prev.cbm || cbm }))
+          addToast('Chargeable weight applied', 'success')
+        }}
+      />
     </div>
   )
 }
