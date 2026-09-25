@@ -67,7 +67,21 @@ function loadStickyFilters() {
     const saved = sessionStorage.getItem(STICKY_KEY)
     if (saved) return JSON.parse(saved)
   } catch {}
-  return { search: '', statusFilter: '', shipmentTypeFilter: '', page: 1, perPage: 25 }
+  // ✅ FIX — this used to only remember search/statusFilter/shipmentType/
+  // page/perPage. Every OTHER filter (Today's, This Month, In Progress,
+  // Delivered, Invoiced, Pending Customs, Pending Invoice, a custom date,
+  // Archive view) lived only in React state, gone the instant you left
+  // the page — so opening a shipment from a filtered view and clicking
+  // Back landed you on the unfiltered Total Shipments view instead of
+  // exactly where you were. Now everything that affects what's on screen
+  // is remembered.
+  return {
+    search: '', statusFilter: '', shipmentTypeFilter: '', page: 1, perPage: 25,
+    showArchived: false, todayOnly: false, customDate: '', inProgressOnly: false,
+    deliveredOnly: false, invoicedOnly: false, thisMonthOnly: false,
+    pendingCustomsOnly: false, pendingInvoiceOnly: false,
+    createdFrom: '', createdTo: '', employeeId: '',
+  }
 }
 
 // mineOnly: forces every query to only include shipments created by the
@@ -107,16 +121,27 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }, [search])
   const [statusFilter, setStatusFilter] = useState(sticky.statusFilter || '')
   const [shipmentTypeFilter, setShipmentTypeFilter] = useState(sticky.shipmentTypeFilter || defaultType)
-  const [showArchived, setShowArchived] = useState(false)
+  const [showArchived, setShowArchived] = useState(sticky.showArchived || false)
   const [showBin, setShowBin] = useState(false)
-  const [todayOnly, setTodayOnly] = useState(false)
-  const [customDate, setCustomDate] = useState('')
-  const [inProgressOnly, setInProgressOnly] = useState(false)
-  const [deliveredOnly, setDeliveredOnly] = useState(false)
-  const [invoicedOnly, setInvoicedOnly] = useState(false)
-  const [thisMonthOnly, setThisMonthOnly] = useState(false)
-  const [pendingCustomsOnly, setPendingCustomsOnly] = useState(false)
-  const [pendingInvoiceOnly, setPendingInvoiceOnly] = useState(false)
+  const [todayOnly, setTodayOnly] = useState(sticky.todayOnly || false)
+  const [customDate, setCustomDate] = useState(sticky.customDate || '')
+  const [inProgressOnly, setInProgressOnly] = useState(sticky.inProgressOnly || false)
+  const [deliveredOnly, setDeliveredOnly] = useState(sticky.deliveredOnly || false)
+  const [invoicedOnly, setInvoicedOnly] = useState(sticky.invoicedOnly || false)
+  const [thisMonthOnly, setThisMonthOnly] = useState(sticky.thisMonthOnly || false)
+  const [pendingCustomsOnly, setPendingCustomsOnly] = useState(sticky.pendingCustomsOnly || false)
+  const [pendingInvoiceOnly, setPendingInvoiceOnly] = useState(sticky.pendingInvoiceOnly || false)
+  // ✅ ADVANCED FILTERS (NEW) — combine freely with search/status/type/
+  // each other, unlike the stat-card toggles above which each represent
+  // one specific view and override each other.
+  const [createdFrom, setCreatedFrom] = useState(sticky.createdFrom || '')
+  const [createdTo, setCreatedTo] = useState(sticky.createdTo || '')
+  const [employeeId, setEmployeeId] = useState(sticky.employeeId || '')
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [employeeList, setEmployeeList] = useState([])
+  useEffect(() => {
+    api.get('/freight/employees').then(res => setEmployeeList(res.data?.data || [])).catch(() => {})
+  }, [])
   const [selected, setSelected] = useState([])
   const [page, setPage] = useState(sticky.page || 1)
   const [perPage, setPerPage] = useState(sticky.perPage || 25)
@@ -214,12 +239,15 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // same filters as the main shipments query, so the numbers always
   // describe what's on screen.
   const { data: fullStats } = useQuery({
-    queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, debouncedSearch, scopeKey],
+    queryKey: ['shipments-full-stats', statusFilter, shipmentTypeFilter, showArchived, debouncedSearch, createdFrom, createdTo, employeeId, scopeKey],
     queryFn: async () => {
       const params = { isArchived: showArchived ? 'true' : 'false', ...scopeParams }
       if (debouncedSearch) params.search = debouncedSearch
       if (statusFilter) params.status = statusFilter
       if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
+      if (createdFrom) params.createdFrom = createdFrom
+      if (createdTo) params.createdTo = createdTo
+      if (employeeId) params.employeeId = employeeId
       const res = await api.get('/freight/shipments/stats', { params })
       return res.data?.data || null
     },
@@ -277,9 +305,17 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   useEffect(() => {
     if (initialized) {
-      try { sessionStorage.setItem(STICKY_KEY, JSON.stringify({ search, statusFilter, shipmentTypeFilter, page, perPage })) } catch {}
+      try {
+        sessionStorage.setItem(STICKY_KEY, JSON.stringify({
+          search, statusFilter, shipmentTypeFilter, page, perPage,
+          showArchived, todayOnly, customDate, inProgressOnly,
+          deliveredOnly, invoicedOnly, thisMonthOnly,
+          pendingCustomsOnly, pendingInvoiceOnly,
+          createdFrom, createdTo, employeeId,
+        }))
+      } catch {}
     }
-  }, [search, statusFilter, shipmentTypeFilter, page, perPage, initialized])
+  }, [search, statusFilter, shipmentTypeFilter, page, perPage, showArchived, todayOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, thisMonthOnly, pendingCustomsOnly, pendingInvoiceOnly, createdFrom, createdTo, employeeId, initialized])
 
   useEffect(() => { setInitialized(true) }, [])
 
@@ -494,13 +530,13 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   const clearAllFilters = () => {
-    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setThisMonthOnly(false); setCustomDate(''); setInProgressOnly(false); setDeliveredOnly(false); setInvoicedOnly(false); setPendingCustomsOnly(false); setPendingInvoiceOnly(false); setPage(1)
+    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setThisMonthOnly(false); setCustomDate(''); setInProgressOnly(false); setDeliveredOnly(false); setInvoicedOnly(false); setPendingCustomsOnly(false); setPendingInvoiceOnly(false); setCreatedFrom(''); setCreatedTo(''); setEmployeeId(''); setPage(1)
     addToast('Filters cleared', 'info')
   }
 
   // ─── QUERY FOR SHIPMENTS ───
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', debouncedSearch, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, pendingCustomsOnly, pendingInvoiceOnly, page, perPage, scopeKey],
+    queryKey: ['shipments', debouncedSearch, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, pendingCustomsOnly, pendingInvoiceOnly, createdFrom, createdTo, employeeId, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
@@ -520,6 +556,11 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         if (debouncedSearch) params.search = debouncedSearch
         if (statusFilter) params.status = statusFilter
         if (shipmentTypeFilter) params.shipmentType = shipmentTypeFilter
+        // ✅ ADVANCED FILTERS — combine with everything above, rather than
+        // being mutually exclusive like the stat-card toggles.
+        if (createdFrom) params.createdFrom = createdFrom
+        if (createdTo) params.createdTo = createdTo
+        if (employeeId) params.employeeId = employeeId
         const res = await api.get('/freight/shipments', { params })
         try { sessionStorage.setItem('cached_shipments', JSON.stringify(res.data)) } catch {}
         return res.data
@@ -738,7 +779,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
   const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
-  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||thisMonthOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly||pendingCustomsOnly||pendingInvoiceOnly; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
+  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||thisMonthOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly||pendingCustomsOnly||pendingInvoiceOnly||createdFrom||createdTo||employeeId; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 
   // ✅ MOVED HERE — must be declared before statCards below, which now
   // references showPipelineTab for the Pending Customs/Invoice cards.
@@ -986,9 +1027,29 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       </div>
 
       {!showBin && showFilters && (
-        <div className="flex flex-wrap gap-2 p-3.5 glass rounded-xl border border-[var(--border-color)] animate-slide-down">
-          <span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center mr-1"><Filter size={11} className="mr-1"/>Status</span>
-          {quickFilters.map(f=>{const I=f.i;const a=statusFilter===f.v;return <button key={f.v} onClick={()=>updateStatus(a?'':f.v)} className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${a?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'glass text-[var(--text-secondary)]'}`}><I size={12}/>{f.l}{a&&<X size={11}/>}</button>})}
+        <div className="flex flex-col gap-3 p-3.5 glass rounded-xl border border-[var(--border-color)] animate-slide-down">
+          <div className="flex flex-wrap gap-2">
+            <span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center mr-1"><Filter size={11} className="mr-1"/>Status</span>
+            {quickFilters.map(f=>{const I=f.i;const a=statusFilter===f.v;return <button key={f.v} onClick={()=>updateStatus(a?'':f.v)} className={`px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap ${a?'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg':'glass text-[var(--text-secondary)]'}`}><I size={12}/>{f.l}{a&&<X size={11}/>}</button>})}
+          </div>
+          {/* ✅ ADVANCED FILTERS (NEW) — date range and employee, both
+              COMBINE with status/search/type above rather than being a
+              single exclusive view like the stat cards. */}
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-[var(--border-color)]">
+            <span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center mr-1"><Calendar size={11} className="mr-1"/>Created</span>
+            <input type="date" value={createdFrom} onChange={e=>{setCreatedFrom(e.target.value); setPage(1)}} className="px-2.5 py-1.5 glass border border-[var(--border-color)] rounded-lg text-[11px] text-[var(--text-primary)]" title="Created from"/>
+            <span className="text-[11px] text-[var(--text-muted)]">to</span>
+            <input type="date" value={createdTo} onChange={e=>{setCreatedTo(e.target.value); setPage(1)}} className="px-2.5 py-1.5 glass border border-[var(--border-color)] rounded-lg text-[11px] text-[var(--text-primary)]" title="Created to"/>
+            {(createdFrom || createdTo) && (
+              <button onClick={()=>{setCreatedFrom(''); setCreatedTo(''); setPage(1)}} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"><X size={13}/></button>
+            )}
+
+            <span className="text-[11px] font-semibold text-indigo-400 uppercase flex items-center ml-3 mr-1"><User size={11} className="mr-1"/>Employee</span>
+            <select value={employeeId} onChange={e=>{setEmployeeId(e.target.value); setPage(1)}} className="px-2.5 py-1.5 glass border border-[var(--border-color)] rounded-lg text-[11px] text-[var(--text-primary)] bg-transparent max-w-[160px]">
+              <option value="">Anyone</option>
+              {employeeList.map(emp => <option key={emp.id} value={emp.id}>{emp.name || emp.email}</option>)}
+            </select>
+          </div>
         </div>
       )}
 

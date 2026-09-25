@@ -806,7 +806,7 @@ const getAllShipments = async (req, res) => {
     // in isArchived by the time we filter/count below.
     await archiveMaturedInvoices();
 
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, pipelineStage, referenceGroup, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, pipelineStage, createdFrom, createdTo, employeeId, referenceGroup, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -879,6 +879,23 @@ const getAllShipments = async (req, res) => {
       else if (shipmentType === 'DO_RELEASE') where.shipmentType = 'DO Release';
       else if (shipmentType === 'FF_ONLY') where.shipmentType = 'FF Only';
       else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
+    }
+    // ✅ ADVANCED FILTERS (NEW) — unlike the stat-card toggles above
+    // (today/thisMonth/pendingCustoms/etc, which each represent "show
+    // exactly this one view" and override each other), these two are
+    // designed to COMBINE with search, status, type, and each other —
+    // e.g. "Rajeswari's shipments created between 1 Sep and 20 Sep with
+    // status BOE_FILED" all at once.
+    if (createdFrom || createdTo) {
+      where.createdAt = where.createdAt || {};
+      if (createdFrom) where.createdAt.gte = new Date(`${createdFrom}T00:00:00+05:30`);
+      if (createdTo) where.createdAt.lte = new Date(`${createdTo}T23:59:59.999+05:30`);
+    }
+    if (employeeId) {
+      // Matches either who created it OR who's the co-handler — "show me
+      // everything this person touched from the start", not just what
+      // they personally opened.
+      where.AND = [...(where.AND || []), { OR: [{ createdById: employeeId }, { coHandlerId: employeeId }] }];
     }
     if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
       where.AND = [...(where.AND || []), { OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
@@ -998,7 +1015,7 @@ const getShipmentStats = async (req, res) => {
   try {
     await archiveMaturedInvoices();
 
-    const { status, search, isArchived, shipmentType, mine, userId, referenceGroup } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, referenceGroup, createdFrom, createdTo, employeeId } = req.query;
 
     const where = {
       isArchived: isArchived === 'true',
@@ -1014,6 +1031,16 @@ const getShipmentStats = async (req, res) => {
       else if (shipmentType === 'DO_RELEASE') where.shipmentType = 'DO Release';
       else if (shipmentType === 'FF_ONLY') where.shipmentType = 'FF Only';
       else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
+    }
+    // ✅ ADVANCED FILTERS (NEW) — same as getAllShipments, so the numbers
+    // on screen always match what the filtered list actually contains.
+    if (createdFrom || createdTo) {
+      where.createdAt = where.createdAt || {};
+      if (createdFrom) where.createdAt.gte = new Date(`${createdFrom}T00:00:00+05:30`);
+      if (createdTo) where.createdAt.lte = new Date(`${createdTo}T23:59:59.999+05:30`);
+    }
+    if (employeeId) {
+      where.AND = [...(where.AND || []), { OR: [{ createdById: employeeId }, { coHandlerId: employeeId }] }];
     }
     if (search) {
       where.OR = [
