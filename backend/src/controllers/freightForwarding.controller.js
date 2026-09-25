@@ -806,7 +806,7 @@ const getAllShipments = async (req, res) => {
     // in isArchived by the time we filter/count below.
     await archiveMaturedInvoices();
 
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, pipelineStage, createdFrom, createdTo, employeeId, referenceGroup, page = 1, limit = 25 } = req.query;
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, pipelineStage, cancelledOnly, createdFrom, createdTo, employeeId, referenceGroup, page = 1, limit = 25 } = req.query;
     console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -840,12 +840,19 @@ const getAllShipments = async (req, res) => {
     if (status) where.currentStatus = status;
     if (inProgressOnly === 'true' && !status) {
       where.currentStatus = { notIn: ['DELIVERED', 'HAND_OVER', 'INVOICE_GENERATED', 'INVOICE_SENT'] };
+      where.AND = [...(where.AND || []), getNotCancelledFilter()]; // ✅ NEW — a stale enquiry belongs in Cancelled, not In Progress
     }
     if (deliveredOnly === 'true' && !status) {
       where.currentStatus = { in: ['DELIVERED', 'HAND_OVER'] };
     }
     if (invoicedOnly === 'true' && !status) {
       where.currentStatus = { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] };
+    }
+    // ✅ NEW — "Cancelled" card click. A shipment stuck at pure ENQUIRY
+    // for more than 7 days.
+    if (cancelledOnly === 'true' && !status) {
+      delete where.isArchived;
+      Object.assign(where, getCancelledWhere());
     }
     // ✅ NEW — "This Month Invoice" card click. The card's NUMBER counts
     // shipments whose invoice status-change happened this month (matches
@@ -1068,7 +1075,7 @@ const getShipmentStats = async (req, res) => {
     // same scope (mine/team/search/status/etc) as everything else here.
     const { start: monthStart, end: monthEnd } = getISTMonthBounds();
 
-    const [total, delivered, invoiced, weightAgg, monthlyShipments, matchingForMonth, pipelineFreight, pipelineCustoms, pipelineInvoice] = await Promise.all([
+    const [total, delivered, invoiced, weightAgg, monthlyShipments, matchingForMonth, pipelineFreight, pipelineCustoms, pipelineInvoice, cancelled] = await Promise.all([
       prisma.shipment.count({ where }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
@@ -1084,7 +1091,10 @@ const getShipmentStats = async (req, res) => {
       // meant to answer "how many company-wide", same as the Pipeline tab.
       prisma.shipment.count({ where: getPipelineStageWhere('freight') }),
       prisma.shipment.count({ where: getPipelineStageWhere('customs') }),
-      prisma.shipment.count({ where: getPipelineStageWhere('invoice') })
+      prisma.shipment.count({ where: getPipelineStageWhere('invoice') }),
+      // ✅ NEW — "Cancelled" card. Also global/company-wide, same
+      // reasoning as the pipeline counts above.
+      prisma.shipment.count({ where: getCancelledWhere() })
     ]);
 
     // Monthly invoiced = shipments matching the current filter whose
@@ -1118,7 +1128,8 @@ const getShipmentStats = async (req, res) => {
         monthlyInvoiced, // ✅ NEW
         pipelineFreight, // ✅ NEW — Freight not yet complete, company-wide
         pipelineCustoms, // ✅ NEW — Freight done, waiting on Customs, company-wide
-        pipelineInvoice // ✅ NEW — Customs done, waiting on Invoice, company-wide
+        pipelineInvoice, // ✅ NEW — Customs done, waiting on Invoice, company-wide
+        cancelled // ✅ NEW — stuck at ENQUIRY for 7+ days, company-wide
       }
     });
   } catch (error) {
@@ -1885,6 +1896,42 @@ const getEmployeePerformance = async (req, res) => {
 const SIMPLE_PIPELINE_TYPES = ['Transport', 'DO Release', 'FF Only'];
 const PIPELINE_COLUMN_LIMIT = 20;
 
+// ─── CANCELLED / STALE ENQUIRY (NEW) ───
+// A shipment that's sat at pure ENQUIRY (nothing at all filled in yet —
+// no rates, no nomination, no anything) for more than 7 days is treated
+// as effectively cancelled/abandoned. Threshold is deliberately "more
+// than 7 days", not "6 days" and not "on day 7" — a shipment created
+// today is day 0; it only qualifies once a full 7 days have elapsed.
+const CANCELLED_THRESHOLD_DAYS = 7;
+
+function getCancelledThresholdDate() {
+  return new Date(Date.now() - CANCELLED_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
+}
+
+// Matches shipments that ARE cancelled — used for the Cancelled card itself.
+function getCancelledWhere() {
+  return {
+    isDeleted: false,
+    isArchived: false,
+    currentStatus: 'ENQUIRY',
+    createdAt: { lte: getCancelledThresholdDate() }
+  };
+}
+
+// The inverse — "definitely NOT cancelled" — meant to be spread into
+// other cards/stages (In Progress, the Pipeline's Freight stage) so a
+// stale enquiry is excluded from them instead of being counted twice.
+// True when EITHER it has progressed past ENQUIRY, OR it's still within
+// the 7-day grace window.
+function getNotCancelledFilter() {
+  return {
+    OR: [
+      { currentStatus: { not: 'ENQUIRY' } },
+      { createdAt: { gt: getCancelledThresholdDate() } }
+    ]
+  };
+}
+
 function freightIncompleteFilter() {
   return {
     OR: [
@@ -1936,7 +1983,8 @@ function getPipelineStageWhere(stage) {
     return {
       ...baseActive,
       shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] },
-      ...freightIncompleteFilter()
+      ...freightIncompleteFilter(),
+      AND: [getNotCancelledFilter()] // ✅ NEW — a stale enquiry belongs in Cancelled, not here
     };
   }
   if (stage === 'customs') {
