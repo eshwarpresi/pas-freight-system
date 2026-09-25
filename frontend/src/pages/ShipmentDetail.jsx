@@ -588,12 +588,12 @@ export default function ShipmentDetail() {
           <Section title="Pickup" icon={Truck}><Field label="Pickup Date" value={Fmt(ff.pickupDate)} onSave={v => updateMutation.mutate({ section: 'pickup', data: { pickupDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
           <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section>
-          {/* ✅ NEW — Pre-Alerts + DO Collection, moved here from the
-              Customs tab (standard Freight type only — CHA Only still
-              has DO Collection under its own Customs tab, unchanged).
-              DO Collection uses the same '/cha/.../do-collection'
-              endpoint as before — only WHERE it's shown has moved, not
-              which backend record it lives on. */}
+          {/* ✅ RE-ADDED — Pre-Alerts + DO Collection, back on the Freight
+              tab (standard Freight type only). Stays off the Create page
+              per the separate instruction — this field genuinely tends
+              to happen after creation, so it needs to live somewhere
+              editable post-creation, and this is that place. */}
+          {isStandardFreight && <Section title="Pre-Alerts & DO Collection" icon={ClipboardList}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Pre-Alerts Sent On" value={Fmt(ff.preAlertsSentDate)} onSave={v => updateMutation.mutate({ section: 'rates', data: { preAlertsSentDate: v } })} type="date" /><Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></div></Section>}
           </div>}
 
         {/* DO RELEASE TAB */}
