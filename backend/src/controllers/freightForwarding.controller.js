@@ -2426,6 +2426,25 @@ const updateBooking = async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
+// ─── UPDATE PICKUP DATE (NEW) ───
+// Sits between Booking and Schedule in the Freight workflow. Built with
+// the `!== undefined` + ternary-to-null pattern from the start (learned
+// from the earlier bug where other date fields silently failed to
+// clear) — so clearing this one back to blank works correctly from day
+// one, no separate fix needed later.
+const updatePickup = async (req, res) => {
+  try {
+    if (req.body.pickupDate !== undefined) {
+      const val = req.body.pickupDate ? new Date(req.body.pickupDate) : null;
+      await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { pickupDate: val } } } });
+      await upsertStatusEntry(req.params.id, 'PICKUP_UPDATED', val ? `Pickup Date: ${req.body.pickupDate}` : 'Pickup date cleared', actorName(req));
+    }
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    sendStatusEmail(s).catch(() => {});
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
 const updateAWB = async (req, res) => {
   try {
     const data = {}; const parts = [];
@@ -2505,6 +2524,7 @@ module.exports = {
   updatePortLocation, 
   updateNomination, 
   updateBooking, 
+  updatePickup, // ✅ NEW
   updateSchedule, 
   updateAWB 
 };

@@ -1180,18 +1180,6 @@ export default function CreateShipment() {
                   </div>
                 </div>
               </div>
-              {/* ✅ NEW — Pre-Alerts + DO Collection (Freight module only).
-                  DO Collection is normally a Customs-tab field (see
-                  ShipmentDetail.jsx), but for this shipment type it's
-                  surfaced here in Freight instead, matching how this
-                  company's Freight team actually handles it. */}
-              <div className="p-6 border-b border-indigo-100">
-                <div className="flex items-center gap-2 mb-1"><ClipboardList size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Pre-Alerts & DO Collection</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Pre-Alerts Sent On</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="preAlertsSentDate" value={formData.preAlertsSentDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">DO Collection Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="doCollectionDate" value={formData.doCollectionDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
-                </div>
-              </div>
               <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>

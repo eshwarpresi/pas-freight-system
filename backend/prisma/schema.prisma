@@ -146,6 +146,7 @@ model FreightForwarding {
   
   nominationDate  DateTime?
   bookingDate     DateTime?
+  pickupDate      DateTime? // ✅ NEW — sits between Booking and Schedule in the workflow
   
   etd             DateTime?
   eta             DateTime?

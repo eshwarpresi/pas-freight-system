@@ -102,6 +102,7 @@ router.put('/shipments/:id/rates', freightController.updateRates);
 router.put('/shipments/:id/cbm', freightController.updateCBM);
 router.put('/shipments/:id/nomination', freightController.updateNomination);
 router.put('/shipments/:id/booking', freightController.updateBooking);
+router.put('/shipments/:id/pickup', freightController.updatePickup);
 router.put('/shipments/:id/schedule', freightController.updateSchedule);
 router.put('/shipments/:id/awb', freightController.updateAWB);
 router.put('/shipments/:id/stage', freightController.updateStage);
