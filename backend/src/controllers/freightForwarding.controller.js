@@ -295,6 +295,8 @@ async function autoArchiveMatured() {
 const createShipment = async (req, res) => {
   try {
     const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, terms, portLocation, cbm, commodityName, preAlertsSentDate, doCollectionDate, autoEmailEnabled, coHandlerId } = req.body;
+    // 🔍 TEMPORARY DIAGNOSTIC — remove once the email issue is confirmed fixed.
+    console.log('📧 EMAIL CHECK ON CREATE:', { autoEmailEnabled, typeOf: typeof autoEmailEnabled, notificationEmail });
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const createdById = req.user?.id || null;
     const createdByName = req.user?.name || req.user?.email || null;
