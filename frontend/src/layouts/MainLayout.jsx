@@ -303,7 +303,7 @@ export default function MainLayout({ user }) {
             <div className={`px-4 py-1.5 text-center text-xs font-medium text-white ${networkStatus.isOffline ? 'bg-red-600' : 'bg-amber-500'}`}>
               {networkStatus.isOffline
                 ? "⚠️ You're offline — changes won't save until your connection is back"
-                : '🐢 Slow connection detected — some actions may take longer than usual'}
+                : '🐢 Server is responding slowly right now — some actions may take longer than usual (this is not your internet connection)'}
             </div>
           )}
         </div>

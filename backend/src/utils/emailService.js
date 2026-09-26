@@ -87,9 +87,10 @@ async function sendRawEmail({ to, cc, subject, html }) {
 // Fires once, at creation, only if the shipment's "Send automatic update
 // emails" toggle was switched on. CC'd to whoever created the shipment.
 async function sendEnquiryReceivedEmail(shipment, employeeEmail) {
+  console.log('🚨🚨🚨 sendEnquiryReceivedEmail WAS CALLED for', shipment.refNo);
   try {
     const ff = shipment.freightForwarding || {};
-    if (!ff.notificationEmail) return;
+    if (!ff.notificationEmail) { console.log('🚨🚨🚨 STOPPED — no notificationEmail on ff object'); return; }
 
     const html = buildManifestEmail({
       headline: "We've received your enquiry.",
@@ -108,9 +109,9 @@ async function sendEnquiryReceivedEmail(shipment, employeeEmail) {
       subject: `Your Enquiry Has Been Received — ${shipment.refNo}`,
       html,
     });
-    console.log('Enquiry Received email sent to', ff.notificationEmail, employeeEmail ? `(cc: ${employeeEmail})` : '');
+    console.log('🚨🚨🚨 Enquiry Received email SENT SUCCESSFULLY to', ff.notificationEmail, employeeEmail ? `(cc: ${employeeEmail})` : '');
   } catch (error) {
-    console.error('Enquiry Received email failed:', error.message);
+    console.error('🚨🚨🚨 Enquiry Received email FAILED. Full error:', JSON.stringify(error?.response?.data || error.message || error, null, 2));
   }
 }
 

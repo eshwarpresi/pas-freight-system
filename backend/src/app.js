@@ -20,11 +20,30 @@ const ALLOWED_DOMAIN = '@pasfreight.com'; // Only this domain can login
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // ========== PERFORMANCE MIDDLEWARE ==========
+// ✅ CORS FIX — cors() now runs FIRST, before helmet or anything else,
+// so the preflight (OPTIONS) check is answered before any other
+// middleware has a chance to interfere with it. Also now explicitly
+// lists allowed methods/headers and adds a dedicated app.options('*', ...)
+// handler — some proxy/CDN layers (Render included, occasionally on a
+// cold start) don't reliably auto-answer preflight requests unless this
+// is spelled out explicitly.
+const corsOptions = {
+  origin: ['https://pas-freight-system.onrender.com', 'http://localhost:5173', 'http://localhost:5174'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // ✅ explicit preflight handler for every route
+
 app.use(compression({ level: 6, threshold: 100 }));
-app.use(helmet());
-app.use(cors({
-  origin: ['https://pas-freight-system.onrender.com', 'http://localhost:5173'],
-  credentials: true
+app.use(helmet({
+  // ✅ Default helmet sets Cross-Origin-Opener-Policy: same-origin, which
+  // is exactly what caused the "postMessage blocked" warning with Google
+  // Sign-In's popup — this relaxes just that one header so the Google
+  // popup can talk back to your main window, without weakening anything
+  // else helmet does.
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json());
