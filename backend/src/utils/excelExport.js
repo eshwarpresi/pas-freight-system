@@ -242,6 +242,30 @@ async function exportShipmentsToExcel(allShipments, activeShipments, archivedShi
     ws.getCell(`A${fr.number}`).alignment = { horizontal: 'center' };
   }
 
+  // ✅ NEW — a fast, low-overhead sheet writer for large datasets. Skips
+  // per-cell border styling (the single biggest cost when multiplied
+  // across thousands of rows) and the title/summary header rows — just
+  // a clean header row plus data, still fully readable and filterable,
+  // but written in a fraction of the time.
+  function writeLightSheet(ws, data, columns) {
+    ws.columns = columns;
+    const headerRow = ws.getRow(1);
+    headerRow.height = 26;
+    columns.forEach((col, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = col.header;
+      cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '1E40AF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    });
+    data.forEach((rowData) => {
+      const row = ws.addRow(rowData);
+      if (rowData.slNo % 2 === 0) row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F8FAFC' } };
+    });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: data.length + 1, column: columns.length } };
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+  }
+
   // ─── SECTION HEADER HELPERS ───
   function sectionHeader(ws, rowNum, title, color) {
     ws.mergeCells(`A${rowNum}:J${rowNum}`);
@@ -305,43 +329,19 @@ async function exportShipmentsToExcel(allShipments, activeShipments, archivedShi
     return r + 1;
   }
 
+  // ✅ NEW — the threshold above which we switch to the fast/light
+  // rendering path. Below this, the full styled multi-sheet report
+  // (exactly as before) still runs — this only kicks in for genuinely
+  // large, whole-company exports where the full styling would be slow
+  // enough to risk a timeout.
+  const LARGE_EXPORT_THRESHOLD = 800;
+  const isLargeExport = allShipments.length > LARGE_EXPORT_THRESHOLD;
+
   // ─── PROCESS DATA ───
   const activeData = processShipments(activeShipments);
   const archivedData = processShipments(archivedShipments);
   const allData = processShipments(allShipments);
 
-  // ─── SHEET 1: ACTIVE SHIPMENTS ───
-  if (activeShipments.length > 0) {
-    const wsActive = workbook.addWorksheet('Active Shipments', { properties: { tabColor: { argb: '10B981' } } });
-    writeSheet(wsActive, activeData, 'ACTIVE SHIPMENTS', '10B981', allColumns);
-  }
-
-  // ─── SHEET 2: ARCHIVED SHIPMENTS ───
-  if (archivedShipments.length > 0) {
-    const wsArchived = workbook.addWorksheet('Archived Shipments', { properties: { tabColor: { argb: 'EF4444' } } });
-    writeSheet(wsArchived, archivedData, 'ARCHIVED SHIPMENTS', 'EF4444', allColumns);
-  }
-
-  // ─── SHEET 3: ALL SHIPMENTS ───
-  const wsAll = workbook.addWorksheet('All Shipments', { properties: { tabColor: { argb: '1E40AF' } } });
-  writeSheet(wsAll, allData, 'ALL SHIPMENTS (Active + Archived)', '1E40AF', allColumns);
-
-  // Add logo to All Shipments sheet
-  try {
-    const fs = require('fs');
-    let lp = path.join(__dirname, '..', 'logo.webp');
-    let ext = 'webp';
-    if (!fs.existsSync(lp)) {
-      lp = path.join(__dirname, '..', 'logo.png');
-      ext = 'png';
-    }
-    if (fs.existsSync(lp)) {
-      const id = workbook.addImage({ filename: lp, extension: ext });
-      wsAll.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 80, height: 45 } });
-    }
-  } catch (e) {}
-
-  // ─── TYPE-BASED SHEETS (using all shipments) ───
   const freightShipments = allShipments.filter(isFreight);
   const chaImportShipments = allShipments.filter(isCHAImport);
   const chaExportShipments = allShipments.filter(isCHAExport);
@@ -349,43 +349,89 @@ async function exportShipmentsToExcel(allShipments, activeShipments, archivedShi
   const doReleaseShipments = allShipments.filter(isDORelease);
   const ffOnlyShipments = allShipments.filter(isFFOnly);
 
-  if (freightShipments.length > 0) {
-    const wsF = workbook.addWorksheet('Freight', { properties: { tabColor: { argb: '3B82F6' } } });
-    const freightData = processShipments(freightShipments);
-    writeSheet(wsF, freightData, 'FREIGHT SHIPMENTS', '3B82F6', freightColumns);
+  if (isLargeExport) {
+    // ✅ FAST PATH — large dataset: just 2 clean, fast sheets (All +
+    // Active), no heavy per-cell styling, no 6 extra per-type sheets.
+    // Same underlying data and columns as before, just written far more
+    // cheaply so this actually completes instead of timing out.
+    const wsAll = workbook.addWorksheet('All Shipments', { properties: { tabColor: { argb: '1E40AF' } } });
+    writeLightSheet(wsAll, allData, allColumns);
+
+    if (activeShipments.length > 0) {
+      const wsActive = workbook.addWorksheet('Active Shipments', { properties: { tabColor: { argb: '10B981' } } });
+      writeLightSheet(wsActive, activeData, allColumns);
+    }
+  } else {
+    // ─── SHEET 1: ACTIVE SHIPMENTS ───
+    if (activeShipments.length > 0) {
+      const wsActive = workbook.addWorksheet('Active Shipments', { properties: { tabColor: { argb: '10B981' } } });
+      writeSheet(wsActive, activeData, 'ACTIVE SHIPMENTS', '10B981', allColumns);
+    }
+
+    // ─── SHEET 2: ARCHIVED SHIPMENTS ───
+    if (archivedShipments.length > 0) {
+      const wsArchived = workbook.addWorksheet('Archived Shipments', { properties: { tabColor: { argb: 'EF4444' } } });
+      writeSheet(wsArchived, archivedData, 'ARCHIVED SHIPMENTS', 'EF4444', allColumns);
+    }
+
+    // ─── SHEET 3: ALL SHIPMENTS ───
+    const wsAll = workbook.addWorksheet('All Shipments', { properties: { tabColor: { argb: '1E40AF' } } });
+    writeSheet(wsAll, allData, 'ALL SHIPMENTS (Active + Archived)', '1E40AF', allColumns);
+
+    // Add logo to All Shipments sheet
+    try {
+      const fs = require('fs');
+      let lp = path.join(__dirname, '..', 'logo.webp');
+      let ext = 'webp';
+      if (!fs.existsSync(lp)) {
+        lp = path.join(__dirname, '..', 'logo.png');
+        ext = 'png';
+      }
+      if (fs.existsSync(lp)) {
+        const id = workbook.addImage({ filename: lp, extension: ext });
+        wsAll.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 80, height: 45 } });
+      }
+    } catch (e) {}
+
+    // ─── TYPE-BASED SHEETS (using all shipments) ───
+    if (freightShipments.length > 0) {
+      const wsF = workbook.addWorksheet('Freight', { properties: { tabColor: { argb: '3B82F6' } } });
+      const freightData = processShipments(freightShipments);
+      writeSheet(wsF, freightData, 'FREIGHT SHIPMENTS', '3B82F6', freightColumns);
+    }
+
+    if (chaImportShipments.length > 0) {
+      const wsCI = workbook.addWorksheet('CHA Import', { properties: { tabColor: { argb: '10B981' } } });
+      const chaImportData = processShipments(chaImportShipments);
+      writeSheet(wsCI, chaImportData, 'CHA IMPORT BILLS', '10B981', chaImportCols);
+    }
+
+    if (chaExportShipments.length > 0) {
+      const wsCE = workbook.addWorksheet('CHA Export', { properties: { tabColor: { argb: 'F59E0B' } } });
+      const chaExportData = processShipments(chaExportShipments);
+      writeSheet(wsCE, chaExportData, 'CHA EXPORT BILLS', 'F59E0B', chaExportCols);
+    }
+
+    if (transportShipments.length > 0) {
+      const wsT = workbook.addWorksheet('Transport', { properties: { tabColor: { argb: '0EA5E9' } } });
+      const transportData = processShipments(transportShipments);
+      writeSheet(wsT, transportData, 'TRANSPORT SHIPMENTS', '0EA5E9', transportCols);
+    }
+
+    if (doReleaseShipments.length > 0) {
+      const wsDR = workbook.addWorksheet('DO Release', { properties: { tabColor: { argb: '14B8A6' } } });
+      const doReleaseData = processShipments(doReleaseShipments);
+      writeSheet(wsDR, doReleaseData, 'DO RELEASE', '14B8A6', doReleaseCols);
+    }
+
+    if (ffOnlyShipments.length > 0) {
+      const wsFF = workbook.addWorksheet('FF Only', { properties: { tabColor: { argb: '8B5CF6' } } });
+      const ffOnlyData = processShipments(ffOnlyShipments);
+      writeSheet(wsFF, ffOnlyData, 'FF ONLY', '8B5CF6', ffOnlyCols);
+    }
   }
 
-  if (chaImportShipments.length > 0) {
-    const wsCI = workbook.addWorksheet('CHA Import', { properties: { tabColor: { argb: '10B981' } } });
-    const chaImportData = processShipments(chaImportShipments);
-    writeSheet(wsCI, chaImportData, 'CHA IMPORT BILLS', '10B981', chaImportCols);
-  }
-
-  if (chaExportShipments.length > 0) {
-    const wsCE = workbook.addWorksheet('CHA Export', { properties: { tabColor: { argb: 'F59E0B' } } });
-    const chaExportData = processShipments(chaExportShipments);
-    writeSheet(wsCE, chaExportData, 'CHA EXPORT BILLS', 'F59E0B', chaExportCols);
-  }
-
-  if (transportShipments.length > 0) {
-    const wsT = workbook.addWorksheet('Transport', { properties: { tabColor: { argb: '0EA5E9' } } });
-    const transportData = processShipments(transportShipments);
-    writeSheet(wsT, transportData, 'TRANSPORT SHIPMENTS', '0EA5E9', transportCols);
-  }
-
-  if (doReleaseShipments.length > 0) {
-    const wsDR = workbook.addWorksheet('DO Release', { properties: { tabColor: { argb: '14B8A6' } } });
-    const doReleaseData = processShipments(doReleaseShipments);
-    writeSheet(wsDR, doReleaseData, 'DO RELEASE', '14B8A6', doReleaseCols);
-  }
-
-  if (ffOnlyShipments.length > 0) {
-    const wsFF = workbook.addWorksheet('FF Only', { properties: { tabColor: { argb: '8B5CF6' } } });
-    const ffOnlyData = processShipments(ffOnlyShipments);
-    writeSheet(wsFF, ffOnlyData, 'FF ONLY', '8B5CF6', ffOnlyCols);
-  }
-
-  // ─── SUMMARY SHEET ───
+  // ─── SUMMARY SHEET (always included — cheap regardless of dataset size) ───
   const ss = workbook.addWorksheet('📊 Summary', { properties: { tabColor: { argb: '7C3AED' } } });
   ss.getColumn(1).width = 5; ss.getColumn(2).width = 22; ss.getColumn(3).width = 14;
   ss.getColumn(4).width = 12; ss.getColumn(5).width = 22; ss.getColumn(6).width = 14;
@@ -424,28 +470,37 @@ async function exportShipmentsToExcel(allShipments, activeShipments, archivedShi
   ]);
   r++;
 
-  r = sectionHeader(ss, r, '📦 SHIPMENT TYPE BREAKDOWN', '8B5CF6');
-  const typeData = [
-    ['Freight', freightShipments.length, totalAll > 0 ? Math.round((freightShipments.length / totalAll) * 100) + '%' : '0%'],
-    ['FF Only', ffOnlyShipments.length, totalAll > 0 ? Math.round((ffOnlyShipments.length / totalAll) * 100) + '%' : '0%'],
-    ['CHA Import', chaImportShipments.length, totalAll > 0 ? Math.round((chaImportShipments.length / totalAll) * 100) + '%' : '0%'],
-    ['CHA Export', chaExportShipments.length, totalAll > 0 ? Math.round((chaExportShipments.length / totalAll) * 100) + '%' : '0%'],
-    ['Transport', transportShipments.length, totalAll > 0 ? Math.round((transportShipments.length / totalAll) * 100) + '%' : '0%'],
-    ['DO Release', doReleaseShipments.length, totalAll > 0 ? Math.round((doReleaseShipments.length / totalAll) * 100) + '%' : '0%'],
-    ['TOTAL', totalAll, '100%'],
-  ];
-  r = tableSection(ss, r, ['Type', 'Count', 'Share %'], typeData, '8B5CF6');
+  if (isLargeExport) {
+    ss.mergeCells(`A${r}:J${r}`);
+    ss.getCell(`A${r}`).value = 'Large dataset detected — showing summary plus All/Active sheets only, for speed. Use a filter or search first for a smaller export if you need the full styled multi-sheet breakdown.';
+    ss.getCell(`A${r}`).font = { name: 'Arial', size: 9, italic: true, color: { argb: '9CA3AF' } };
+    ss.getCell(`A${r}`).alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    ss.getRow(r).height = 30;
+    r += 2;
+  } else {
+    r = sectionHeader(ss, r, '📦 SHIPMENT TYPE BREAKDOWN', '8B5CF6');
+    const typeData = [
+      ['Freight', freightShipments.length, totalAll > 0 ? Math.round((freightShipments.length / totalAll) * 100) + '%' : '0%'],
+      ['FF Only', ffOnlyShipments.length, totalAll > 0 ? Math.round((ffOnlyShipments.length / totalAll) * 100) + '%' : '0%'],
+      ['CHA Import', chaImportShipments.length, totalAll > 0 ? Math.round((chaImportShipments.length / totalAll) * 100) + '%' : '0%'],
+      ['CHA Export', chaExportShipments.length, totalAll > 0 ? Math.round((chaExportShipments.length / totalAll) * 100) + '%' : '0%'],
+      ['Transport', transportShipments.length, totalAll > 0 ? Math.round((transportShipments.length / totalAll) * 100) + '%' : '0%'],
+      ['DO Release', doReleaseShipments.length, totalAll > 0 ? Math.round((doReleaseShipments.length / totalAll) * 100) + '%' : '0%'],
+      ['TOTAL', totalAll, '100%'],
+    ];
+    r = tableSection(ss, r, ['Type', 'Count', 'Share %'], typeData, '8B5CF6');
 
-  r = sectionHeader(ss, r, '📊 ACTIVE VS ARCHIVED', '3B82F6');
-  const archiveData = [
-    ['Active', totalActive, totalAll > 0 ? Math.round((totalActive / totalAll) * 100) + '%' : '0%'],
-    ['Archived', totalArchived, totalAll > 0 ? Math.round((totalArchived / totalAll) * 100) + '%' : '0%'],
-    ['TOTAL', totalAll, '100%'],
-  ];
-  r = tableSection(ss, r, ['Status', 'Count', 'Share %'], archiveData, '3B82F6');
+    r = sectionHeader(ss, r, '📊 ACTIVE VS ARCHIVED', '3B82F6');
+    const archiveData = [
+      ['Active', totalActive, totalAll > 0 ? Math.round((totalActive / totalAll) * 100) + '%' : '0%'],
+      ['Archived', totalArchived, totalAll > 0 ? Math.round((totalArchived / totalAll) * 100) + '%' : '0%'],
+      ['TOTAL', totalAll, '100%'],
+    ];
+    r = tableSection(ss, r, ['Status', 'Count', 'Share %'], archiveData, '3B82F6');
+  }
 
   r = sectionHeader(ss, r, '🕐 RECENT ACTIVITY (Last 50)', 'EF4444');
-  const recentRows = [['Date', 'Ref No', 'Type', 'Customer', 'Status', 'Archive']];
+  const recentRows = [];
   allShipments.slice(-50).reverse().forEach(s => {
     recentRows.push([
       new Date(s.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
