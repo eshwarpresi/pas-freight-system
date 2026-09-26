@@ -15,165 +15,184 @@ const STATUS_LABELS = {
   'INVOICE_SENT': 'Invoice Sent', 'COMPLETED': 'Completed'
 };
 
-const FMT = (d) => d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : null;
+const FMT = (d) => d ? new Date(d).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' }) : null;
 const ROW = (label, value) => value ? `<tr><td style="padding:6px 12px;color:#6b7280;font-size:12px;width:35%;background:#f9fafb">${label}</td><td style="padding:6px 12px;font-size:12px;color:#1f2937;font-weight:500">${value}</td></tr>` : '';
 const SECTION = (title, rows) => rows ? `<div style="margin-bottom:16px"><h3 style="color:#4f46e5;font-size:13px;margin:0 0 8px;padding-bottom:6px;border-bottom:2px solid #e0e7ff">${title}</h3><table style="width:100%;border-collapse:collapse">${rows}</table></div>` : '';
 
+// ✅ NO LONGER USED — replaced entirely by the 3 milestone emails below
+// (sendEnquiryReceivedEmail, sendFreightConfirmedEmail,
+// sendInvoiceReadyEmail), per explicit instruction that those 3 should be
+// the ONLY automatic client emails now. Left as a harmless no-op rather
+// than removing the function and hunting down every call site across the
+// 3 controller files that still call it — this way nothing breaks, it
+// just does nothing.
 async function sendStatusEmail(shipment) {
+  return; // intentionally disabled — see comment above
+}
+
+// ─── SHARED MANIFEST-STYLE EMAIL SHELL (NEW) ───
+// One consistent visual identity — deep navy header, serif headline, a
+// bordered "manifest" details table — used by all 3 milestone emails, so
+// a client recognizes each one as part of the same journey.
+function buildManifestEmail({ headline, bodyText, rows, closingText }) {
+  const rowsHtml = rows.map(([label, value]) => `
+    <tr>
+      <td style="padding:11px 16px;border-bottom:1px solid #E7E8EA;font-size:12px;color:#6B6F76;width:40%;">${label}</td>
+      <td style="padding:11px 16px;border-bottom:1px solid #E7E8EA;font-size:13px;color:#2A2A2A;">${value || '—'}</td>
+    </tr>`).join('');
+
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F6F3;max-width:600px;margin:auto;">
+    <tr><td style="background:#1B2A4A;padding:28px 32px;">
+      <span style="font-family:Georgia,'Times New Roman',serif;font-size:20px;color:#F7F6F3;letter-spacing:0.3px;">PAS Freight Services</span>
+    </td></tr>
+    <tr><td style="padding:34px 32px 8px;">
+      <p style="font-family:Georgia,'Times New Roman',serif;font-size:19px;color:#1B2A4A;margin:0 0 18px;">${headline}</p>
+      <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#2A2A2A;margin:0 0 22px;">${bodyText}</p>
+    </td></tr>
+    <tr><td style="padding:0 32px 26px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #D8D9DB;">
+        ${rowsHtml}
+      </table>
+    </td></tr>
+    <tr><td style="padding:0 32px 34px;">
+      <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.65;color:#2A2A2A;margin:0;">${closingText}</p>
+    </td></tr>
+    <tr><td style="padding:20px 32px;border-top:1px solid #E7E8EA;">
+      <p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8A8F98;margin:0;">PAS Freight Services · This message relates to shipment ${'{{REFNO}}'}</p>
+    </td></tr>
+  </table>`;
+}
+
+async function getGmailClient() {
+  const oauth2Client = new OAuth2Client(CLIENT_ID, CLIENT_SECRET);
+  oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
+  return google.gmail({ version: 'v1', auth: oauth2Client });
+}
+
+async function sendRawEmail({ to, cc, subject, html }) {
+  const gmail = await getGmailClient();
+  const headers = [
+    `From: "PAS Freight" <${EMAIL_USER}>`,
+    `To: ${to}`,
+  ];
+  if (cc) headers.push(`Cc: ${cc}`);
+  headers.push(`Subject: ${subject}`, `MIME-Version: 1.0`, `Content-Type: text/html; charset=UTF-8`, '', html);
+  const raw = Buffer.from(headers.join('\r\n'))
+    .toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+}
+
+// ─── EMAIL 1: ENQUIRY RECEIVED (NEW) ───
+// Fires once, at creation, only if the shipment's "Send automatic update
+// emails" toggle was switched on. CC'd to whoever created the shipment.
+async function sendEnquiryReceivedEmail(shipment, employeeEmail) {
   try {
     const ff = shipment.freightForwarding || {};
-    const cha = shipment.cha || {};
-    const acc = shipment.accounts || {};
-    const history = shipment.statusHistory || [];
-    let toEmail = ff.notificationEmail;
-    if (!toEmail) { console.log('No notification email set'); return; }
+    if (!ff.notificationEmail) return;
 
-    const oauth2Client = new OAuth2Client(CLIENT_ID, CLIENT_SECRET);
-    oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    const statusLabel = STATUS_LABELS[shipment.currentStatus] || shipment.currentStatus;
-    const color = shipment.currentStatus === 'DELIVERED' ? '#059669' : shipment.currentStatus === 'COMPLETED' ? '#059669' : '#4f46e5';
+    const html = buildManifestEmail({
+      headline: "We've received your enquiry.",
+      bodyText: "Thank you for reaching out to PAS Freight Services. Your enquiry has been logged, and our team is already working through the details to put together the best arrangement for your shipment.",
+      rows: [
+        ['Reference Number', shipment.refNo],
+        ['Route', (ff.fromLocation || ff.toLocation) ? `${ff.fromLocation || '—'} → ${ff.toLocation || '—'}` : null],
+        ['Date Received', FMT(new Date())],
+      ].filter(([, v]) => v),
+      closingText: "We'll be in touch shortly with the next update. If anything changes on your end in the meantime, just reply to this email directly.",
+    }).replace('{{REFNO}}', shipment.refNo);
 
-    // Build sections dynamically
-    let sections = '';
-
-    // Route Details
-    let routeRows = '';
-    routeRows += ROW('From (Origin)', ff.fromLocation);
-    routeRows += ROW('To (Destination)', ff.toLocation);
-    routeRows += ROW('Terms', ff.terms);
-    routeRows += ROW('Port Location', ff.portLocation);
-    if (routeRows) sections += SECTION('📍 Route Details', routeRows);
-
-    // Weight Details
-    let weightRows = '';
-    weightRows += ROW('Gross Weight', ff.grossWeight ? `${ff.grossWeight} kg` : null);
-    weightRows += ROW('Chargeable Weight', ff.weight ? `${ff.weight} kg` : null);
-    weightRows += ROW('CBM', ff.cbm);
-    weightRows += ROW('No. of Packages', ff.noOfPackages);
-    if (weightRows) sections += SECTION('⚖️ Weight & Cargo Details', weightRows);
-
-    // Party Details
-    let partyRows = '';
-    partyRows += ROW('Consignee', ff.consigneeName);
-    partyRows += ROW('Shipper', ff.shipperName);
-    partyRows += ROW('Agent / Forwarder', ff.agent);
-    if (partyRows) sections += SECTION('👥 Party Details', partyRows);
-
-    // Schedule
-    let scheduleRows = '';
-    scheduleRows += ROW('Booking Date', FMT(ff.bookingDate));
-    scheduleRows += ROW('Nomination Date', FMT(ff.nominationDate));
-    scheduleRows += ROW('ETD', FMT(ff.etd));
-    scheduleRows += ROW('ETA', FMT(ff.eta));
-    if (scheduleRows) sections += SECTION('📅 Schedule', scheduleRows);
-
-    // AWB Details
-    let awbRows = '';
-    awbRows += ROW('MAWB / MBL', ff.mawb);
-    awbRows += ROW('HAWB / HBL', ff.hawb);
-    awbRows += ROW('AWB Date', FMT(ff.awbDate));
-    if (awbRows) sections += SECTION('✈️ AWB Details', awbRows);
-
-    // Rates
-    let rateRows = '';
-    rateRows += ROW('Selling Rate', ff.sellingRate ? `₹${parseFloat(ff.sellingRate).toLocaleString()}` : null);
-    if (rateRows) sections += SECTION('💰 Rates', rateRows);
-
-    // Customs
-    let customsRows = '';
-    customsRows += ROW('Job No', cha.jobNo);
-    customsRows += ROW('Checklist Date', FMT(cha.checklistDate));
-    customsRows += ROW('BOE No', cha.boeNo);
-    customsRows += ROW('BOE Date', FMT(cha.boeDate));
-    customsRows += ROW('DO Collection Date', FMT(cha.doCollectionDate));
-    customsRows += ROW('OOC Date', FMT(cha.oocDate));
-    customsRows += ROW('Gate Pass Date', FMT(cha.gatePassDate));
-    customsRows += ROW('Delivery Date', FMT(cha.deliveryDate));
-    customsRows += ROW('Tracking No', cha.trackingNumber);
-    if (customsRows) sections += SECTION('🛃 Customs Clearance', customsRows);
-
-    // Accounts
-    let accountRows = '';
-    accountRows += ROW('Invoice No', acc.invoiceNumber);
-    accountRows += ROW('Invoice Date', FMT(acc.invoiceDate));
-    accountRows += ROW('Sending Date', FMT(acc.sendingDate));
-    if (accountRows) sections += SECTION('🧾 Accounts', accountRows);
-
-    // Timeline
-    let timelineHtml = '';
-    if (history.length > 0) {
-      timelineHtml = '<div style="margin-bottom:16px"><h3 style="color:#4f46e5;font-size:13px;margin:0 0 8px;padding-bottom:6px;border-bottom:2px solid #e0e7ff">📋 Status Timeline</h3>';
-      history.slice(0, 5).forEach(h => {
-        const t = new Date(h.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        timelineHtml += `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f3f4f6">
-          <span style="background:#e0e7ff;color:#4f46e5;font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap">${h.status.replace(/_/g, ' ')}</span>
-          <span style="font-size:11px;color:#6b7280;flex:1">${h.remarks || ''}</span>
-          <span style="font-size:10px;color:#9ca3af;white-space:nowrap">${t}</span>
-        </div>`;
-      });
-      timelineHtml += '</div>';
-      sections += timelineHtml;
-    }
-
-    const html = `
-    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)">
-      <div style="background:linear-gradient(135deg,${color},#3b82f6);padding:28px 24px;text-align:center">
-        <h1 style="color:#fff;margin:0;font-size:20px;font-weight:700">🚢 PAS Freight Services</h1>
-        <p style="color:rgba(255,255,255,0.85);margin:6px 0 0;font-size:12px">Shipment Status Update</p>
-      </div>
-      <div style="padding:20px 24px;background:#f8fafc;border-bottom:1px solid #e5e7eb">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <div>
-            <p style="margin:0;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px">Reference Number</p>
-            <p style="margin:2px 0 0;font-size:16px;font-weight:700;color:#1f2937">${shipment.refNo}</p>
-          </div>
-          <span style="display:inline-block;background:${color};color:#fff;padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600">${statusLabel}</span>
-        </div>
-        ${shipment.shipmentType ? `<p style="margin:8px 0 0;font-size:11px;color:#6b7280">Transport Mode: <b>${shipment.shipmentType}</b> | Import/Export: <b>${shipment.importExport || '—'}</b> | Stage: <b>${shipment.shipmentStage || '—'}</b></p>` : ''}
-        ${shipment.remarks ? `<p style="margin:6px 0 0;font-size:11px;color:#f59e0b">📝 ${shipment.remarks}</p>` : ''}
-      </div>
-      <div style="padding:20px 24px">
-        ${sections || '<p style="color:#9ca3af;text-align:center;font-size:12px">No additional details available yet.</p>'}
-      </div>
-      <div style="padding:16px 24px;background:#f1f5f9;text-align:center;border-top:1px solid #e5e7eb">
-        <p style="margin:0;font-size:10px;color:#94a3b8">© ${new Date().getFullYear()} PAS Freight Services Pvt Ltd. All rights reserved.</p>
-        <p style="margin:2px 0 0;font-size:10px;color:#cbd5e1">This is an automated notification. Please do not reply.</p>
-      </div>
-    </div>`;
-
-    const raw = Buffer.from(
-      `From: "PAS Freight" <${EMAIL_USER}>\r\n` +
-      `To: ${toEmail}\r\n` +
-      `Subject: ${statusLabel} - ${shipment.refNo} | PAS Freight\r\n` +
-      `MIME-Version: 1.0\r\n` +
-      `Content-Type: text/html; charset=UTF-8\r\n\r\n` +
-      html
-    ).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-    await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
-    console.log('Email sent to', toEmail);
+    await sendRawEmail({
+      to: ff.notificationEmail,
+      cc: employeeEmail || undefined,
+      subject: `Your Enquiry Has Been Received — ${shipment.refNo}`,
+      html,
+    });
+    console.log('Enquiry Received email sent to', ff.notificationEmail, employeeEmail ? `(cc: ${employeeEmail})` : '');
   } catch (error) {
-    console.error('Email failed:', error.message);
+    console.error('Enquiry Received email failed:', error.message);
   }
 }
 
-// ─── DAILY REPORT EMAIL (NEW) ───
+// ─── EMAIL 2: FREIGHT CONFIRMED (NEW) ───
+// Fires once, the moment Freight is marked complete (Consignee + Shipper
+// + a weight/rate present) — piggybacks on the existing
+// checkAndStampFreightComplete "only ever stamps once" gate, so this
+// naturally never double-sends. No CC.
+async function sendFreightConfirmedEmail(shipment) {
+  try {
+    const ff = shipment.freightForwarding || {};
+    if (!ff.notificationEmail) return;
+
+    const html = buildManifestEmail({
+      headline: "Your freight arrangements are confirmed.",
+      bodyText: "Booking is finalized and your cargo is on its way. Here's where things stand right now.",
+      rows: [
+        ['Reference Number', shipment.refNo],
+        ['AWB Number', ff.mawb || ff.hawb],
+        ['Route', (ff.fromLocation || ff.toLocation) ? `${ff.fromLocation || '—'} → ${ff.toLocation || '—'}` : null],
+        ['Estimated Arrival', FMT(ff.eta)],
+      ].filter(([, v]) => v),
+      closingText: "We'll send your invoice as soon as the shipment reaches its destination and customs formalities are complete.",
+    }).replace('{{REFNO}}', shipment.refNo);
+
+    await sendRawEmail({
+      to: ff.notificationEmail,
+      subject: `Your Shipment Is Moving — ${shipment.refNo}`,
+      html,
+    });
+    console.log('Freight Confirmed email sent to', ff.notificationEmail);
+  } catch (error) {
+    console.error('Freight Confirmed email failed:', error.message);
+  }
+}
+
+// ─── EMAIL 3: INVOICE READY (NEW) ───
+// Fires once, the moment the invoice is marked complete — piggybacks on
+// the existing markInvoiceCompleteIfReady "only ever marks once" gate.
+// No CC.
+async function sendInvoiceReadyEmail(shipment) {
+  try {
+    const ff = shipment.freightForwarding || {};
+    const acc = shipment.accounts || {};
+    if (!ff.notificationEmail) return;
+
+    const html = buildManifestEmail({
+      headline: "Your shipment is complete — invoice enclosed.",
+      bodyText: "Thank you for trusting PAS Freight Services with this shipment, from enquiry through to delivery. Your invoice is ready below.",
+      rows: [
+        ['Reference Number', shipment.refNo],
+        ['Invoice Number', acc.invoiceNumber],
+        ['Invoice Date', FMT(acc.invoiceDate)],
+      ].filter(([, v]) => v),
+      closingText: "It's been a pleasure handling this shipment for you, and we look forward to working together again.",
+    }).replace('{{REFNO}}', shipment.refNo);
+
+    await sendRawEmail({
+      to: ff.notificationEmail,
+      subject: `Invoice Ready — Thank You for Choosing PAS Freight — ${shipment.refNo}`,
+      html,
+    });
+    console.log('Invoice Ready email sent to', ff.notificationEmail);
+  } catch (error) {
+    console.error('Invoice Ready email failed:', error.message);
+  }
+}
+
+// ─── DAILY REPORT EMAIL (UNCHANGED) ───
 // Sends the same daily-summary data the in-app Daily Report page shows,
 // to a fixed list of recipients (management). Uses the same Gmail OAuth2
-// send path and ROW/SECTION helpers as sendStatusEmail, so it looks and
-// behaves consistently with every other email this app sends.
+// send path and ROW/SECTION helpers as before, so it looks and behaves
+// consistently with every other email this app sends. Not part of the
+// client-facing milestone emails above — untouched by that change.
 async function sendDailyReportEmail(report, recipients) {
   try {
     if (!recipients || recipients.length === 0) { console.log('No daily report recipients configured'); return; }
 
-    const oauth2Client = new OAuth2Client(CLIENT_ID, CLIENT_SECRET);
-    oauth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const gmail = await getGmailClient();
 
     const dateLabel = new Date(`${report.date}T00:00:00+05:30`).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-    // Summary stat cards
     const statCard = (label, value, color) => `
       <td style="padding:14px 10px;text-align:center;width:25%">
         <p style="margin:0;font-size:24px;font-weight:700;color:${color}">${value}</p>
@@ -188,7 +207,6 @@ async function sendDailyReportEmail(report, recipients) {
       </tr>
     </table>`;
 
-    // New shipments list
     const listRows = (items) => items.map((s) =>
       `<tr><td style="padding:6px 12px;font-size:12px;color:#1f2937;font-weight:600;width:35%">${s.refNo}</td><td style="padding:6px 12px;font-size:12px;color:#6b7280">${s.shipmentType || ''}</td><td style="padding:6px 12px;font-size:12px;color:#6b7280;text-align:right">${s.createdByName || 'Unknown'}</td></tr>`
     ).join('');
@@ -204,7 +222,6 @@ async function sendDailyReportEmail(report, recipients) {
       sections += `<div style="margin-bottom:16px"><h3 style="color:#f59e0b;font-size:13px;margin:0 0 8px;padding-bottom:6px;border-bottom:2px solid #fef3c7">💰 Invoiced (${report.invoiced.count})</h3><table style="width:100%;border-collapse:collapse">${listRows(report.invoiced.items)}</table></div>`;
     }
 
-    // Employee breakdown table
     let empRows = '';
     report.employeeBreakdown.forEach((e) => {
       empRows += `<tr>
@@ -261,4 +278,10 @@ async function sendDailyReportEmail(report, recipients) {
   }
 }
 
-module.exports = { sendStatusEmail, sendDailyReportEmail };
+module.exports = {
+  sendStatusEmail, // now a no-op — see comment above
+  sendDailyReportEmail,
+  sendEnquiryReceivedEmail, // ✅ NEW
+  sendFreightConfirmedEmail, // ✅ NEW
+  sendInvoiceReadyEmail, // ✅ NEW
+};

@@ -146,7 +146,8 @@ model FreightForwarding {
   
   nominationDate  DateTime?
   bookingDate     DateTime?
-  pickupDate      DateTime? // ✅ NEW — sits between Booking and Schedule in the workflow
+  pickupDate      DateTime? // sits between Booking and Schedule in the workflow
+  autoEmailEnabled Boolean  @default(false) // ✅ NEW — set once at creation; decides whether all 3 milestone emails fire for this shipment
   
   etd             DateTime?
   eta             DateTime?

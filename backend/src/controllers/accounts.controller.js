@@ -1,4 +1,5 @@
 const prisma = require('../utils/prisma');
+const { sendInvoiceReadyEmail } = require('../utils/emailService'); // ✅ NEW
 const { recomputeCurrentStatus } = require('./freightForwarding.controller'); // ✅ NEW — shared dynamic status logic
 
 async function ensureAccounts(shipmentId) {
@@ -106,6 +107,16 @@ async function markInvoiceCompleteIfReady(id, req) {
         }
       }
     });
+    // ✅ NEW — Email 3 of 3: Invoice Ready. This block only ever runs
+    // once per shipment (guarded by the completedAt check above), so
+    // there's no risk of sending this twice. No CC.
+    const full = await prisma.shipment.findUnique({
+      where: { id },
+      include: { freightForwarding: true, cha: true, accounts: true }
+    });
+    if (full?.freightForwarding?.autoEmailEnabled && full.freightForwarding.notificationEmail) {
+      sendInvoiceReadyEmail(full).catch(() => {});
+    }
     return true;
   }
   return false;

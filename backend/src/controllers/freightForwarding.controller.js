@@ -1,6 +1,6 @@
 const prisma = require('../utils/prisma');
 const { exportShipmentsToExcel, exportShipmentsForClient } = require('../utils/excelExport');
-const { sendStatusEmail } = require('../utils/emailService');
+const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail } = require('../utils/emailService');
 
 // changedBy is now captured on every status-history write (it was already
 // a field on the model, just never populated for most update actions).
@@ -158,6 +158,16 @@ async function checkAndStampFreightComplete(shipmentId, req) {
       where: { id: shipmentId },
       data: { freightCompletedById: req.user.id, freightCompletedByName: actorName(req) }
     });
+    // ✅ NEW — Email 2 of 3: Freight Confirmed. This block only ever runs
+    // once per shipment (guarded by the freightCompletedById check
+    // above), so there's no risk of sending this twice. No CC.
+    const full = await prisma.shipment.findUnique({
+      where: { id: shipmentId },
+      include: { freightForwarding: true, cha: true, accounts: true }
+    });
+    if (full?.freightForwarding?.autoEmailEnabled && full.freightForwarding.notificationEmail) {
+      sendFreightConfirmedEmail(full).catch(() => {});
+    }
   }
 }
 
@@ -284,7 +294,7 @@ async function autoArchiveMatured() {
 // ─── CREATE NEW SHIPMENT ───
 const createShipment = async (req, res) => {
   try {
-    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, terms, portLocation, cbm, commodityName, preAlertsSentDate, doCollectionDate, coHandlerId } = req.body;
+    const { refNo, enquiryDate, noOfPackages, consigneeName, shipperName, agent, shipmentType, importExport, hawb, mawb, awbDate, weight, grossWeight, notificationEmail, customerName, vehicleType, noOfContainers, containerType, packageType, deliveryDate, fromLocation, toLocation, terms, portLocation, cbm, commodityName, preAlertsSentDate, doCollectionDate, autoEmailEnabled, coHandlerId } = req.body;
     if (!refNo) return res.status(400).json({ status: 'error', message: 'Reference Number (refNo) is required' });
     const createdById = req.user?.id || null;
     const createdByName = req.user?.name || req.user?.email || null;
@@ -301,7 +311,7 @@ const createShipment = async (req, res) => {
       refNo, currentStatus: 'ENQUIRY', shipmentType, importExport,
       createdById, createdByName,
       coHandlerId: coHandlerId || null, coHandlerName,
-      freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null, notificationEmail: notificationEmail || null, customerName: customerName || null, vehicleType: vehicleType || null, noOfContainers: noOfContainers ? parseInt(noOfContainers) : null, containerType: containerType || null, packageType: packageType || null, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, fromLocation: fromLocation || null, toLocation: toLocation || null, terms: terms || null, portLocation: portLocation || null, cbm: cbm ? parseFloat(cbm) : null, commodityName: commodityName || null, preAlertsSentDate: preAlertsSentDate ? new Date(preAlertsSentDate) : null } }, 
+      freightForwarding: { create: { enquiryDate: enquiryDate ? new Date(enquiryDate) : null, noOfPackages: noOfPackages ? parseInt(noOfPackages) : null, consigneeName, shipperName, agent, hawb: hawb || null, mawb: mawb || null, awbDate: awbDate ? new Date(awbDate) : null, weight: weight ? parseFloat(weight) : null, grossWeight: grossWeight ? parseFloat(grossWeight) : null, notificationEmail: notificationEmail || null, customerName: customerName || null, vehicleType: vehicleType || null, noOfContainers: noOfContainers ? parseInt(noOfContainers) : null, containerType: containerType || null, packageType: packageType || null, deliveryDate: deliveryDate ? new Date(deliveryDate) : null, fromLocation: fromLocation || null, toLocation: toLocation || null, terms: terms || null, portLocation: portLocation || null, cbm: cbm ? parseFloat(cbm) : null, commodityName: commodityName || null, preAlertsSentDate: preAlertsSentDate ? new Date(preAlertsSentDate) : null, autoEmailEnabled: !!autoEmailEnabled } }, 
       statusHistory: { create: { status: 'ENQUIRY', remarks: `Shipment created | Ref: ${refNo}`, changedBy: createdByName } } 
     };
     // ✅ NEW — DO Collection Date can now be filled in at creation time
@@ -316,6 +326,13 @@ const createShipment = async (req, res) => {
       data: shipmentData,
       include: { freightForwarding: true, cha: true, statusHistory: { take: 1, orderBy: { createdAt: 'desc' } } }
     });
+    // ✅ NEW — Email 1 of 3: Enquiry Received. Only if the employee
+    // switched on "Send automatic update emails" for this shipment. CC'd
+    // to the employee who created it. Fire-and-forget — a failed email
+    // should never block or fail the shipment creation itself.
+    if (autoEmailEnabled && notificationEmail) {
+      sendEnquiryReceivedEmail(shipment, req.user?.email).catch(() => {});
+    }
     res.status(201).json({ status: 'success', data: shipment });
   } catch (error) { console.error('Error creating shipment:', error); res.status(500).json({ status: 'error', message: 'Failed to create shipment' }); }
 };

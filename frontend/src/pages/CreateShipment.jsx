@@ -483,7 +483,7 @@ export default function CreateShipment() {
       transportMode: '',
       chaName: '',
       // ✅ NEW — Freight module only (standard Import/Export shipments)
-      terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: ''
+      terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: '', autoEmailEnabled: false
     }
   })
 
@@ -717,7 +717,7 @@ export default function CreateShipment() {
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '', chaName: '', terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: '' })
+    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '', chaName: '', terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: '', autoEmailEnabled: false })
     setErrors({}); setTouched({})
   }
 
@@ -1018,6 +1018,11 @@ export default function CreateShipment() {
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
+                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
+                </label>
               </div>
             </>
           )}
@@ -1064,6 +1069,11 @@ export default function CreateShipment() {
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
+                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
+                </label>
               </div>
             </>
           )}
@@ -1184,6 +1194,11 @@ export default function CreateShipment() {
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
+                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
+                </label>
               </div>
             </>
           )}
@@ -1240,6 +1255,11 @@ export default function CreateShipment() {
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
+                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
+                </label>
               </div>
             </>
           )}
@@ -1305,6 +1325,11 @@ export default function CreateShipment() {
                 <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
                 <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
+                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
+                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
+                </label>
               </div>
             </>
           )}
