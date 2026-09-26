@@ -139,9 +139,31 @@ function App() {
   useEffect(() => {
     if (user) {
       const SOCKET_URL = import.meta.env.VITE_API_URL || 'https://pas-freight-api.onrender.com'
-      const newSocket = io(SOCKET_URL, { transports: ['websocket', 'polling'], reconnection: true, reconnectionDelay: 1000, reconnectionAttempts: 10 })
+      // ✅ FIX — the old config (reconnectionDelay: 1000, no max) let
+      // Socket.IO retry too fast, too many times, hammering the server
+      // with reconnection attempts — which can look like abuse to
+      // Render's rate limiter (the 429s you were seeing) and make an
+      // already-strained backend worse instead of giving it room to
+      // recover. This backs off properly (1s → 2s → 4s ... capped at
+      // 30s) and gives up gracefully after a reasonable number of tries
+      // instead of retrying forever.
+      const newSocket = io(SOCKET_URL, {
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 30000,
+        randomizationFactor: 0.5,
+        reconnectionAttempts: 8,
+        timeout: 20000,
+      })
       newSocket.on('connect', () => { console.log('🔌 Socket connected:', newSocket.id); newSocket.emit('user:join', { name: user.name || user.email, email: user.email }) })
       newSocket.on('connect_error', (err) => { console.log('Socket connection error:', err.message) })
+      newSocket.on('reconnect_failed', () => {
+        // Stopped retrying after reconnectionAttempts is exhausted —
+        // live updates just won't arrive until the person reloads the
+        // page, rather than the socket hammering the server forever.
+        console.log('Socket gave up reconnecting — live updates paused until page reload')
+      })
       setSocket(newSocket)
       return () => { newSocket.disconnect() }
     }
