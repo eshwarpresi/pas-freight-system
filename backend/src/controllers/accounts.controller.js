@@ -97,11 +97,12 @@ async function markInvoiceCompleteIfReady(id, req) {
     await prisma.shipment.update({
       where: { id },
       data: {
+        isArchived: true, // ✅ CHANGED — archives immediately now, instead of waiting 30 days
         accounts: { update: { completedAt: new Date() } },
         statusHistory: {
           create: {
             status: 'INVOICE_COMPLETE',
-            remarks: 'All required fields complete — will move to Archive automatically in 30 days',
+            remarks: 'All required fields complete — moved to Archive',
             changedBy: actorName(req)
           }
         }

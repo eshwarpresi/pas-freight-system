@@ -210,9 +210,15 @@ function isArchiveEligible(shipment) {
 async function archiveMaturedInvoices() {
   let archivedCount = 0;
   try {
-    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // ✅ CHANGED — no more 30-day wait. Any shipment whose invoice is
+    // marked complete (completedAt set) and passes isArchiveEligible
+    // gets archived immediately. This mainly matters as a safety-net
+    // sweep now, since markInvoiceCompleteIfReady already archives
+    // on the spot the moment completion happens — this catches any
+    // older shipments that completed before that change and are still
+    // sitting in Active.
     const matured = await prisma.shipment.findMany({
-      where: { isArchived: false, isDeleted: false, accounts: { completedAt: { lte: cutoff } } },
+      where: { isArchived: false, isDeleted: false, accounts: { completedAt: { not: null } } },
       select: { id: true, shipmentType: true, freightForwarding: true, cha: true, accounts: true }
     });
     for (const s of matured) {
@@ -221,7 +227,7 @@ async function archiveMaturedInvoices() {
           where: { id: s.id },
           data: {
             isArchived: true,
-            statusHistory: { create: { status: 'COMPLETED', remarks: 'Auto-archived 30 days after invoice was completed' } }
+            statusHistory: { create: { status: 'COMPLETED', remarks: 'Auto-archived — invoice complete' } }
           }
         });
         archivedCount++;
@@ -832,8 +838,7 @@ const getAllShipments = async (req, res) => {
     // in isArchived by the time we filter/count below.
     await archiveMaturedInvoices();
 
-    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, pipelineStage, cancelledOnly, createdFrom, createdTo, employeeId, referenceGroup, page = 1, limit = 25 } = req.query;
-    console.log('🔍 REQUEST:', { shipmentType, search, isArchived, today, page, limit });
+    const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, invoicedTodayOnly, pipelineStage, cancelledOnly, createdFrom, createdTo, employeeId, referenceGroup, page = 1, limit = 25 } = req.query;
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
     const where = { 
@@ -894,6 +899,17 @@ const getAllShipments = async (req, res) => {
       });
       const invoicedIds = [...new Set(monthlyInvoiceHistory.map((h) => h.shipmentId))];
       where.id = { in: invoicedIds.length > 0 ? invoicedIds : ['__none__'] };
+    }
+    // ✅ NEW — "Today's Invoice" stat card click. Same pattern as
+    // invoicedThisMonthOnly above, just scoped to today (IST).
+    if (invoicedTodayOnly === 'true' && !status) {
+      const { start, end } = getISTDayBounds();
+      const todayInvoiceHistory = await prisma.statusHistory.findMany({
+        where: { status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] }, createdAt: { gte: start, lt: end } },
+        select: { shipmentId: true }
+      });
+      const invoicedTodayIds = [...new Set(todayInvoiceHistory.map((h) => h.shipmentId))];
+      where.id = { in: invoicedTodayIds.length > 0 ? invoicedTodayIds : ['__none__'] };
     }
     // ✅ NEW — "Pending Customs" / "Pending Invoice" style stat card
     // clicks on the main Dashboard. Reuses the EXACT same stage
@@ -957,8 +973,6 @@ const getAllShipments = async (req, res) => {
       where.currentStatus = { notIn: CLOSED_STATUSES };
     }
     
-    console.log('🔍 WHERE:', JSON.stringify(where));
-    
     const [shipments, total] = await Promise.all([
       prisma.shipment.findMany({ 
         where, 
@@ -1016,11 +1030,6 @@ const getAllShipments = async (req, res) => {
         const allNames = new Set([...byTeam.FREIGHT, ...byTeam.CUSTOMS, ...byTeam.ACCOUNTS]);
         s.contributorCount = allNames.size;
       });
-    }
-    
-    console.log('🔍 RESULT total:', total, 'data length:', shipments.length);
-    if (shipments.length > 0) {
-      console.log('🔍 First shipment:', shipments[0].refNo, 'type:', shipments[0].shipmentType);
     }
     
     res.json({ status: 'success', data: shipments, pagination: { total, page: p, limit: l, totalPages: Math.ceil(total/l) } });
@@ -1101,7 +1110,7 @@ const getShipmentStats = async (req, res) => {
     // same scope (mine/team/search/status/etc) as everything else here.
     const { start: monthStart, end: monthEnd } = getISTMonthBounds();
 
-    const [total, delivered, invoiced, weightAgg, monthlyShipments, matchingForMonth, pipelineFreight, pipelineCustoms, pipelineInvoice, cancelled] = await Promise.all([
+    const [total, delivered, invoiced, weightAgg, monthlyShipments, pipelineFreight, pipelineCustoms, pipelineInvoice, cancelled] = await Promise.all([
       prisma.shipment.count({ where }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
@@ -1110,7 +1119,6 @@ const getShipmentStats = async (req, res) => {
         _sum: { noOfPackages: true, grossWeight: true }
       }),
       prisma.shipment.count({ where: { ...where, createdAt: { gte: monthStart, lt: monthEnd } } }),
-      prisma.shipment.findMany({ where, select: { id: true } }),
       // ✅ NEW — "Pending Customs" / "Pending Invoice" stat cards. Counted
       // globally (matching the Pipeline board exactly), not scoped by the
       // current isArchived/search/mine filters — these two cards are
@@ -1127,19 +1135,38 @@ const getShipmentStats = async (req, res) => {
     // INVOICE_GENERATED/INVOICE_SENT status change happened THIS month —
     // detected via status history timestamp, not currentStatus, so it
     // reflects when the invoice action actually happened.
-    let monthlyInvoiced = 0;
-    const matchingIds = matchingForMonth.map((s) => s.id);
-    if (matchingIds.length > 0) {
-      const monthlyInvoiceHistory = await prisma.statusHistory.findMany({
-        where: {
-          shipmentId: { in: matchingIds },
-          status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] },
-          createdAt: { gte: monthStart, lt: monthEnd }
-        },
-        select: { shipmentId: true }
-      });
-      monthlyInvoiced = new Set(monthlyInvoiceHistory.map((h) => h.shipmentId)).size;
-    }
+    // ✅ PERFORMANCE FIX — this used to first fetch EVERY matching
+    // shipment's id (hundreds, and growing) with a separate findMany,
+    // then query StatusHistory with a giant `shipmentId IN (...)` list
+    // built from those ids — two round trips, one of them pulling far
+    // more data than needed, on an endpoint that fires on nearly every
+    // page load. Filtering StatusHistory directly through its shipment
+    // relation does the same job as a single, properly indexed query —
+    // no bulk id fetch, no giant IN list, and it scales flat as the
+    // shipment count grows instead of getting slower.
+    const monthlyInvoiceHistory = await prisma.statusHistory.findMany({
+      where: {
+        status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] },
+        createdAt: { gte: monthStart, lt: monthEnd },
+        shipment: where
+      },
+      select: { shipmentId: true }
+    });
+    const monthlyInvoiced = new Set(monthlyInvoiceHistory.map((h) => h.shipmentId)).size;
+
+    // ✅ NEW — "Today's Invoice" stat card. Same pattern as
+    // monthlyInvoiced above, just scoped to today (IST) instead of the
+    // whole month.
+    const { start: todayStart, end: todayEnd } = getISTDayBounds();
+    const todayInvoiceHistory = await prisma.statusHistory.findMany({
+      where: {
+        status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] },
+        createdAt: { gte: todayStart, lt: todayEnd },
+        shipment: where
+      },
+      select: { shipmentId: true }
+    });
+    const todayInvoiced = new Set(todayInvoiceHistory.map((h) => h.shipmentId)).size;
 
     res.json({
       status: 'success',
@@ -1152,6 +1179,7 @@ const getShipmentStats = async (req, res) => {
         totalWt: weightAgg._sum.grossWeight || 0,
         monthlyShipments, // ✅ NEW
         monthlyInvoiced, // ✅ NEW
+        todayInvoiced, // ✅ NEW
         pipelineFreight, // ✅ NEW — Freight not yet complete, company-wide
         pipelineCustoms, // ✅ NEW — Freight done, waiting on Customs, company-wide
         pipelineInvoice, // ✅ NEW — Customs done, waiting on Invoice, company-wide
