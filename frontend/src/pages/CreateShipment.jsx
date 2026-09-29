@@ -993,8 +993,12 @@ export default function CreateShipment() {
               <div className="p-6 border-b border-purple-100">
                 <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-purple-500" /><h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider">Parties Involved</h3></div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
+                    <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor="text-purple-400" />
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
+                    <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor="text-purple-400" />
+                  </div>
                 </div>
               </div>
               <div className="p-6 border-b border-purple-100">
@@ -1211,13 +1215,21 @@ export default function CreateShipment() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {isCHAExport ? (
                     <>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
+                        <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor={accentText} />
+                      </div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
+                        <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor={accentText} />
+                      </div>
                     </>
                   ) : (
                     <>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="consigneeName" value={formData.consigneeName} onChange={handleChange} className={`${inputClass} ${getFieldClass('consigneeName')}`} /></div></div>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label><div className="relative"><User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="shipperName" value={formData.shipperName} onChange={handleChange} className={`${inputClass} ${getFieldClass('shipperName')}`} /></div></div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
+                        <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor={accentText} />
+                      </div>
+                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
+                        <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor={accentText} />
+                      </div>
                     </>
                   )}
                 </div>
