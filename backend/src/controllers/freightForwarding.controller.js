@@ -1112,45 +1112,68 @@ const getShipmentStats = async (req, res) => {
       isArchived: isArchived === 'true',
       isDeleted: false
     };
+    // ✅ FIX — these extra conditions used to only ever apply to `where`
+    // (used for Total/Delivered/Invoiced/etc), while Pending Customs,
+    // Pending Invoice, and Cancelled were computed with NO scoping at
+    // all — always company-wide, ignoring whatever search/employee/date/
+    // type filter was actually active. That's why filtering the list
+    // never changed those three numbers. Collecting the same conditions
+    // here, separately from isArchived/isDeleted (which each pipeline
+    // stage defines its own rule for), lets every stat card — including
+    // those three — respect the exact same active filters as the list.
+    const scopeConditions = [];
     if (referenceGroup && REFERENCE_GROUPS[referenceGroup]) {
-      where.AND = [...(where.AND || []), { OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) }];
+      scopeConditions.push({ OR: REFERENCE_GROUPS[referenceGroup].map((code) => ({ refNo: { startsWith: code } })) });
     }
-    if (status) where.currentStatus = status;
+    if (status) scopeConditions.push({ currentStatus: status });
     if (shipmentType) {
-      if (shipmentType === 'CHA_ONLY') where.shipmentType = 'CHA Only';
-      else if (shipmentType === 'TRANSPORT') where.shipmentType = 'Transport';
-      else if (shipmentType === 'DO_RELEASE') where.shipmentType = 'DO Release';
-      else if (shipmentType === 'FF_ONLY') where.shipmentType = 'FF Only';
-      else if (shipmentType === 'FULL_SHIPMENT') where.NOT = { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } };
+      if (shipmentType === 'CHA_ONLY') scopeConditions.push({ shipmentType: 'CHA Only' });
+      else if (shipmentType === 'TRANSPORT') scopeConditions.push({ shipmentType: 'Transport' });
+      else if (shipmentType === 'DO_RELEASE') scopeConditions.push({ shipmentType: 'DO Release' });
+      else if (shipmentType === 'FF_ONLY') scopeConditions.push({ shipmentType: 'FF Only' });
+      else if (shipmentType === 'FULL_SHIPMENT') scopeConditions.push({ NOT: { shipmentType: { in: ['CHA Only', 'Transport', 'DO Release', 'FF Only'] } } });
     }
-    // ✅ ADVANCED FILTERS (NEW) — same as getAllShipments, so the numbers
-    // on screen always match what the filtered list actually contains.
     if (createdFrom || createdTo) {
-      where.createdAt = where.createdAt || {};
-      if (createdFrom) where.createdAt.gte = new Date(`${createdFrom}T00:00:00+05:30`);
-      if (createdTo) where.createdAt.lte = new Date(`${createdTo}T23:59:59.999+05:30`);
+      const createdAtCond = {};
+      if (createdFrom) createdAtCond.gte = new Date(`${createdFrom}T00:00:00+05:30`);
+      if (createdTo) createdAtCond.lte = new Date(`${createdTo}T23:59:59.999+05:30`);
+      scopeConditions.push({ createdAt: createdAtCond });
     }
     if (employeeId) {
-      where.AND = [...(where.AND || []), { OR: [{ createdById: employeeId }, { coHandlerId: employeeId }] }];
+      scopeConditions.push({ OR: [{ createdById: employeeId }, { coHandlerId: employeeId }] });
     }
     if (search) {
-      where.OR = [
-        { refNo: { contains: search, mode: 'insensitive' } },
-        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
-        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
-        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
-        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
-        { createdByName: { contains: search, mode: 'insensitive' } }
-      ];
+      scopeConditions.push({
+        OR: [
+          { refNo: { contains: search, mode: 'insensitive' } },
+          { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
+          { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
+          { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
+          { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
+          { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
+          { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
+          { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
+          { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
+          { createdByName: { contains: search, mode: 'insensitive' } }
+        ]
+      });
     }
     if (mine === 'true' && req.user?.id) {
-      where.AND = [...(where.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
+      scopeConditions.push({ OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] });
     } else if (userId) {
-      where.createdById = userId;
+      scopeConditions.push({ createdById: userId });
+    }
+    // Apply the same conditions onto `where` too, exactly as before —
+    // this preserves the existing Total/Delivered/Invoiced/etc behavior
+    // unchanged.
+    if (scopeConditions.length > 0) where.AND = [...(where.AND || []), ...scopeConditions];
+
+    // Helper — merges the active filters above into any base where
+    // clause (like a pipeline stage's own definition) without disturbing
+    // that base clause's own isArchived/isDeleted/OR logic.
+    function withScope(baseWhere) {
+      if (scopeConditions.length === 0) return baseWhere;
+      return { ...baseWhere, AND: [...(baseWhere.AND || []), ...scopeConditions] };
     }
 
     // ✅ THIS MONTH STATS (NEW) — replaces the old lifetime "Invoiced"
@@ -1168,16 +1191,17 @@ const getShipmentStats = async (req, res) => {
         _sum: { noOfPackages: true, grossWeight: true }
       }),
       prisma.shipment.count({ where: { ...where, createdAt: { gte: monthStart, lt: monthEnd } } }),
-      // ✅ NEW — "Pending Customs" / "Pending Invoice" stat cards. Counted
-      // globally (matching the Pipeline board exactly), not scoped by the
-      // current isArchived/search/mine filters — these two cards are
-      // meant to answer "how many company-wide", same as the Pipeline tab.
-      prisma.shipment.count({ where: getPipelineStageWhere('freight') }),
-      prisma.shipment.count({ where: getPipelineStageWhere('customs') }),
-      prisma.shipment.count({ where: getPipelineStageWhere('invoice') }),
-      // ✅ NEW — "Cancelled" card. Also global/company-wide, same
+      // ✅ FIXED — "Pending Customs" / "Pending Invoice" now respect the
+      // same active filters (search, employee, date range, type, mine,
+      // etc.) as everything else, instead of always being company-wide
+      // regardless of what's filtered. The Pipeline board TAB itself is
+      // untouched — it's a separate, deliberately whole-company view.
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('freight')) }),
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('customs')) }),
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('invoice')) }),
+      // ✅ FIXED — "Cancelled" now respects active filters too, same
       // reasoning as the pipeline counts above.
-      prisma.shipment.count({ where: getCancelledWhere() })
+      prisma.shipment.count({ where: withScope(getCancelledWhere()) })
     ]);
 
     // Monthly invoiced = shipments matching the current filter whose
