@@ -280,6 +280,7 @@ export default function ShipmentDetail() {
   const [activeTab, setActiveTab] = useState('freight')
   const [sendingEmail, setSendingEmail] = useState(false)
   const [showEmailDropdown, setShowEmailDropdown] = useState(false)
+  const [showTypeSwitcher, setShowTypeSwitcher] = useState(false)
   const [liveEditBy, setLiveEditBy] = useState(null)
 
   // ✅ Back should return to wherever the user actually came from (e.g.
@@ -420,6 +421,31 @@ export default function ShipmentDetail() {
     window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${ff.notificationEmail}&su=${subject}&body=${body}`, '_blank')
   }
 
+  // ─── CHANGE SHIPMENT TYPE (NEW) ───
+  // Lets an employee fix a shipment created under the wrong category
+  // (e.g. created as Freight, should have been FF Only) without deleting
+  // and starting over. All existing data (Consignee, Shipper, weights,
+  // dates already entered) is preserved — it's stored in the same
+  // underlying fields regardless of type; switching only changes which
+  // tabs/fields are shown and recalculates the workflow status to match
+  // the new type's steps.
+  const TYPE_SWITCH_OPTIONS = [
+    { label: 'Freight', shipmentType: 'Air', importExport: shipment?.importExport || 'Import' },
+    { label: 'FF Only', shipmentType: 'FF Only', importExport: shipment?.importExport || 'Import' },
+    { label: 'CHA Import', shipmentType: 'CHA Only', importExport: 'Import' },
+    { label: 'CHA Export', shipmentType: 'CHA Only', importExport: 'Export' },
+    { label: 'Transport', shipmentType: 'Transport', importExport: null },
+    { label: 'DO Release', shipmentType: 'DO Release', importExport: null },
+  ]
+  const handleSwitchType = (option) => {
+    setShowTypeSwitcher(false)
+    if (!window.confirm(`Switch this shipment from its current type to "${option.label}"?\n\nFields specific to the current type will be hidden but NOT deleted — you can switch back later if needed. Data already entered (Consignee, Shipper, weights, dates, etc.) stays intact.`)) return
+    updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: option.shipmentType } })
+    if (option.importExport) {
+      setTimeout(() => updateMutation.mutate({ section: 'importexport', data: { importExport: option.importExport } }), 300)
+    }
+  }
+
   const handlePrint = () => {
     const ff = shipment?.freightForwarding || {}; const cha = shipment?.cha || {}; const acc = shipment?.accounts || {}
     const fmd = d => { if (!d) return '—'; const dt = new Date(d); const dd = String(dt.getDate()).padStart(2,'0'); const mm = String(dt.getMonth()+1).padStart(2,'0'); const yyyy = dt.getFullYear(); return `${dd}-${mm}-${yyyy}` }
@@ -508,6 +534,16 @@ export default function ShipmentDetail() {
               <p className="text-sm text-[var(--text-secondary)] mt-1">Created {toDDMMYYYY(new Date(shipment.createdAt).toISOString().split('T')[0])}</p>
             </div>
             <div className="flex items-center gap-2">
+              <div className="relative">
+                <button onClick={() => setShowTypeSwitcher(!showTypeSwitcher)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-slate-500 to-slate-600 text-white rounded-lg hover:from-slate-600 hover:to-slate-700 text-sm font-medium shadow-lg hover-lift"><ArrowUpDown size={16} />Change Type <ChevronDown size={14} /></button>
+                {showTypeSwitcher && (
+                  <div className="absolute right-0 top-full mt-1 w-48 glass rounded-lg shadow-xl border border-[var(--border-color)] z-20 py-1 animate-scale-in">
+                    {TYPE_SWITCH_OPTIONS.map((opt) => (
+                      <button key={opt.label} onClick={() => handleSwitchType(opt)} className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-indigo-50 dark:hover:bg-indigo-900/20">{opt.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200 hover-lift"><Pencil size={16} />Edit</Link>
               <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200 hover-lift"><Printer size={16} />Print</button>
               <div className="relative">
