@@ -2,6 +2,47 @@ const prisma = require('../utils/prisma');
 const { exportShipmentsToExcel, exportShipmentsForClient } = require('../utils/excelExport');
 const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail } = require('../utils/emailService');
 
+// ✅ NEW — lightweight in-memory cache for the Dashboard stats endpoint.
+// This is your most frequently-hit endpoint, and its numbers don't need
+// to be millisecond-fresh — if 20 employees have the Dashboard open at
+// once, they've historically each triggered their own full recomputation
+// of the same numbers. This makes the database do that work once every
+// few seconds instead of once per person per request, which matters a
+// lot as concurrent users grow.
+//
+// Simple TTL-based expiry (8 seconds) — not invalidated on every write,
+// since wiring that into every single create/update endpoint across 3
+// large controller files would be a much bigger, riskier change for
+// modest extra benefit. In practice this means a stat can be up to 8
+// seconds stale right after a change — an acceptable tradeoff for
+// summary numbers on a dashboard, not something that needs to be exact
+// to the second.
+const STATS_CACHE_TTL_MS = 8000;
+const statsCache = new Map(); // key -> { data, expiresAt }
+
+function getStatsCacheKey(query) {
+  return JSON.stringify(query);
+}
+
+function getCachedStats(query) {
+  const key = getStatsCacheKey(query);
+  const entry = statsCache.get(key);
+  if (entry && entry.expiresAt > Date.now()) return entry.data;
+  return null;
+}
+
+function setCachedStats(query, data) {
+  const key = getStatsCacheKey(query);
+  statsCache.set(key, { data, expiresAt: Date.now() + STATS_CACHE_TTL_MS });
+  // keep the cache from growing unbounded across many different filter
+  // combinations over a long-running process
+  if (statsCache.size > 200) {
+    const oldestKey = statsCache.keys().next().value;
+    statsCache.delete(oldestKey);
+  }
+}
+
+
 // changedBy is now captured on every status-history write (it was already
 // a field on the model, just never populated for most update actions).
 // This lets us answer "who has actually touched this shipment" going
@@ -1056,6 +1097,13 @@ function getISTMonthBounds() {
 // current page), so progress bars / percentages reflect the whole dataset.
 const getShipmentStats = async (req, res) => {
   try {
+    // ✅ NEW — serve from cache if another request with the exact same
+    // filters answered this within the last few seconds.
+    const cached = getCachedStats(req.query);
+    if (cached) {
+      return res.json({ status: 'success', data: cached });
+    }
+
     await archiveMaturedInvoices();
 
     const { status, search, isArchived, shipmentType, mine, userId, referenceGroup, createdFrom, createdTo, employeeId } = req.query;
@@ -1169,24 +1217,23 @@ const getShipmentStats = async (req, res) => {
     });
     const todayInvoiced = new Set(todayInvoiceHistory.map((h) => h.shipmentId)).size;
 
-    res.json({
-      status: 'success',
-      data: {
-        total,
-        delivered,
-        invoiced,
-        deliveryRate: total > 0 ? Math.round((delivered / total) * 100) : 0,
-        totalPkgs: weightAgg._sum.noOfPackages || 0,
-        totalWt: weightAgg._sum.grossWeight || 0,
-        monthlyShipments, // ✅ NEW
-        monthlyInvoiced, // ✅ NEW
-        todayInvoiced, // ✅ NEW
-        pipelineFreight, // ✅ NEW — Freight not yet complete, company-wide
-        pipelineCustoms, // ✅ NEW — Freight done, waiting on Customs, company-wide
-        pipelineInvoice, // ✅ NEW — Customs done, waiting on Invoice, company-wide
-        cancelled // ✅ NEW — stuck at ENQUIRY for 7+ days, company-wide
-      }
-    });
+    const statsPayload = {
+      total,
+      delivered,
+      invoiced,
+      deliveryRate: total > 0 ? Math.round((delivered / total) * 100) : 0,
+      totalPkgs: weightAgg._sum.noOfPackages || 0,
+      totalWt: weightAgg._sum.grossWeight || 0,
+      monthlyShipments,
+      monthlyInvoiced,
+      todayInvoiced,
+      pipelineFreight,
+      pipelineCustoms,
+      pipelineInvoice,
+      cancelled
+    };
+    setCachedStats(req.query, statsPayload); // ✅ NEW
+    res.json({ status: 'success', data: statsPayload });
   } catch (error) {
     console.error('Error getting shipment stats:', error);
     res.status(500).json({ status: 'error', message: 'Failed to get stats' });
