@@ -237,18 +237,12 @@ function isArchiveEligible(shipment) {
   return !!(ff.fromLocation && ff.toLocation && ff.terms && ff.grossWeight && ff.weight && ff.hawb);
 }
 
-// ─── 30-DAY DELAYED AUTO-ARCHIVE — LIGHTWEIGHT PASS (FIXED) ───
-// Runs on every shipment list/stats request. Only looks at ACTIVE
-// shipments whose invoice matured 30+ days ago — normally a small,
-// fast-to-fetch set, safe to run on every click.
-//
-// ⚠️ PERFORMANCE FIX: this used to also scan and re-check EVERY currently
-// archived shipment on every single request — with 1,300+ archived
-// shipments and nested Freight/Customs/Accounts data pulled for each one,
-// that made every click noticeably slow. That retroactive "un-archive
-// ineligible shipments" check still exists (see restoreIneligibleArchives
-// below), but now only runs on the periodic background schedule in
-// server.js, not on every page load.
+// ─── IMMEDIATE AUTO-ARCHIVE — SAFETY-NET SWEEP (FIXED) ───
+// Runs on every shipment list/stats request. Catches any shipment whose
+// invoice is complete but hasn't been archived yet (normally this
+// already happens instantly via markInvoiceCompleteIfReady the moment
+// completion happens — this is just a safety net for anything that
+// slips through, e.g. older shipments from before that change).
 async function archiveMaturedInvoices() {
   let archivedCount = 0;
   try {

@@ -76,15 +76,11 @@ function isArchiveEligible(shipment) {
 }
 
 // ─── MARK INVOICE COMPLETE (FIXED) ───
-// Now checks ALL required fields for this shipment's type (see
-// isArchiveEligible above), not just the 3 accounts fields. The moment
-// everything required is present for the first time, this stamps
-// `completedAt` on the Accounts record (once — never overwritten on
-// later edits) and logs a status-history entry. The shipment itself
-// stays in Active; the 30-day-matured sweep (in
-// freightForwarding.controller.js, run whenever shipments are listed)
-// is what actually flips isArchived to true, once 30 days have passed
-// AND the shipment still meets isArchiveEligible at that time.
+// Checks ALL required fields for this shipment's type (see
+// isArchiveEligible above). The moment everything required is present
+// for the first time, this immediately archives the shipment (sets
+// isArchived: true) and stamps `completedAt` on the Accounts record
+// (once — never overwritten on later edits).
 async function markInvoiceCompleteIfReady(id, req) {
   const shipment = await prisma.shipment.findUnique({
     where: { id },
@@ -163,7 +159,7 @@ const updateInvoice = async (req, res) => {
     res.json({ 
       status: 'success', 
       data: s,
-      message: justCompleted ? 'Invoice updated — complete, will archive automatically in 30 days' : 'Invoice updated'
+      message: justCompleted ? 'Invoice updated — complete, moved to Archive' : 'Invoice updated'
     });
   } catch (e) { 
     console.error(e); 
@@ -205,7 +201,7 @@ const updateInvoiceSending = async (req, res) => {
     res.json({ 
       status: 'success', 
       data: s,
-      message: justCompleted ? 'Invoice sent — complete, will archive automatically in 30 days' : 'Invoice sent'
+      message: justCompleted ? 'Invoice sent — complete, moved to Archive' : 'Invoice sent'
     });
   } catch (e) { 
     console.error(e); 
