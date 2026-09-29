@@ -845,7 +845,32 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     return b[stage] || 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700'
   }
 
-  const quickFilters = [{l:'All',v:'',i:Layers},{l:'Enquiry',v:'ENQUIRY',i:Search},{l:'Transit',v:'BOOKED',i:Truck},{l:'Customs',v:'CHECKLIST_APPROVED',i:FileSpreadsheet},{l:'Delivered',v:'DELIVERED',i:CheckCircle2},{l:'Invoiced',v:'INVOICE_GENERATED',i:TrendingUp}]
+  // ✅ EXPANDED — every individual workflow status as its own filter,
+  // instead of just 6 broad buckets (Enquiry/Transit/Customs/Delivered/
+  // Invoiced) each representing a whole range of statuses. Covers the
+  // full Freight pipeline plus the CHA Export-only steps (SB/LEO/Hand
+  // Over) at the end.
+  const quickFilters = [
+    {l:'All',v:'',i:Layers},
+    {l:'Enquiry',v:'ENQUIRY',i:Search},
+    {l:'Rates',v:'RATES_ADDED',i:Banknote},
+    {l:'Nominated',v:'NOMINATED',i:User},
+    {l:'Booked',v:'BOOKED',i:Calendar},
+    {l:'Pickup',v:'PICKUP_DONE',i:Truck},
+    {l:'Scheduled',v:'SCHEDULED',i:Clock},
+    {l:'AWB',v:'AWB_GENERATED',i:PlaneTakeoff},
+    {l:'Checklist',v:'CHECKLIST_APPROVED',i:FileCheck},
+    {l:'BOE',v:'BOE_FILED',i:FileText},
+    {l:'DO',v:'DO_COLLECTED',i:Package},
+    {l:'OOC',v:'OOC_DONE',i:CheckCircle2},
+    {l:'Gate Pass',v:'GATE_PASS',i:Truck},
+    {l:'Delivered',v:'DELIVERED',i:MapPin},
+    {l:'SB Filed',v:'SB_FILED',i:FileText},
+    {l:'LEO',v:'LEO_DONE',i:CheckCircle2},
+    {l:'Hand Over',v:'HAND_OVER',i:Package},
+    {l:'Invoice',v:'INVOICE_GENERATED',i:FileSpreadsheet},
+    {l:'Invoiced Sent',v:'INVOICE_SENT',i:Mail},
+  ]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
   const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||thisMonthOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly||todayInvoicedOnly||pendingCustomsOnly||pendingInvoiceOnly||cancelledOnly||createdFrom||createdTo||employeeId; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 

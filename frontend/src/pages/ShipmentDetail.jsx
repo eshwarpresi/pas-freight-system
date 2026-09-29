@@ -36,7 +36,7 @@ const SECTION_TO_STATUS = {
 
 const FULL_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',d:'Pricing added',i:DollarSign},{s:'NOMINATED',l:'Nominated',d:'Agent assigned',i:User},
-  {s:'BOOKED',l:'Booked',d:'Confirmed with carrier',i:Calendar},{s:'SCHEDULED',l:'Scheduled',d:'ETD/ETA set',i:Clock},{s:'AWB_GENERATED',l:'AWB',d:'Air Waybill created',i:Barcode},
+  {s:'BOOKED',l:'Booked',d:'Confirmed with carrier',i:Calendar},{s:'PICKUP_DONE',l:'Pickup',d:'Cargo picked up',i:Truck},{s:'SCHEDULED',l:'Scheduled',d:'ETD/ETA set',i:Clock},{s:'AWB_GENERATED',l:'AWB',d:'Air Waybill created',i:Barcode},
   {s:'CHECKLIST_APPROVED',l:'Checklist',d:'Customs checklist done',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',d:'Bill of Entry filed',i:FileText},{s:'DO_COLLECTED',l:'DO',d:'Delivery Order collected',i:FileCheck},
   {s:'OOC_DONE',l:'OOC',d:'Out of Charge',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',d:'Customs gate cleared',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Cargo delivered',i:MapPin},
   {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice dispatched',i:Send}
@@ -240,6 +240,7 @@ function isStepComplete(statusKey, ff, cha, accounts, shipmentStage) {
     case 'RATES_ADDED': return !!(ff.weight || ff.grossWeight || ff.sellingRate) || isStageAtOrPastQuoted(shipmentStage)
     case 'NOMINATED': return !!ff.nominationDate
     case 'BOOKED': return !!ff.bookingDate
+    case 'PICKUP_DONE': return !!ff.pickupDate
     case 'SCHEDULED': return !!(ff.etd || ff.eta)
     case 'AWB_GENERATED': return !!(ff.mawb || ff.hawb)
     case 'CHECKLIST_APPROVED': return !!cha.checklistDate

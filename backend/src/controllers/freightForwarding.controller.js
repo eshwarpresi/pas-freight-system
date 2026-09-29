@@ -41,7 +41,7 @@ function actorName(req) {
 // Step orders mirror the frontend's FULL_STEPS/CHA_IMPORT_STEPS/etc
 // exactly (see ShipmentDetail.jsx) — keep these in sync if that ever
 // changes.
-const FULL_STEP_ORDER = ['ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'SCHEDULED', 'AWB_GENERATED', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const FULL_STEP_ORDER = ['ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const CHA_IMPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const CHA_EXPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'SB_FILED', 'LEO_DONE', 'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const TRANSPORT_STEP_ORDER = ['ENQUIRY', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
@@ -60,6 +60,7 @@ function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
     }
     case 'NOMINATED': return !!ff.nominationDate;
     case 'BOOKED': return !!ff.bookingDate;
+    case 'PICKUP_DONE': return !!ff.pickupDate;
     case 'SCHEDULED': return !!(ff.etd || ff.eta);
     case 'AWB_GENERATED': return !!(ff.mawb || ff.hawb);
     case 'CHECKLIST_APPROVED': return !!cha.checklistDate;
@@ -2483,6 +2484,7 @@ const updatePickup = async (req, res) => {
       const val = req.body.pickupDate ? new Date(req.body.pickupDate) : null;
       await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { pickupDate: val } } } });
       await upsertStatusEntry(req.params.id, 'PICKUP_UPDATED', val ? `Pickup Date: ${req.body.pickupDate}` : 'Pickup date cleared', actorName(req));
+      await recomputeCurrentStatus(req.params.id); // ✅ NEW — Pickup is now a tracked workflow step
     }
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
     sendStatusEmail(s).catch(() => {});
