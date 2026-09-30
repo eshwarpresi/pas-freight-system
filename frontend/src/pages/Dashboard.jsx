@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import PipelineBoard from '../components/PipelineBoard'
@@ -107,7 +107,23 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // one request per pause in typing. Clearing the box (search === '')
   // updates immediately, no delay, so "Clear" always feels instant.
   const [debouncedSearch, setDebouncedSearch] = useState(search)
+  const isFirstSearchEffect = useRef(true)
   useEffect(() => {
+    // ✅ FIX — this effect runs on every mount (including the remount
+    // that happens when you click Back from a shipment), not just when
+    // you actually type or clear something in the search box. Since
+    // `search` is normally empty when you're browsing via a stat card
+    // filter, the old code unconditionally reset the page to 1 on every
+    // single mount — silently overwriting whatever page had just been
+    // correctly restored (e.g. you were on page 5, it'd jump to page 1
+    // the instant you came back). Skipping the reset on this first run
+    // fixes that, while still resetting the page normally whenever you
+    // genuinely type or clear the search box afterward.
+    if (isFirstSearchEffect.current) {
+      isFirstSearchEffect.current = false
+      setDebouncedSearch(search)
+      return
+    }
     if (search === '') {
       setDebouncedSearch('')
       setPage(1)
