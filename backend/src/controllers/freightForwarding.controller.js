@@ -939,7 +939,7 @@ const getAllShipments = async (req, res) => {
     // for more than 7 days.
     if (cancelledOnly === 'true' && !status) {
       delete where.isArchived;
-      Object.assign(where, getCancelledWhere());
+      Object.assign(where, getCancelledWhere(isArchived === 'true'));
     }
     // ✅ NEW — "This Month Invoice" card click. The card's NUMBER counts
     // shipments whose invoice status-change happened this month (matches
@@ -974,7 +974,7 @@ const getAllShipments = async (req, res) => {
     // definition as the Pipeline board, so a card's count and what you
     // see after clicking it always match precisely.
     if (pipelineStage && !status) {
-      const stageWhere = getPipelineStageWhere(pipelineStage);
+      const stageWhere = getPipelineStageWhere(pipelineStage, isArchived === 'true');
       if (stageWhere) {
         delete where.isArchived; // the stage's own definition controls this instead (e.g. "done" spans both)
         Object.assign(where, stageWhere);
@@ -1207,17 +1207,21 @@ const getShipmentStats = async (req, res) => {
         _sum: { noOfPackages: true, grossWeight: true }
       }),
       prisma.shipment.count({ where: { ...where, createdAt: { gte: monthStart, lt: monthEnd } } }),
-      // ✅ FIXED — "Pending Customs" / "Pending Invoice" now respect the
-      // same active filters (search, employee, date range, type, mine,
-      // etc.) as everything else, instead of always being company-wide
-      // regardless of what's filtered. The Pipeline board TAB itself is
-      // untouched — it's a separate, deliberately whole-company view.
-      prisma.shipment.count({ where: withScope(getPipelineStageWhere('freight')) }),
-      prisma.shipment.count({ where: withScope(getPipelineStageWhere('customs')) }),
-      prisma.shipment.count({ where: withScope(getPipelineStageWhere('invoice')) }),
-      // ✅ FIXED — "Cancelled" now respects active filters too, same
-      // reasoning as the pipeline counts above.
-      prisma.shipment.count({ where: withScope(getCancelledWhere()) })
+      // ✅ FIXED — "Pending Customs" / "Pending Invoice" now respect both
+      // the active filters (search, employee, date range, type, mine)
+      // AND which tab you're actually viewing (Active vs Archive) —
+      // previously these always showed the active-only count regardless
+      // of tab, which meant Archive showed the exact same number as
+      // Active, looking broken. Now Archive correctly shows 0 (nothing
+      // archived is ever still "pending" anything). The Pipeline board
+      // TAB itself is untouched — it's a separate, deliberately
+      // whole-company-active view.
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('freight', isArchived === 'true')) }),
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('customs', isArchived === 'true')) }),
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('invoice', isArchived === 'true')) }),
+      // ✅ FIXED — "Cancelled" now also respects which tab you're
+      // viewing, same reasoning as the pipeline counts above.
+      prisma.shipment.count({ where: withScope(getCancelledWhere(isArchived === 'true')) })
     ]);
 
     // Monthly invoiced = shipments matching the current filter whose
@@ -2158,10 +2162,16 @@ function getCancelledThresholdDate() {
 // from the Status or Stage dropdown), in addition to the existing
 // automatic "stuck at Enquiry for 7+ days" detection. Either path lands
 // a shipment here.
-function getCancelledWhere() {
+// ✅ FIXED — now takes the actual tab you're viewing (isArchivedFlag)
+// instead of always hardcoding "active only" regardless of which tab is
+// open. That's what caused "Cancelled" to show the exact same number on
+// both the Active and Archive tabs — now it correctly reflects each
+// tab's own shipments. Callers that genuinely want "active only no
+// matter what" (none currently do for Cancelled) can still pass false.
+function getCancelledWhere(isArchivedFlag = false) {
   return {
     isDeleted: false,
-    isArchived: false,
+    isArchived: isArchivedFlag,
     OR: [
       { currentStatus: 'CANCELLED' },
       { currentStatus: 'ENQUIRY', createdAt: { lte: getCancelledThresholdDate() } }
@@ -2295,12 +2305,18 @@ const PIPELINE_CARD_SELECT = {
   accounts: { select: { invoiceNumber: true } }
 };
 
-// ✅ NEW — shared by getPipelineBoard (the Kanban tab) AND getAllShipments
-// (so clicking a stat card on the main Dashboard filters to the exact
-// same set of shipments the Pipeline board's column shows). One
-// definition, used both places, so they can never quietly drift apart.
-function getPipelineStageWhere(stage) {
-  const baseActive = { isDeleted: false, isArchived: false };
+// ✅ FIXED — now takes the actual tab you're viewing (isArchivedFlag)
+// for the freight/customs/invoice stages, instead of always hardcoding
+// "active only". That's what caused "Pending Customs" and "Pending
+// Invoice" to show the exact same number on both the Active and Archive
+// tabs — now they correctly reflect each tab's own shipments (and, in
+// practice, will normally show 0 on the Archive tab, since an archived
+// shipment's invoice is by definition already complete — nothing left
+// pending). The Pipeline board (Kanban tab) still always wants active
+// only regardless of any Dashboard toggle, so it explicitly passes
+// false — only the Dashboard stats/list pass the real toggle.
+function getPipelineStageWhere(stage, isArchivedFlag = false) {
+  const baseActive = { isDeleted: false, isArchived: isArchivedFlag };
   if (stage === 'freight') {
     return {
       ...baseActive,
