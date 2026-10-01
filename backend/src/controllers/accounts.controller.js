@@ -79,7 +79,7 @@ function isArchiveEligible(shipment) {
 
   // Full Freight shipment — everything required
   return !!(
-    ff.consigneeName && ff.shipperName && ff.notificationEmail &&
+    ff.consigneeName && ff.shipperName &&
     ff.grossWeight && ff.weight &&
     ff.nominationDate && ff.bookingDate && ff.pickupDate &&
     ff.etd && ff.eta && ff.mawb && ff.hawb && ff.awbDate && ff.preAlertsSentDate &&

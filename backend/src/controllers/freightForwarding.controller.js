@@ -248,7 +248,7 @@ function isArchiveEligible(shipment) {
   if (shipment.shipmentType === 'CHA Only') return true;
 
   const freightDone = !!(
-    ff.consigneeName && ff.shipperName && ff.notificationEmail &&
+    ff.consigneeName && ff.shipperName &&
     ff.grossWeight && ff.weight &&
     ff.nominationDate && ff.bookingDate && ff.pickupDate &&
     ff.etd && ff.eta && ff.mawb && ff.hawb && ff.awbDate && ff.preAlertsSentDate &&
@@ -2265,7 +2265,6 @@ function freightIncompleteFilter() {
       { freightForwarding: null },
       { freightForwarding: { consigneeName: null } },
       { freightForwarding: { shipperName: null } },
-      { freightForwarding: { notificationEmail: null } },
       { freightForwarding: { grossWeight: null } },
       { freightForwarding: { weight: null } },
       { freightForwarding: { nominationDate: null } },
@@ -2285,7 +2284,7 @@ function freightIncompleteFilter() {
 function freightCompleteFilter() {
   return {
     freightForwarding: {
-      consigneeName: { not: null }, shipperName: { not: null }, notificationEmail: { not: null },
+      consigneeName: { not: null }, shipperName: { not: null },
       grossWeight: { not: null }, weight: { not: null },
       nominationDate: { not: null }, bookingDate: { not: null }, pickupDate: { not: null },
       etd: { not: null }, eta: { not: null },
