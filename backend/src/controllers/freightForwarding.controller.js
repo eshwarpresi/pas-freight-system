@@ -229,32 +229,58 @@ async function checkAndStampFreightComplete(shipmentId, req) {
 // freightCompleteFilter/customsCompleteFilter/invoiceCompleteFilter
 // above, just written as plain boolean checks against one shipment's
 // actual values instead of a Prisma where-clause.
-function isArchiveEligible(shipment) {
+function isArchiveEligible(shipment, debug) {
   const ff = shipment.freightForwarding || {};
   const cha = shipment.cha || {};
   const accounts = shipment.accounts || {};
+  const missing = [];
 
-  if (!accounts.invoiceNumber || !accounts.invoiceDate || !accounts.sendingDate) return false;
+  if (!accounts.invoiceNumber) missing.push('Invoice Number');
+  if (!accounts.invoiceDate) missing.push('Invoice Date');
+  if (!accounts.sendingDate) missing.push('Invoice Sending Date');
+  if (missing.length) { if (debug) console.log(`🔍 ARCHIVE CHECK [${shipment.refNo}] — missing:`, missing); return false; }
 
   const simpleTypes = ['Transport', 'DO Release', 'FF Only'];
   if (simpleTypes.includes(shipment.shipmentType)) return true;
 
   const isExport = shipment.importExport === 'Export';
-  const customsDone = isExport
-    ? !!(cha.jobNo && cha.checklistDate && cha.checklistApprovalDate && cha.sbNo && cha.sbDate && cha.leoDate && cha.handOverDate && cha.trackingNumber)
-    : !!(cha.jobNo && cha.checklistDate && cha.checklistApprovalDate && cha.boeNo && cha.boeDate && cha.oocDate && cha.gatePassDate && cha.deliveryDate && cha.trackingNumber);
-  if (!customsDone) return false;
+  if (!cha.jobNo) missing.push('Job No');
+  if (!cha.checklistDate) missing.push('Checklist Date');
+  if (!cha.checklistApprovalDate) missing.push('Checklist Approval Date');
+  if (isExport) {
+    if (!cha.sbNo) missing.push('SB No');
+    if (!cha.sbDate) missing.push('SB Date');
+    if (!cha.leoDate) missing.push('LEO Date');
+    if (!cha.handOverDate) missing.push('Hand Over Date');
+  } else {
+    if (!cha.boeNo) missing.push('BOE No');
+    if (!cha.boeDate) missing.push('BOE Date');
+    if (!cha.oocDate) missing.push('OOC Date');
+    if (!cha.gatePassDate) missing.push('Gate Pass Date');
+    if (!cha.deliveryDate) missing.push('Delivery Date');
+  }
+  if (!cha.trackingNumber) missing.push('Tracking Number');
+  if (missing.length) { if (debug) console.log(`🔍 ARCHIVE CHECK [${shipment.refNo}] — missing:`, missing); return false; }
 
   if (shipment.shipmentType === 'CHA Only') return true;
 
-  const freightDone = !!(
-    ff.consigneeName && ff.shipperName &&
-    ff.grossWeight && ff.weight &&
-    ff.nominationDate && ff.bookingDate && ff.pickupDate &&
-    ff.etd && ff.eta && ff.mawb && ff.hawb && ff.awbDate && ff.preAlertsSentDate &&
-    cha.doCollectionDate
-  );
-  return freightDone;
+  if (!ff.consigneeName) missing.push('Consignee Name');
+  if (!ff.shipperName) missing.push('Shipper Name');
+  if (!ff.grossWeight) missing.push('Gross Weight');
+  if (!ff.weight) missing.push('Chargeable Weight');
+  if (!ff.nominationDate) missing.push('Nomination Date');
+  if (!ff.bookingDate) missing.push('Booking Date');
+  if (!ff.pickupDate) missing.push('Pickup Date');
+  if (!ff.etd) missing.push('ETD');
+  if (!ff.eta) missing.push('ETA');
+  if (!ff.mawb) missing.push('MAWB');
+  if (!ff.hawb) missing.push('HAWB');
+  if (!ff.awbDate) missing.push('AWB Date');
+  if (!ff.preAlertsSentDate) missing.push('Pre-Alerts Sent Date');
+  if (!cha.doCollectionDate) missing.push('DO Collection Date');
+  if (missing.length) { if (debug) console.log(`🔍 ARCHIVE CHECK [${shipment.refNo}] — missing:`, missing); return false; }
+
+  return true;
 }
 
 // ─── IMMEDIATE AUTO-ARCHIVE — SAFETY-NET SWEEP (FIXED) ───
@@ -278,7 +304,7 @@ async function archiveMaturedInvoices() {
       select: { id: true, shipmentType: true, freightForwarding: true, cha: true, accounts: true }
     });
     for (const s of matured) {
-      if (isArchiveEligible(s)) {
+      if (isArchiveEligible(s, true)) {
         await prisma.shipment.update({
           where: { id: s.id },
           data: {
