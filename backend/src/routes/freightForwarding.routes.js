@@ -20,6 +20,7 @@ router.get('/shipments/bin/count', freightController.getBinCount);
 
 // ─── GET SHIPMENT STATS (must stay before /:id route) ───
 router.get('/shipments/stats', freightController.getShipmentStats);
+router.get('/shipments/breakdown', freightController.getShipmentBreakdown); // ✅ NEW — full Total Shipments reconciliation
 
 // ─── GET REFERENCE CODE STATS (must stay before /:id route) ───
 router.get('/shipments/reference-codes', freightController.getReferenceCodeStats);

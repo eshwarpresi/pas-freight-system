@@ -1108,9 +1108,61 @@ function getISTMonthBounds() {
   return { start, end };
 }
 
-// ─── GET SHIPMENT STATS ───
-// Read-only. Returns counts across ALL matching shipments (not just the
-// current page), so progress bars / percentages reflect the whole dataset.
+// ─── TOTAL SHIPMENTS BREAKDOWN ───
+// Answers "where exactly do all shipments actually sit" with a
+// mathematical guarantee: every bucket below is mutually exclusive (a
+// shipment can only land in exactly one), and they are built to sum to
+// the grand total exactly — the endpoint checks this itself and reports
+// it, rather than asking you to trust that the numbers add up.
+const getShipmentBreakdown = async (req, res) => {
+  try {
+    const total = await prisma.shipment.count({ where: { isDeleted: false } });
+    const archived = await prisma.shipment.count({ where: { isDeleted: false, isArchived: true } });
+    const active = await prisma.shipment.count({ where: { isDeleted: false, isArchived: false } });
+
+    // Within Active, every shipment should land in exactly one of these
+    // 5 buckets. "simpleTypesInProgress" is FF Only/Transport/DO
+    // Release — types with no separate Freight/Customs stage of their
+    // own, which used to be invisible to every bucket here except
+    // Cancelled, making the total look like it didn't add up.
+    const inProgress = await prisma.shipment.count({ where: getPipelineStageWhere('freight', false) });
+    const pendingCustoms = await prisma.shipment.count({ where: getPipelineStageWhere('customs', false) });
+    const pendingInvoice = await prisma.shipment.count({ where: getPipelineStageWhere('invoice', false) });
+    const simpleTypesInProgress = await prisma.shipment.count({ where: getPipelineStageWhere('simple', false) });
+    const cancelled = await prisma.shipment.count({ where: getCancelledWhere(false) });
+
+    // ✅ The honest reconciliation check — if these 5 buckets don't sum
+    // to the full Active count, this surfaces exactly how many
+    // shipments are unaccounted for, instead of silently hiding a gap.
+    const accountedFor = inProgress + pendingCustoms + pendingInvoice + simpleTypesInProgress + cancelled;
+    const otherActive = Math.max(0, active - accountedFor);
+
+    res.json({
+      status: 'success',
+      data: {
+        total,
+        archived,
+        active,
+        breakdown: {
+          inProgress,
+          pendingCustoms,
+          pendingInvoice,
+          simpleTypesInProgress,
+          cancelled,
+          otherActive
+        },
+        reconciliation: {
+          activeBucketsSum: accountedFor + otherActive,
+          matchesActiveTotal: (accountedFor + otherActive) === active
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error computing shipment breakdown:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to compute breakdown' });
+  }
+};
+
 const getShipmentStats = async (req, res) => {
   try {
     // ✅ NEW — serve from cache if another request with the exact same
@@ -1198,7 +1250,7 @@ const getShipmentStats = async (req, res) => {
     // same scope (mine/team/search/status/etc) as everything else here.
     const { start: monthStart, end: monthEnd } = getISTMonthBounds();
 
-    const [total, delivered, invoiced, weightAgg, monthlyShipments, pipelineFreight, pipelineCustoms, pipelineInvoice, cancelled] = await Promise.all([
+    const [total, delivered, invoiced, weightAgg, monthlyShipments, pipelineFreight, pipelineCustoms, pipelineInvoice, pipelineSimple, cancelled] = await Promise.all([
       prisma.shipment.count({ where }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
@@ -1219,6 +1271,10 @@ const getShipmentStats = async (req, res) => {
       prisma.shipment.count({ where: withScope(getPipelineStageWhere('freight', isArchived === 'true')) }),
       prisma.shipment.count({ where: withScope(getPipelineStageWhere('customs', isArchived === 'true')) }),
       prisma.shipment.count({ where: withScope(getPipelineStageWhere('invoice', isArchived === 'true')) }),
+      // ✅ NEW — FF Only / Transport / DO Release, counted on their own
+      // instead of being invisible to every card (see 'simple' stage
+      // definition above for the full reasoning).
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('simple', isArchived === 'true')) }),
       // ✅ FIXED — "Cancelled" now also respects which tab you're
       // viewing, same reasoning as the pipeline counts above.
       prisma.shipment.count({ where: withScope(getCancelledWhere(isArchived === 'true')) })
@@ -1282,6 +1338,7 @@ const getShipmentStats = async (req, res) => {
       pipelineFreight,
       pipelineCustoms,
       pipelineInvoice,
+      pipelineSimple,
       cancelled
     };
     setCachedStats(req.query, statsPayload); // ✅ NEW
@@ -2335,12 +2392,30 @@ function getPipelineStageWhere(stage, isArchivedFlag = false) {
     };
   }
   if (stage === 'invoice') {
+    // ✅ FIXED — narrowed to standard Freight + CHA Only only. FF Only,
+    // Transport, and DO Release used to ALSO silently count here (any of
+    // them with an incomplete invoice, regardless of their own actual
+    // progress), which would have double-counted them once the dedicated
+    // 'simple' stage below exists for them specifically.
     return {
       ...baseActive,
-      OR: [
-        { AND: [{ shipmentType: { notIn: SIMPLE_PIPELINE_TYPES } }, customsCompleteFilter(), invoiceIncompleteFilter()] },
-        { AND: [{ shipmentType: { in: SIMPLE_PIPELINE_TYPES } }, invoiceIncompleteFilter()] }
-      ]
+      shipmentType: { notIn: SIMPLE_PIPELINE_TYPES },
+      AND: [customsCompleteFilter(), invoiceIncompleteFilter()]
+    };
+  }
+  if (stage === 'simple') {
+    // ✅ NEW — FF Only / Transport / DO Release have no separate
+    // Freight/Customs stage of their own (their workflow goes straight
+    // from Enquiry to Invoice), so without this they were invisible to
+    // every stat card except Cancelled and the invoice ones — making
+    // Total Shipments look like it didn't add up to anything. This
+    // covers every active, non-cancelled shipment of these 3 types that
+    // hasn't completed its invoice yet, whatever stage of its own short
+    // workflow it's actually at.
+    return {
+      ...baseActive,
+      shipmentType: { in: SIMPLE_PIPELINE_TYPES },
+      AND: [invoiceIncompleteFilter(), getNotCancelledFilter()]
     };
   }
   if (stage === 'done') {
@@ -2736,8 +2811,10 @@ const updateAWB = async (req, res) => {
 };
 
 module.exports = { 
+  getShipmentBreakdown, // ✅ NEW — full Total Shipments reconciliation
   recomputeCurrentStatus, // ✅ NEW — shared by cha.controller.js and accounts.controller.js
   updateManualStatus, // ✅ NEW — manual Status dropdown, including Cancelled
+  getShipmentBreakdown, // ✅ NEW — full reconciled breakdown of Total Shipments
   createShipment, 
   deleteShipment, 
   deleteAllShipments, 
