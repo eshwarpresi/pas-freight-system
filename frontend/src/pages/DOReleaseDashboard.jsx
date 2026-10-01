@@ -48,11 +48,18 @@ export default function DOReleaseDashboard() {
 
   useEffect(() => { if (liveNotification) { const t = setTimeout(() => setLiveNotification(null), 4000); return () => clearTimeout(t) } }, [liveNotification])
 
+  // ✅ FIXED — was only listening for 'shipment:new'/'shipment:update'.
+  // Added the missing 'shipment:statusUpdate' and 'shipment:archiveUpdate'
+  // handlers (a status change or an archive/restore elsewhere never
+  // refreshed this page before), and now also invalidates the new
+  // shipments-stats query below so the accurate stat cards stay live too.
   useEffect(() => {
     if (!socket) return
     const h = {
-      'shipment:new': (d) => { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }) },
-      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }) },
+      'shipment:new': (d) => { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:archiveUpdate': (d) => { queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
     }
     Object.entries(h).forEach(([e, f]) => socket.on(e, f))
     return () => Object.keys(h).forEach(e => socket.off(e, h[e]))
@@ -66,37 +73,69 @@ export default function DOReleaseDashboard() {
       if (search) params.search = search
       if (statusFilter) params.status = statusFilter
       const res = await api.get('/freight/shipments', { params })
-      console.log('🔍 DO Release API:', res.data.pagination.total, 'shipments')
+      // ✅ FIXED — removed a leftover debug console.log that was firing
+      // on every single request to this page (the same kind of overhead
+      // already cleaned out of the backend earlier).
       return res.data
     },
     staleTime: 0, gcTime: 0,
+  })
+
+  // ✅ NEW — dataset-wide, accurate stats, same backend endpoint and
+  // pattern as Overview. Previously this page had no stats query at
+  // all — doCollected/invoiced/withMAWB were only from the current page
+  // of results on screen, not your true DO-Release-wide totals.
+  const { data: statsData } = useQuery({
+    queryKey: ['shipments-stats', search, statusFilter, 'DO_RELEASE', showArchived],
+    queryFn: async () => {
+      const params = { isArchived: showArchived ? 'true' : 'false', shipmentType: 'DO_RELEASE' }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
+      const res = await api.get('/freight/shipments/stats', { params })
+      return res.data?.data
+    },
+    staleTime: 60000,
   })
 
   const shipments = data?.data || []
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
 
+  // ✅ FIXED — withMAWB/withHAWB still come from the current page (a
+  // simple on-screen count is fine for these), but pendingInvoice/
+  // cancelled/delivered now come from the dataset-wide stats endpoint —
+  // accurate across ALL matching DO Release shipments. DO Release has
+  // no separate Customs stage, so "Pending Invoice" (the 'simple'
+  // pipeline stage) is the right progress card here.
   const analytics = useMemo(() => {
-    const doCollected = shipments.filter(s => s.currentStatus === 'DO_COLLECTED').length
-    const invoiced = shipments.filter(s => ['INVOICE_GENERATED','INVOICE_SENT'].includes(s.currentStatus)).length
     const withMAWB = shipments.filter(s => s.freightForwarding?.mawb).length
     const withHAWB = shipments.filter(s => s.freightForwarding?.hawb).length
-    return { doCollected, invoiced, withMAWB, withHAWB, completionRate: totalCount > 0 ? Math.round((doCollected / totalCount) * 100) : 0 }
-  }, [shipments, totalCount])
+    return {
+      withMAWB, withHAWB,
+      pendingInvoice: statsData?.pipelineSimple ?? 0,
+      cancelled: statsData?.cancelled ?? 0,
+      delivered: statsData?.delivered ?? 0,
+      invoiced: statsData?.invoiced ?? 0,
+      completionRate: statsData?.deliveryRate ?? 0
+    }
+  }, [shipments, statsData])
 
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); addToast('Archived', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Archived', 'success') },
   })
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); addToast('Restored', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['do-release-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Restored', 'success') },
   })
 
   const handleExport = async () => {
     setExporting(true)
     try {
-      const res = await api.get('/freight/export', { responseType: 'blob' })
+      // ✅ FIXED — was missing the isArchived param entirely, so Export
+      // always used the backend's default scope regardless of which tab
+      // (Active/Archive) you were actually viewing.
+      const res = await api.get('/freight/export', { params: { isArchived: showArchived }, responseType: 'blob' })
       const url = window.URL.createObjectURL(new Blob([res.data]))
       const link = document.createElement('a'); link.href = url; link.setAttribute('download', `DO_Release_${new Date().toISOString().split('T')[0]}.xlsx`)
       document.body.appendChild(link); link.click(); link.remove()
@@ -113,11 +152,15 @@ export default function DOReleaseDashboard() {
     return b[s] || 'bg-gray-400 text-gray-700'
   }
 
+  // ✅ UPDATED — "Pending Invoice" and "Cancelled" added as accuracy
+  // cards, matching Overview's accurate pipeline breakdown for DO
+  // Release's actual (short) workflow.
   const statCards = [
     { label: 'DO Releases', value: totalCount, icon: ClipboardList, gradient: 'from-teal-500 to-emerald-600', desc: 'Total DOs' },
     { label: 'MAWB Filed', value: analytics.withMAWB, icon: Barcode, gradient: 'from-cyan-500 to-blue-600', desc: 'With MAWB' },
-    { label: 'DO Collected', value: analytics.doCollected, icon: CheckCircle2, gradient: 'from-emerald-500 to-green-600', desc: `${analytics.completionRate}% done` },
-    { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: 'from-violet-500 to-purple-600', desc: 'Invoice done' },
+    { label: 'Pending Invoice', value: analytics.pendingInvoice, icon: FileSpreadsheet, gradient: 'from-amber-500 to-orange-600', desc: 'In progress, not yet invoiced' },
+    { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck 7+ days' },
+    { label: 'Invoiced', value: analytics.invoiced, icon: CheckCircle2, gradient: 'from-violet-500 to-purple-600', desc: 'Invoice done' },
   ]
 
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
@@ -152,7 +195,7 @@ export default function DOReleaseDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {statCards.map((stat,i)=>{
           const Icon=stat.icon;
           return (
@@ -181,7 +224,7 @@ export default function DOReleaseDashboard() {
         <div className="w-full bg-gray-200/50 dark:bg-gray-700/50 rounded-full h-2 overflow-hidden">
           <div className="h-2 rounded-full bg-gradient-to-r from-teal-400 to-emerald-500 transition-all duration-700" style={{width:`${analytics.completionRate}%`}}/>
         </div>
-        <p className="text-[10px] text-[var(--text-muted)] mt-1.5">{analytics.doCollected} of {totalCount} DOs collected</p>
+        <p className="text-[10px] text-[var(--text-muted)] mt-1.5">{analytics.delivered} of {totalCount} DOs delivered</p>
       </div>
 
       <div className="flex items-center gap-2">

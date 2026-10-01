@@ -50,12 +50,17 @@ export default function TransportDashboard() {
 
   useEffect(() => { if (liveNotification) { const t = setTimeout(() => setLiveNotification(null), 4000); return () => clearTimeout(t) } }, [liveNotification])
 
+  // ✅ FIXED — added the missing archiveUpdate handler (archiving or
+  // restoring a Transport shipment elsewhere never refreshed this page
+  // before), and now also invalidates the new shipments-stats query
+  // below so the accurate stat cards stay live too, not just the table.
   useEffect(() => {
     if (!socket) return
     const h = {
-      'shipment:new': (d) => { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
-      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
-      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
+      'shipment:new': (d) => { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:archiveUpdate': (d) => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
     }
     Object.entries(h).forEach(([e, f]) => socket.on(e, f))
     return () => Object.keys(h).forEach(e => socket.off(e, h[e]))
@@ -73,31 +78,61 @@ export default function TransportDashboard() {
     staleTime: 60000, gcTime: 600000, retry: 1,
   })
 
+  // ✅ NEW — dataset-wide, accurate stats, same backend endpoint and
+  // pattern as Overview and FreightDashboard. Previously this page had
+  // no stats query at all — counts were only from the current page of
+  // results on screen, not your true Transport-wide totals.
+  const { data: statsData } = useQuery({
+    queryKey: ['shipments-stats', search, statusFilter, 'TRANSPORT', showArchived],
+    queryFn: async () => {
+      const params = { isArchived: showArchived ? 'true' : 'false', shipmentType: 'TRANSPORT' }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
+      const res = await api.get('/freight/shipments/stats', { params })
+      return res.data?.data
+    },
+    staleTime: 60000,
+  })
+
   const shipments = data?.data || []
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
 
+  // ✅ FIXED — totalWt/totalContainers still come from the current page
+  // (a simple on-screen sum is fine for these), but pendingInvoice/
+  // cancelled/delivered now come from the dataset-wide stats endpoint —
+  // accurate across ALL matching Transport shipments. Transport has no
+  // separate Customs stage (it goes straight from Enquiry to Invoice),
+  // so "Pending Invoice" (the 'simple' pipeline stage) is the right
+  // single progress card here, not a Freight-style breakdown.
   const analytics = useMemo(() => {
-    const delivered = shipments.filter(s => s.currentStatus === 'DELIVERED').length
-    const invoiced = shipments.filter(s => ['INVOICE_GENERATED','INVOICE_SENT'].includes(s.currentStatus)).length
     const totalWt = shipments.reduce((sum, s) => sum + (parseFloat(s.freightForwarding?.weight) || 0), 0)
     const totalContainers = shipments.reduce((sum, s) => sum + (s.freightForwarding?.noOfContainers || 0), 0)
-    return { delivered, invoiced, totalWt, totalContainers, deliveryRate: totalCount > 0 ? Math.round((delivered / totalCount) * 100) : 0 }
-  }, [shipments, totalCount])
+    return {
+      totalWt, totalContainers,
+      pendingInvoice: statsData?.pipelineSimple ?? 0,
+      cancelled: statsData?.cancelled ?? 0,
+      delivered: statsData?.delivered ?? 0,
+      deliveryRate: statsData?.deliveryRate ?? 0
+    }
+  }, [shipments, statsData])
 
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Archived', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Archived', 'success') },
   })
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Restored', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Restored', 'success') },
   })
 
   const handleExport = async () => {
     setExporting(true)
     try {
-      const res = await api.get('/freight/export', { responseType: 'blob' })
+      // ✅ FIXED — was missing the isArchived param entirely, so Export
+      // always used the backend's default scope regardless of which tab
+      // (Active/Archive) you were actually viewing.
+      const res = await api.get('/freight/export', { params: { isArchived: showArchived }, responseType: 'blob' })
       const url = window.URL.createObjectURL(new Blob([res.data]))
       const link = document.createElement('a'); link.href = url; link.setAttribute('download', `Transport_${new Date().toISOString().split('T')[0]}.xlsx`)
       document.body.appendChild(link); link.click(); link.remove()
@@ -114,10 +149,15 @@ export default function TransportDashboard() {
     return b[s] || 'bg-gray-400 text-gray-700'
   }
 
+  // ✅ UPDATED — "Pending Invoice" and "Cancelled" replace the old
+  // Weight card as accuracy-focused cards (Weight/Containers stay
+  // visible in the table itself), matching Overview's accurate
+  // pipeline breakdown for Transport's actual (short) workflow.
   const statCards = [
     { label: 'Transport Trips', value: totalCount, icon: Truck, gradient: 'from-sky-500 to-blue-600', desc: 'Total trips' },
     { label: 'Containers', value: analytics.totalContainers, icon: Box, gradient: 'from-cyan-500 to-teal-600', desc: 'Total containers' },
-    { label: 'Weight (kg)', value: `${analytics.totalWt.toLocaleString()} kg`, icon: Weight, gradient: 'from-blue-500 to-indigo-600', desc: 'Total weight' },
+    { label: 'Pending Invoice', value: analytics.pendingInvoice, icon: FileSpreadsheet, gradient: 'from-amber-500 to-orange-600', desc: 'In progress, not yet invoiced' },
+    { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck 7+ days' },
     { label: 'Delivered', value: analytics.delivered, icon: CheckCircle2, gradient: 'from-emerald-500 to-teal-600', desc: `${analytics.deliveryRate}% success` },
   ]
 
@@ -153,7 +193,7 @@ export default function TransportDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {statCards.map((stat,i)=>{
           const Icon=stat.icon;
           return (

@@ -50,11 +50,18 @@ export default function FFOnlyDashboard() {
 
   useEffect(() => { if (liveNotification) { const t = setTimeout(() => setLiveNotification(null), 4000); return () => clearTimeout(t) } }, [liveNotification])
 
+  // ✅ FIXED — was only listening for 'shipment:new'/'shipment:update'.
+  // Added the missing 'shipment:statusUpdate' and 'shipment:archiveUpdate'
+  // handlers (a status change or an archive/restore elsewhere never
+  // refreshed this page before), and now also invalidates the new
+  // shipments-stats query below so the accurate stat cards stay live too.
   useEffect(() => {
     if (!socket) return
     const h = {
-      'shipment:new': (d) => { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }) },
-      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }) },
+      'shipment:new': (d) => { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:archiveUpdate': (d) => { queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
     }
     Object.entries(h).forEach(([e, f]) => socket.on(e, f))
     return () => Object.keys(h).forEach(e => socket.off(e, h[e]))
@@ -72,29 +79,61 @@ export default function FFOnlyDashboard() {
     staleTime: 0, gcTime: 0,
   })
 
+  // ✅ NEW — dataset-wide, accurate stats, same backend endpoint and
+  // pattern as Overview. Previously this page had no stats query at
+  // all — doCollected/invoiced counts were only from the current page
+  // of results on screen, not your true FF-Only-wide totals.
+  const { data: statsData } = useQuery({
+    queryKey: ['shipments-stats', search, statusFilter, 'FF_ONLY', showArchived],
+    queryFn: async () => {
+      const params = { isArchived: showArchived ? 'true' : 'false', shipmentType: 'FF_ONLY' }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
+      const res = await api.get('/freight/shipments/stats', { params })
+      return res.data?.data
+    },
+    staleTime: 60000,
+  })
+
   const shipments = data?.data || []
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
 
+  // ✅ FIXED — "AWB Filed" still comes from the current page (a simple
+  // on-screen count is fine for this), but pendingInvoice/cancelled/
+  // invoiced now come from the dataset-wide stats endpoint — accurate
+  // across ALL matching FF Only shipments. FF Only has no separate
+  // Customs stage, so "Pending Invoice" (the 'simple' pipeline stage,
+  // which also covers the Pickup/AWB/DO steps along the way) is the
+  // right progress card here.
   const analytics = useMemo(() => {
-    const doCollected = shipments.filter(s => s.currentStatus === 'DO_COLLECTED').length
-    const invoiced = shipments.filter(s => ['INVOICE_GENERATED','INVOICE_SENT'].includes(s.currentStatus)).length
-    return { doCollected, invoiced, completionRate: totalCount > 0 ? Math.round((doCollected / totalCount) * 100) : 0 }
-  }, [shipments, totalCount])
+    const withAWB = shipments.filter(s => s.freightForwarding?.hawb || s.freightForwarding?.mawb).length
+    return {
+      withAWB,
+      pendingInvoice: statsData?.pipelineSimple ?? 0,
+      cancelled: statsData?.cancelled ?? 0,
+      invoiced: statsData?.invoiced ?? 0,
+      doCollected: shipments.filter(s => s.currentStatus === 'DO_COLLECTED').length,
+      completionRate: statsData?.deliveryRate ?? 0
+    }
+  }, [shipments, statsData])
 
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); addToast('Archived', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Archived', 'success') },
   })
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); addToast('Restored', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['ffonly-shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Restored', 'success') },
   })
 
   const handleExport = async () => {
     setExporting(true)
     try {
-      const res = await api.get('/freight/export', { responseType: 'blob' })
+      // ✅ FIXED — was missing the isArchived param entirely, so Export
+      // always used the backend's default scope regardless of which tab
+      // (Active/Archive) you were actually viewing.
+      const res = await api.get('/freight/export', { params: { isArchived: showArchived }, responseType: 'blob' })
       const url = window.URL.createObjectURL(new Blob([res.data]))
       const link = document.createElement('a'); link.href = url; link.setAttribute('download', `FF_Only_${new Date().toISOString().split('T')[0]}.xlsx`)
       document.body.appendChild(link); link.click(); link.remove()
@@ -111,11 +150,15 @@ export default function FFOnlyDashboard() {
     return b[s] || 'bg-gray-400 text-gray-700'
   }
 
+  // ✅ UPDATED — "Pending Invoice" and "Cancelled" added as accuracy
+  // cards, matching Overview's accurate pipeline breakdown for FF
+  // Only's actual workflow (Enquiry → Pickup → AWB → DO → Invoice).
   const statCards = [
     { label: 'FF Only Shipments', value: totalCount, icon: Ship, gradient: 'from-purple-500 to-indigo-600', desc: 'Total FF Only' },
-    { label: 'DO Collected', value: analytics.doCollected, icon: CheckCircle2, gradient: 'from-violet-500 to-purple-600', desc: `${analytics.completionRate}% done` },
-    { label: 'AWB Filed', value: shipments.filter(s => s.freightForwarding?.hawb || s.freightForwarding?.mawb).length, icon: Barcode, gradient: 'from-cyan-500 to-blue-600', desc: 'With AWB' },
-    { label: 'Invoiced', value: analytics.invoiced, icon: FileSpreadsheet, gradient: 'from-amber-500 to-orange-600', desc: 'Invoice done' },
+    { label: 'AWB Filed', value: analytics.withAWB, icon: Barcode, gradient: 'from-cyan-500 to-blue-600', desc: 'With AWB' },
+    { label: 'Pending Invoice', value: analytics.pendingInvoice, icon: FileSpreadsheet, gradient: 'from-amber-500 to-orange-600', desc: 'In progress, not yet invoiced' },
+    { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck 7+ days' },
+    { label: 'Invoiced', value: analytics.invoiced, icon: CheckCircle2, gradient: 'from-violet-500 to-purple-600', desc: 'Invoice done' },
   ]
 
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
@@ -150,7 +193,7 @@ export default function FFOnlyDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {statCards.map((stat,i)=>{
           const Icon=stat.icon;
           return (

@@ -102,7 +102,15 @@ export default function FreightDashboard() {
       invoiced: statsData?.invoiced ?? 0,
       totalPkgs: statsData?.totalPkgs ?? 0,
       totalWt: statsData?.totalWt ?? 0,
-      deliveryRate: statsData?.deliveryRate ?? 0
+      deliveryRate: statsData?.deliveryRate ?? 0,
+      // ✅ NEW — the same accurate pipeline-stage numbers Overview uses.
+      // The backend already returns these on every /shipments/stats
+      // call (scoped to FULL_SHIPMENT since that's what this page
+      // requests) — this page just wasn't reading them before.
+      pipelineFreight: statsData?.pipelineFreight ?? 0,
+      pipelineCustoms: statsData?.pipelineCustoms ?? 0,
+      pipelineInvoice: statsData?.pipelineInvoice ?? 0,
+      cancelled: statsData?.cancelled ?? 0
     }
   }, [statsData])
 
@@ -146,8 +154,10 @@ export default function FreightDashboard() {
 
   const statCards = [
     { label: 'Freight Shipments', value: totalCount, icon: Ship, gradient: 'from-blue-500 to-indigo-600', desc: 'Total freight' },
-    { label: 'Packages', value: analytics.totalPkgs.toLocaleString(), icon: Box, gradient: 'from-amber-500 to-orange-600', desc: 'Total packages' },
-    { label: 'Weight (kg)', value: `${analytics.totalWt.toLocaleString()} kg`, icon: Weight, gradient: 'from-emerald-500 to-teal-600', desc: 'Gross weight' },
+    { label: 'In Progress', value: analytics.pipelineFreight, icon: Clock, gradient: 'from-yellow-500 to-amber-600', desc: 'Enquiry to Customs' },
+    { label: 'Pending Customs', value: analytics.pipelineCustoms, icon: FileSearch, gradient: 'from-emerald-500 to-teal-600', desc: 'Freight done, waiting on Customs' },
+    { label: 'Pending Invoice', value: analytics.pipelineInvoice, icon: FileSpreadsheet, gradient: 'from-amber-500 to-orange-600', desc: 'Customs done, waiting on Invoice' },
+    { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck 7+ days' },
     { label: 'Delivered', value: analytics.delivered, icon: CheckCircle2, gradient: 'from-violet-500 to-purple-600', desc: `${analytics.deliveryRate}% success` },
   ]
 

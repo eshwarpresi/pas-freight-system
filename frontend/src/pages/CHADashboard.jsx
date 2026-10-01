@@ -51,12 +51,17 @@ export default function CHADashboard() {
 
   useEffect(() => { if (liveNotification) { const t = setTimeout(() => setLiveNotification(null), 4000); return () => clearTimeout(t) } }, [liveNotification])
 
+  // ✅ FIXED — added the missing archiveUpdate handler (archiving or
+  // restoring a CHA shipment elsewhere never refreshed this page before),
+  // and now also invalidates the new shipments-stats query below so the
+  // accurate stat cards stay live too, not just the table.
   useEffect(() => {
     if (!socket) return
     const handlers = {
-      'shipment:new': (d) => { if (!showArchived) { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) } },
-      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
-      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }) },
+      'shipment:new': (d) => { if (!showArchived) { setLiveNotification({ type: 'new', refNo: d.refNo, message: `New: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) } },
+      'shipment:update': (d) => { setLiveNotification({ type: 'update', refNo: d.refNo, message: `Updated: ${d.refNo}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:statusUpdate': (d) => { setLiveNotification({ type: 'status', refNo: d.refNo, message: `${d.refNo} → ${d.status}` }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
+      'shipment:archiveUpdate': (d) => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }) },
     }
     Object.entries(handlers).forEach(([event, handler]) => { socket.on(event, handler) })
     return () => Object.keys(handlers).forEach(event => socket.off(event, handlers[event]))
@@ -75,26 +80,57 @@ export default function CHADashboard() {
     retry: 1,
   })
 
+  // ✅ NEW — dataset-wide, accurate stats, same backend endpoint and
+  // pattern as Overview and FreightDashboard. Previously this page had
+  // no stats query at all — "Import Bills", "Export Bills", and
+  // "Cleared" were being counted from only the current page of results
+  // on screen (e.g. 25 shipments), not your true CHA-wide totals. That's
+  // the main reason this page looked inaccurate compared to Overview.
+  const { data: statsData } = useQuery({
+    queryKey: ['shipments-stats', search, statusFilter, 'CHA_ONLY', showArchived],
+    queryFn: async () => {
+      const params = { isArchived: showArchived ? 'true' : 'false', shipmentType: 'CHA_ONLY' }
+      if (search) params.search = search
+      if (statusFilter) params.status = statusFilter
+      const res = await api.get('/freight/shipments/stats', { params })
+      return res.data?.data
+    },
+    staleTime: 60000,
+  })
+
   const shipments = data?.data || []
   const totalCount = data?.pagination?.total || 0
   const totalPages = data?.pagination?.totalPages || 0
 
+  // ✅ FIXED — importBills/exportBills still come from the current page
+  // (a simple on-screen breakdown of Import vs Export is fine to compute
+  // locally), but pendingCustoms/pendingInvoice/cancelled/delivered now
+  // come from the dataset-wide stats endpoint above — accurate across
+  // ALL matching CHA shipments, not just the visible page. CHA Only has
+  // no separate "Freight" stage (it skips straight to Customs), so
+  // there's no pipelineFreight/"In Progress" card here — only
+  // pendingCustoms and pendingInvoice are meaningful for this type.
   const analytics = useMemo(() => {
     const importBills = shipments.filter(s => s.importExport === 'Import').length
     const exportBills = shipments.filter(s => s.importExport === 'Export').length
-    const boeFiled = shipments.filter(s => s.currentStatus && ['BOE_FILED','DO_COLLECTED','OOC_DONE','GATE_PASS','DELIVERED'].includes(s.currentStatus)).length
-    const sbFiled = shipments.filter(s => s.currentStatus && ['SB_FILED','LEO_DONE','HAND_OVER','DELIVERED'].includes(s.currentStatus)).length
-    const delivered = shipments.filter(s => s.currentStatus === 'DELIVERED' || s.currentStatus === 'HAND_OVER').length
-    return { importBills, exportBills, boeFiled, sbFiled, delivered, clearanceRate: totalCount > 0 ? Math.round((delivered / totalCount) * 100) : 0 }
-  }, [shipments, totalCount])
+    return {
+      importBills,
+      exportBills,
+      pendingCustoms: statsData?.pipelineCustoms ?? 0,
+      pendingInvoice: statsData?.pipelineInvoice ?? 0,
+      cancelled: statsData?.cancelled ?? 0,
+      delivered: statsData?.delivered ?? 0,
+      clearanceRate: statsData?.deliveryRate ?? 0
+    }
+  }, [shipments, statsData])
 
   const archiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/archive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Archived', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Archived', 'success') },
   })
   const unarchiveMutation = useMutation({
     mutationFn: (id) => api.put(`/archive/shipments/${id}/unarchive`),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); addToast('Restored', 'success') },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-stats'] }); addToast('Restored', 'success') },
   })
 
   const handleExport = async () => {
@@ -121,10 +157,15 @@ export default function CHADashboard() {
 
   const getImportExportBadge = (v) => v==='Import'?'bg-violet-500 text-white':v==='Export'?'bg-orange-500 text-white':'bg-gray-400 text-gray-600'
 
+  // ✅ UPDATED — Pending Customs / Pending Invoice / Cancelled replace
+  // the old Import Bills/Export Bills split as the primary accuracy
+  // cards (Import/Export counts are still shown in the table itself via
+  // the I/E column), matching Overview's accurate pipeline breakdown.
   const statCards = [
     { label: 'CHA Bills', value: totalCount, icon: FileCheck, gradient: 'from-emerald-500 to-green-600', desc: 'Total bills' },
-    { label: 'Import Bills', value: analytics.importBills, icon: FileText, gradient: 'from-violet-500 to-purple-600', desc: 'Import clearance' },
-    { label: 'Export Bills', value: analytics.exportBills, icon: FileText, gradient: 'from-amber-500 to-orange-600', desc: 'Export clearance' },
+    { label: 'Pending Customs', value: analytics.pendingCustoms, icon: FileSearch, gradient: 'from-lime-500 to-green-600', desc: 'Checklist/BOE/SB in progress' },
+    { label: 'Pending Invoice', value: analytics.pendingInvoice, icon: FileSpreadsheet, gradient: 'from-amber-500 to-orange-600', desc: 'Customs done, waiting on Invoice' },
+    { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck 7+ days' },
     { label: 'Cleared', value: analytics.delivered, icon: CheckCircle2, gradient: 'from-teal-500 to-emerald-600', desc: `${analytics.clearanceRate}% done` },
   ]
 
@@ -160,7 +201,7 @@ export default function CHADashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {statCards.map((stat,i)=>{
           const Icon=stat.icon;
           return (
