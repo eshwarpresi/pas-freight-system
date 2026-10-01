@@ -948,6 +948,7 @@ const getAllShipments = async (req, res) => {
     // regardless of when. Using invoicedOnly here would show a different,
     // usually much larger, set than the number on the card.
     if (invoicedThisMonthOnly === 'true' && !status) {
+      delete where.isArchived; // ✅ FIXED — an invoiced shipment archives immediately now, so this must show both active and archived, not just one
       const { start, end } = getISTMonthBounds();
       const monthlyInvoiceHistory = await prisma.statusHistory.findMany({
         where: { status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] }, createdAt: { gte: start, lt: end } },
@@ -959,6 +960,7 @@ const getAllShipments = async (req, res) => {
     // ✅ NEW — "Today's Invoice" stat card click. Same pattern as
     // invoicedThisMonthOnly above, just scoped to today (IST).
     if (invoicedTodayOnly === 'true' && !status) {
+      delete where.isArchived; // ✅ FIXED — same reasoning as invoicedThisMonthOnly above
       const { start, end } = getISTDayBounds();
       const todayInvoiceHistory = await prisma.statusHistory.findMany({
         where: { status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] }, createdAt: { gte: start, lt: end } },
@@ -1231,25 +1233,33 @@ const getShipmentStats = async (req, res) => {
     // relation does the same job as a single, properly indexed query —
     // no bulk id fetch, no giant IN list, and it scales flat as the
     // shipment count grows instead of getting slower.
+    // ✅ FIXED — these used to filter through the full `where` object,
+    // which includes isArchived. Since invoicing a shipment now archives
+    // it immediately, that meant a shipment invoiced TODAY would already
+    // be archived by the time this ran — making it invisible while
+    // viewing the Active tab, so this card could show close to 0 even on
+    // a busy invoicing day. "Was it invoiced in this time period" is a
+    // historical fact that shouldn't depend on where the shipment
+    // happens to sit right now — withScope(...) keeps your other active
+    // filters (search, employee, date range, type) but drops the
+    // isArchived restriction specifically for this count.
     const monthlyInvoiceHistory = await prisma.statusHistory.findMany({
       where: {
         status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] },
         createdAt: { gte: monthStart, lt: monthEnd },
-        shipment: where
+        shipment: withScope({ isDeleted: false })
       },
       select: { shipmentId: true }
     });
     const monthlyInvoiced = new Set(monthlyInvoiceHistory.map((h) => h.shipmentId)).size;
 
-    // ✅ NEW — "Today's Invoice" stat card. Same pattern as
-    // monthlyInvoiced above, just scoped to today (IST) instead of the
-    // whole month.
+    // ✅ FIXED — same reasoning as monthlyInvoiced above.
     const { start: todayStart, end: todayEnd } = getISTDayBounds();
     const todayInvoiceHistory = await prisma.statusHistory.findMany({
       where: {
         status: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] },
         createdAt: { gte: todayStart, lt: todayEnd },
-        shipment: where
+        shipment: withScope({ isDeleted: false })
       },
       select: { shipmentId: true }
     });

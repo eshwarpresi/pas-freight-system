@@ -926,7 +926,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     ...(showPipelineTab ? [
       { label: 'Pending Customs', value: analytics.pipelineCustoms, icon: FileCheck, gradient: 'from-emerald-500 to-teal-600', desc: 'Freight done, waiting on Customs', onClick: showPendingCustoms, active: pendingCustomsOnly },
       { label: 'Pending Invoice', value: analytics.pipelineInvoice, icon: Banknote, gradient: 'from-amber-500 to-orange-600', desc: 'Customs done, waiting on Invoice', onClick: showPendingInvoice, active: pendingInvoiceOnly },
-      { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Stuck at Enquiry for 7+ days', onClick: showCancelled, active: cancelledOnly },
+      { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck at Enquiry 7+ days', onClick: showCancelled, active: cancelledOnly },
     ] : []),
     { label: "Today's Shipments", value: todayCount || 0, icon: Calendar, gradient: 'from-rose-500 to-pink-600', desc: 'Created today', onClick: showTodayShipments, active: todayOnly },
     { label: 'This Month Shipments', value: analytics.monthlyShipments, icon: TrendingUp, gradient: 'from-cyan-500 to-sky-600', desc: 'Created this calendar month', onClick: showThisMonthShipments, active: thisMonthOnly },
@@ -943,7 +943,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     if (invoicedOnly) return 'Invoiced This Month'
     if (pendingCustomsOnly) return 'Pending Customs — Freight Done, Waiting on Customs'
     if (pendingInvoiceOnly) return 'Pending Invoice — Customs Done, Waiting on Invoice'
-    if (cancelledOnly) return 'Cancelled — Stuck at Enquiry for 7+ Days'
+    if (cancelledOnly) return 'Cancelled Shipments'
     if (showArchived) return 'Archive'
     if (targetUserName) return pendingOnly ? `${targetUserName}'s Pending Shipments` : `${targetUserName}'s Shipments`
     if (mineOnly) return 'My Shipments'
