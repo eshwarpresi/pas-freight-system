@@ -663,7 +663,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         if (customDate) params.date = customDate
         else if (todayOnly) params.today = 'true'
         else if (thisMonthOnly) params.thisMonthOnly = 'true'
-        else if (inProgressOnly) params.inProgressOnly = 'true'
+        else if (inProgressOnly) params.pipelineStage = 'freight'
         else if (deliveredOnly) params.deliveredOnly = 'true'
         else if (invoicedOnly) params.invoicedThisMonthOnly = 'true'
         else if (todayInvoicedOnly) params.invoicedTodayOnly = 'true'
@@ -949,7 +949,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     { label: 'Total Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: 'All shipments', onClick: showAllShipments, active: !todayOnly && !thisMonthOnly && !customDate && !inProgressOnly && !invoicedOnly && !todayInvoicedOnly && !pendingCustomsOnly && !pendingInvoiceOnly && !simpleTypesOnly && !cancelledOnly && !showArchived && !showBin && !search && !statusFilter },
     { 
       label: showArchived ? 'Completed' : 'In Progress', 
-      value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pendingTotal, 
+      value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pipelineFreight, 
       icon: showArchived ? CheckCircle2 : Clock, 
       gradient: showArchived ? statGradients[2] : statGradients[1], 
       desc: showArchived ? 'All archived shipments' : 'Enquiry to Customs',
