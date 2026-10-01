@@ -916,7 +916,6 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       onClick: showArchived ? undefined : showInProgressShipments,
       active: inProgressOnly
     },
-    { label: 'Delivered / Hand Over', value: analytics.delivered, icon: CheckCircle2, gradient: statGradients[2], desc: 'Successfully completed', onClick: showDeliveredShipments, active: deliveredOnly },
     { label: "Today's Invoice", value: analytics.todayInvoiced, icon: FileSpreadsheet, gradient: 'from-teal-500 to-cyan-600', desc: 'Invoiced today', onClick: showTodayInvoiced, active: todayInvoicedOnly },
     { label: 'This Month Invoice', value: analytics.monthlyInvoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoiced this calendar month', onClick: showInvoicedShipments, active: invoicedOnly },
     // ✅ NEW — same stages as the Pipeline tab, as clickable cards on the
@@ -1322,7 +1321,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-primary)] font-medium whitespace-nowrap">{s.freightForwarding?.consigneeName||<span className="text-[var(--text-muted)]">—</span>}</td>
                           <td className="px-2.5 py-2.5 text-xs text-[var(--text-secondary)] whitespace-nowrap"><span className="flex items-center gap-1"><User size={10} className="text-[var(--text-muted)]"/>{s.createdByName||<span className="text-[var(--text-muted)]">—</span>}</span></td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.hawb||<span className="text-[var(--text-muted)]">—</span>}</td>
-                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.cha?.sbNo || s.cha?.boeNo || <span className="text-[var(--text-muted)]">—</span>}</td>
+                          <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.shipmentType === 'FF Only' ? (s.cha?.doCollectionDate ? fmtDDMMYYYY(s.cha.doCollectionDate) : <span className="text-[var(--text-muted)]">—</span>) : (s.cha?.sbNo || s.cha?.boeNo || <span className="text-[var(--text-muted)]">—</span>)}</td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.etd ? fmtDDMMYYYY(s.freightForwarding.etd) : <span className="text-[var(--text-muted)]">—</span>}</td>
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.eta ? fmtDDMMYYYY(s.freightForwarding.eta) : <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>

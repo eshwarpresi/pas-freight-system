@@ -106,6 +106,7 @@ router.put('/shipments/:id/pickup', freightController.updatePickup);
 router.put('/shipments/:id/schedule', freightController.updateSchedule);
 router.put('/shipments/:id/awb', freightController.updateAWB);
 router.put('/shipments/:id/stage', freightController.updateStage);
+router.put('/shipments/:id/status', freightController.updateManualStatus); // ✅ NEW — manual Status dropdown, including Cancelled
 router.put('/shipments/:id/remarks', freightController.updateRemarks);
 router.put('/shipments/:id/fromlocation', freightController.updateFromLocation);
 router.put('/shipments/:id/tolocation', freightController.updateToLocation);

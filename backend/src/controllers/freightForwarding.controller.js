@@ -122,9 +122,15 @@ function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
 async function recomputeCurrentStatus(shipmentId) {
   const s = await prisma.shipment.findUnique({
     where: { id: shipmentId },
-    select: { shipmentType: true, importExport: true, shipmentStage: true, freightForwarding: true, cha: true, accounts: true }
+    select: { shipmentType: true, importExport: true, shipmentStage: true, currentStatus: true, freightForwarding: true, cha: true, accounts: true }
   });
   if (!s) return;
+  // ✅ NEW — a manually cancelled shipment stays cancelled no matter what
+  // else gets edited on it. Without this guard, saving any other field
+  // afterward would silently recompute the status back to whatever the
+  // data implies, un-cancelling it behind the employee's back. Cancelling
+  // is only ever reversed by explicitly picking a different status.
+  if (s.currentStatus === 'CANCELLED') return;
   const ff = s.freightForwarding || {};
   const cha = s.cha || {};
   const accounts = s.accounts || {};
@@ -219,22 +225,36 @@ async function checkAndStampFreightComplete(shipmentId, req) {
 // controllers). See that file's copy for the full field-by-type
 // rationale. A shipment is only allowed to be archived — or to STAY
 // archived — while all of these are true.
+// ✅ UPDATED — matches the same accurate, full field-list criteria as
+// freightCompleteFilter/customsCompleteFilter/invoiceCompleteFilter
+// above, just written as plain boolean checks against one shipment's
+// actual values instead of a Prisma where-clause.
 function isArchiveEligible(shipment) {
   const ff = shipment.freightForwarding || {};
   const cha = shipment.cha || {};
   const accounts = shipment.accounts || {};
 
-  if (!accounts.invoiceNumber || !accounts.invoiceDate) return false;
+  if (!accounts.invoiceNumber || !accounts.invoiceDate || !accounts.sendingDate) return false;
 
   const simpleTypes = ['Transport', 'DO Release', 'FF Only'];
   if (simpleTypes.includes(shipment.shipmentType)) return true;
 
-  const hasCustomsDoc = !!(cha.boeNo || cha.sbNo);
-  if (!hasCustomsDoc) return false;
+  const isExport = shipment.importExport === 'Export';
+  const customsDone = isExport
+    ? !!(cha.jobNo && cha.checklistDate && cha.checklistApprovalDate && cha.sbNo && cha.sbDate && cha.leoDate && cha.handOverDate && cha.trackingNumber)
+    : !!(cha.jobNo && cha.checklistDate && cha.checklistApprovalDate && cha.boeNo && cha.boeDate && cha.oocDate && cha.gatePassDate && cha.deliveryDate && cha.trackingNumber);
+  if (!customsDone) return false;
 
   if (shipment.shipmentType === 'CHA Only') return true;
 
-  return !!(ff.fromLocation && ff.toLocation && ff.terms && ff.grossWeight && ff.weight && ff.hawb);
+  const freightDone = !!(
+    ff.consigneeName && ff.shipperName && ff.notificationEmail &&
+    ff.grossWeight && ff.weight &&
+    ff.nominationDate && ff.bookingDate && ff.pickupDate &&
+    ff.etd && ff.eta && ff.mawb && ff.hawb && ff.awbDate && ff.preAlertsSentDate &&
+    cha.doCollectionDate
+  );
+  return freightDone;
 }
 
 // ─── IMMEDIATE AUTO-ARCHIVE — SAFETY-NET SWEEP (FIXED) ───
@@ -2123,61 +2143,139 @@ function getCancelledThresholdDate() {
 }
 
 // Matches shipments that ARE cancelled — used for the Cancelled card itself.
+// ✅ UPDATED — now also recognizes an EXPLICIT manual cancellation
+// (currentStatus === 'CANCELLED', set by an employee picking "Cancelled"
+// from the Status or Stage dropdown), in addition to the existing
+// automatic "stuck at Enquiry for 7+ days" detection. Either path lands
+// a shipment here.
 function getCancelledWhere() {
   return {
     isDeleted: false,
     isArchived: false,
-    currentStatus: 'ENQUIRY',
-    createdAt: { lte: getCancelledThresholdDate() }
+    OR: [
+      { currentStatus: 'CANCELLED' },
+      { currentStatus: 'ENQUIRY', createdAt: { lte: getCancelledThresholdDate() } }
+    ]
   };
 }
 
 // The inverse — "definitely NOT cancelled" — meant to be spread into
 // other cards/stages (In Progress, the Pipeline's Freight stage) so a
-// stale enquiry is excluded from them instead of being counted twice.
-// True when EITHER it has progressed past ENQUIRY, OR it's still within
-// the 7-day grace window.
+// cancelled or stale-enquiry shipment is excluded from them instead of
+// being counted twice.
 function getNotCancelledFilter() {
   return {
-    OR: [
-      { currentStatus: { not: 'ENQUIRY' } },
-      { createdAt: { gt: getCancelledThresholdDate() } }
+    AND: [
+      { currentStatus: { not: 'CANCELLED' } },
+      { OR: [
+        { currentStatus: { not: 'ENQUIRY' } },
+        { createdAt: { gt: getCancelledThresholdDate() } }
+      ] }
     ]
   };
 }
 
+// ✅ UPDATED — "Freight done" now requires the FULL set of pre-customs
+// fields, not just Consignee+Shipper+a weight. A standard Freight
+// shipment only counts as ready for Customs once every one of these is
+// filled: Consignee, Shipper, Notification Email, Gross Weight,
+// Chargeable Weight, Nomination Date, Booking Date, Pickup Date, ETD,
+// ETA, MAWB, HAWB, AWB Date, Pre-Alerts Sent, and DO Collection Date
+// (which lives on the CHA relation, not FreightForwarding).
 function freightIncompleteFilter() {
   return {
     OR: [
       { freightForwarding: null },
-      { freightForwarding: { fromLocation: null } },
-      { freightForwarding: { toLocation: null } },
-      { freightForwarding: { terms: null } },
+      { freightForwarding: { consigneeName: null } },
+      { freightForwarding: { shipperName: null } },
+      { freightForwarding: { notificationEmail: null } },
       { freightForwarding: { grossWeight: null } },
       { freightForwarding: { weight: null } },
-      { freightForwarding: { hawb: null } }
+      { freightForwarding: { nominationDate: null } },
+      { freightForwarding: { bookingDate: null } },
+      { freightForwarding: { pickupDate: null } },
+      { freightForwarding: { etd: null } },
+      { freightForwarding: { eta: null } },
+      { freightForwarding: { mawb: null } },
+      { freightForwarding: { hawb: null } },
+      { freightForwarding: { awbDate: null } },
+      { freightForwarding: { preAlertsSentDate: null } },
+      { cha: null },
+      { cha: { doCollectionDate: null } }
     ]
   };
 }
 function freightCompleteFilter() {
   return {
     freightForwarding: {
-      fromLocation: { not: null }, toLocation: { not: null }, terms: { not: null },
-      grossWeight: { not: null }, weight: { not: null }, hawb: { not: null }
-    }
+      consigneeName: { not: null }, shipperName: { not: null }, notificationEmail: { not: null },
+      grossWeight: { not: null }, weight: { not: null },
+      nominationDate: { not: null }, bookingDate: { not: null }, pickupDate: { not: null },
+      etd: { not: null }, eta: { not: null },
+      mawb: { not: null }, hawb: { not: null }, awbDate: { not: null },
+      preAlertsSentDate: { not: null }
+    },
+    cha: { doCollectionDate: { not: null } }
   };
 }
+// ✅ UPDATED — "Customs done" now requires the FULL set of customs
+// fields, not just a BOE/SB number. Import shipments need the
+// Checklist/BOE/OOC/Gate Pass/Delivery chain; Export shipments need
+// Checklist/SB/LEO/Hand Over instead — each type's actual real-world
+// fields, not a one-size-fits-all check.
 function customsIncompleteFilter() {
-  return { OR: [{ cha: null }, { cha: { boeNo: null, sbNo: null } }] };
+  return {
+    OR: [
+      { cha: null },
+      {
+        importExport: { not: 'Export' },
+        cha: { OR: [
+          { jobNo: null }, { checklistDate: null }, { checklistApprovalDate: null },
+          { boeNo: null }, { boeDate: null }, { oocDate: null }, { gatePassDate: null },
+          { deliveryDate: null }, { trackingNumber: null }
+        ] }
+      },
+      {
+        importExport: 'Export',
+        cha: { OR: [
+          { jobNo: null }, { checklistDate: null }, { checklistApprovalDate: null },
+          { sbNo: null }, { sbDate: null }, { leoDate: null }, { handOverDate: null },
+          { trackingNumber: null }
+        ] }
+      }
+    ]
+  };
 }
 function customsCompleteFilter() {
-  return { cha: { OR: [{ boeNo: { not: null } }, { sbNo: { not: null } }] } };
+  return {
+    OR: [
+      {
+        importExport: { not: 'Export' },
+        cha: {
+          jobNo: { not: null }, checklistDate: { not: null }, checklistApprovalDate: { not: null },
+          boeNo: { not: null }, boeDate: { not: null }, oocDate: { not: null }, gatePassDate: { not: null },
+          deliveryDate: { not: null }, trackingNumber: { not: null }
+        }
+      },
+      {
+        importExport: 'Export',
+        cha: {
+          jobNo: { not: null }, checklistDate: { not: null }, checklistApprovalDate: { not: null },
+          sbNo: { not: null }, sbDate: { not: null }, leoDate: { not: null }, handOverDate: { not: null },
+          trackingNumber: { not: null }
+        }
+      }
+    ]
+  };
 }
+// ✅ UPDATED — "Invoice done" now also requires Sending Date, not just
+// Invoice No + Date, matching the full Invoice section (No, Date,
+// Sending) that should all be filled before archiving.
 function invoiceIncompleteFilter() {
-  return { OR: [{ accounts: null }, { accounts: { invoiceNumber: null } }, { accounts: { invoiceDate: null } }] };
+  return { OR: [{ accounts: null }, { accounts: { invoiceNumber: null } }, { accounts: { invoiceDate: null } }, { accounts: { sendingDate: null } }] };
 }
 function invoiceCompleteFilter() {
-  return { accounts: { invoiceNumber: { not: null }, invoiceDate: { not: null } } };
+  return { accounts: { invoiceNumber: { not: null }, invoiceDate: { not: null }, sendingDate: { not: null } } };
 }
 
 const PIPELINE_CARD_SELECT = {
@@ -2423,7 +2521,44 @@ const updateImportExport = async (req, res) => {
 };
 
 const updateStage = async (req, res) => {
-  try { const stage = req.body.shipmentStage; await prisma.shipment.update({ where: { id: req.params.id }, data: { shipmentStage: stage } }); await upsertStatusEntry(req.params.id, 'STAGE_CHANGE', `Stage: ${stage}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try {
+    const stage = req.body.shipmentStage;
+    // ✅ NEW — picking "Cancelled" from the Stage dropdown cancels the
+    // shipment outright (sets currentStatus to CANCELLED), the same
+    // outcome as picking it from the Status dropdown. One unified
+    // cancellation mechanism, two entry points.
+    const data = { shipmentStage: stage };
+    if (stage === 'Cancelled') data.currentStatus = 'CANCELLED';
+    await prisma.shipment.update({ where: { id: req.params.id }, data });
+    await upsertStatusEntry(req.params.id, stage === 'Cancelled' ? 'CANCELLED' : 'STAGE_CHANGE', stage === 'Cancelled' ? 'Shipment cancelled' : `Stage: ${stage}`, actorName(req));
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+};
+
+// ✅ NEW — manual Status dropdown. Dropdown-only on the frontend (no
+// free text), listing every real workflow status plus "Cancelled".
+// Picking "Cancelled" cancels the shipment directly. Picking any other
+// status sets it directly too — this is an explicit manual override, so
+// it intentionally does NOT go through recomputeCurrentStatus (which
+// would just recalculate from the underlying fields and likely undo
+// the manual choice).
+const VALID_MANUAL_STATUSES = [
+  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED',
+  'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
+  'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
+];
+const updateManualStatus = async (req, res) => {
+  try {
+    const status = req.body.status;
+    if (!VALID_MANUAL_STATUSES.includes(status)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid status value' });
+    }
+    await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: status } });
+    await upsertStatusEntry(req.params.id, status === 'CANCELLED' ? 'CANCELLED' : 'MANUAL_STATUS', status === 'CANCELLED' ? 'Shipment cancelled' : `Status manually set: ${status.replace(/_/g, ' ')}`, actorName(req));
+    const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
+    res.json({ status: 'success', data: s });
+  } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateRemarks = async (req, res) => {
@@ -2576,6 +2711,7 @@ const updateAWB = async (req, res) => {
 
 module.exports = { 
   recomputeCurrentStatus, // ✅ NEW — shared by cha.controller.js and accounts.controller.js
+  updateManualStatus, // ✅ NEW — manual Status dropdown, including Cancelled
   createShipment, 
   deleteShipment, 
   deleteAllShipments, 

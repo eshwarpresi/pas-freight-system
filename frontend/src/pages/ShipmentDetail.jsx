@@ -8,10 +8,16 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle, Activity
 } from 'lucide-react'
 
-const STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice']
+const STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
+// ✅ NEW — must match VALID_MANUAL_STATUSES in freightForwarding.controller.js exactly
+const STATUS_DROPDOWN_OPTIONS = [
+  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED',
+  'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
+  'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
+]
 const STAGE_COLORS = {
   'Enquiry': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900', 'Quoted': 'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900', 'Nomination': 'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900',
   'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800', 'Pre-alerts': 'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900', 'Checklist': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900',
@@ -230,6 +236,7 @@ function EveryoneInvolved({ contributors }) {
 // red for something that's genuinely done just because it wasn't logged
 // as a number.
 function isStageAtOrPastQuoted(shipmentStage) {
+  if (shipmentStage === 'Cancelled') return false // ✅ NEW — Cancelled sits last in the list for dropdown purposes, but isn't actually "further along" in the real workflow
   const idx = STAGE_OPTIONS.indexOf(shipmentStage)
   const quotedIdx = STAGE_OPTIONS.indexOf('Quoted')
   return idx !== -1 && idx >= quotedIdx
@@ -381,7 +388,7 @@ export default function ShipmentDetail() {
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
-        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},consignee:{u:`/freight/shipments/${id}/consignee`,m:'put'},shipper:{u:`/freight/shipments/${id}/shipper`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},pickup:{u:`/freight/shipments/${id}/pickup`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'}
+        rates:{u:`/freight/shipments/${id}/rates`,m:'put'},cbm:{u:`/freight/shipments/${id}/cbm`,m:'put'},consignee:{u:`/freight/shipments/${id}/consignee`,m:'put'},shipper:{u:`/freight/shipments/${id}/shipper`,m:'put'},nomination:{u:`/freight/shipments/${id}/nomination`,m:'put'},booking:{u:`/freight/shipments/${id}/booking`,m:'put'},pickup:{u:`/freight/shipments/${id}/pickup`,m:'put'},schedule:{u:`/freight/shipments/${id}/schedule`,m:'put'},awb:{u:`/freight/shipments/${id}/awb`,m:'put'},checklist:{u:`/cha/shipments/${id}/checklist`,m:'put'},boe:{u:`/cha/shipments/${id}/boe`,m:'put'},do:{u:`/cha/shipments/${id}/do-collection`,m:'put'},ooc:{u:`/cha/shipments/${id}/ooc`,m:'put'},gatepass:{u:`/cha/shipments/${id}/gate-pass`,m:'put'},pod:{u:`/cha/shipments/${id}/pod`,m:'put'},leo:{u:`/cha/shipments/${id}/leo`,m:'put'},handover:{u:`/cha/shipments/${id}/hand-over`,m:'put'},shippingbill:{u:`/cha/shipments/${id}/shipping-bill`,m:'put'},invoice:{u:`/accounts/shipments/${id}/invoice`,m:'put'},invoiceSend:{u:`/accounts/shipments/${id}/invoice-send`,m:'put'},stage:{u:`/freight/shipments/${id}/stage`,m:'put'},status:{u:`/freight/shipments/${id}/status`,m:'put'},remarks:{u:`/freight/shipments/${id}/remarks`,m:'put'},fromlocation:{u:`/freight/shipments/${id}/fromlocation`,m:'put'},tolocation:{u:`/freight/shipments/${id}/tolocation`,m:'put'},terms:{u:`/freight/shipments/${id}/terms`,m:'put'},portlocation:{u:`/freight/shipments/${id}/portlocation`,m:'put'},shipmenttype:{u:`/freight/shipments/${id}/shipmenttype`,m:'put'},importexport:{u:`/freight/shipments/${id}/importexport`,m:'put'},notificationemail:{u:`/freight/shipments/${id}/rates`,m:'put'}
       }
       return api[eps[section].m](eps[section].u, data)
     },
@@ -576,6 +583,20 @@ export default function ShipmentDetail() {
               <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Stage:</span>
                 <div className="flex items-center gap-1"><InlineField value={STAGE_OPTIONS.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!STAGE_OPTIONS.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} placeholder="Custom..." /></div>
               </div>
+              {/* ✅ NEW — Status dropdown, dropdown-only (no free text), for
+                  manually overriding the workflow status when needed. The
+                  one case that matters most: picking "Cancelled" here
+                  cancels the shipment outright, the same as picking
+                  Cancelled from Stage above — either one works. */}
+              <div className="flex items-center gap-2"><Activity size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Status:</span>
+                <InlineField
+                  value={STATUS_DROPDOWN_OPTIONS.includes(shipment.currentStatus) ? shipment.currentStatus.replace(/_/g, ' ') : shipment.currentStatus?.replace(/_/g, ' ')}
+                  options={STATUS_DROPDOWN_OPTIONS.map(s => s.replace(/_/g, ' '))}
+                  onSave={v => updateMutation.mutate({ section: 'status', data: { status: v.replace(/ /g, '_') } })}
+                  className={shipment.currentStatus === 'CANCELLED' ? 'px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : ''}
+                  placeholder="Select"
+                />
+              </div>
               <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
             </div>
           )}
@@ -585,6 +606,22 @@ export default function ShipmentDetail() {
       {/* ✅ EVERYONE INVOLVED (NEW) — full contributor list for this
           shipment, distinct from the 3 Handled By badges above. */}
       <EveryoneInvolved contributors={shipment.contributors} />
+
+      {/* ✅ NEW — clear visual banner when a shipment has been manually
+          cancelled (via the Status or Stage dropdown above), so this is
+          obvious at a glance rather than something you'd only notice by
+          reading the Status dropdown's value. The workflow stepper below
+          still renders normally underneath — cancelling doesn't erase
+          any progress already made, it just flags the shipment as dead. */}
+      {shipment.currentStatus === 'CANCELLED' && (
+        <div className="glass rounded-xl border-2 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-4 flex items-center gap-3">
+          <AlertCircle size={22} className="text-red-500 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-700 dark:text-red-400">This shipment has been cancelled</p>
+            <p className="text-xs text-red-600 dark:text-red-400/80">Change the Status or Stage dropdown above to a different value to reactivate it.</p>
+          </div>
+        </div>
+      )}
       
       <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
         <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isFFOnly ? 'FF Only Workflow' : isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>

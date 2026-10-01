@@ -56,23 +56,35 @@ async function stampAccountsHandler(id, req) {
 //     never collects From/To/Terms
 //   - Transport / DO Release / FF Only: Invoice No + Invoice Date only
 //     — these simpler workflows don't have a Customs stage at all
+// ✅ UPDATED — matches the same accurate, full field-list criteria used
+// in freightForwarding.controller.js's pipeline-stage definitions,
+// written as plain boolean checks against one shipment's actual values.
 function isArchiveEligible(shipment) {
   const ff = shipment.freightForwarding || {};
   const cha = shipment.cha || {};
   const accounts = shipment.accounts || {};
 
-  if (!accounts.invoiceNumber || !accounts.invoiceDate) return false;
+  if (!accounts.invoiceNumber || !accounts.invoiceDate || !accounts.sendingDate) return false;
 
   const simpleTypes = ['Transport', 'DO Release', 'FF Only'];
   if (simpleTypes.includes(shipment.shipmentType)) return true;
 
-  const hasCustomsDoc = !!(cha.boeNo || cha.sbNo);
-  if (!hasCustomsDoc) return false;
+  const isExport = shipment.importExport === 'Export';
+  const customsDone = isExport
+    ? !!(cha.jobNo && cha.checklistDate && cha.checklistApprovalDate && cha.sbNo && cha.sbDate && cha.leoDate && cha.handOverDate && cha.trackingNumber)
+    : !!(cha.jobNo && cha.checklistDate && cha.checklistApprovalDate && cha.boeNo && cha.boeDate && cha.oocDate && cha.gatePassDate && cha.deliveryDate && cha.trackingNumber);
+  if (!customsDone) return false;
 
   if (shipment.shipmentType === 'CHA Only') return true;
 
   // Full Freight shipment — everything required
-  return !!(ff.fromLocation && ff.toLocation && ff.terms && ff.grossWeight && ff.weight && ff.hawb);
+  return !!(
+    ff.consigneeName && ff.shipperName && ff.notificationEmail &&
+    ff.grossWeight && ff.weight &&
+    ff.nominationDate && ff.bookingDate && ff.pickupDate &&
+    ff.etd && ff.eta && ff.mawb && ff.hawb && ff.awbDate && ff.preAlertsSentDate &&
+    cha.doCollectionDate
+  );
 }
 
 // ─── MARK INVOICE COMPLETE (FIXED) ───
