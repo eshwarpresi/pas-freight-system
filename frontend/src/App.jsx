@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, createContext, useContext, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, createContext, useContext, useRef } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import Layout from './layouts/MainLayout'
@@ -123,11 +123,102 @@ function ParticleEffects() {
   return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" style={{ opacity: 1 }} />
 }
 
+// ✅ LIVE UPDATES WITHOUT THE STORM
+// Every field saved on a shipment makes the server tell EVERY other user's
+// browser "something changed", and each browser used to refetch all its
+// data at once through several separate listeners. With a dozen people
+// editing all day, one save became dozens of requests at the same moment
+// (and ShipmentDetail sends two events per status change). That stampede
+// is what kept the server drowning.
+//
+// This wraps the socket so the four shipment events are delivered through
+// ONE shared throttle: the first event goes through instantly (so changes
+// still feel live), anything arriving in the next few seconds is merged into
+// a single refresh at the end of the window. Every existing page keeps
+// calling socket.on / socket.off exactly as before — they just receive the
+// events at a sane rate. Everything else (emit, connected, other events)
+// passes straight through untouched.
+const SHIPMENT_EVENTS = ['shipment:new', 'shipment:update', 'shipment:statusUpdate', 'shipment:archiveUpdate']
+const LIVE_REFRESH_WINDOW_MS = 8000
+
+function createThrottledSocket(raw) {
+  const listeners = {}   // event -> Set of handlers
+  const rawHandlers = {} // event -> the single handler registered on the real socket
+  let last = 0
+  let timer = null
+  let pending = null     // { event, args } — only the latest is kept
+
+  const deliver = (event, args) => {
+    last = Date.now()
+    ;(listeners[event] || new Set()).forEach((fn) => {
+      try { fn(...args) } catch (err) { console.error('Live handler error:', err) }
+    })
+  }
+
+  const onRaw = (event, args) => {
+    const sinceLast = Date.now() - last
+    if (sinceLast >= LIVE_REFRESH_WINDOW_MS) {
+      deliver(event, args)
+    } else {
+      pending = { event, args }
+      if (!timer) {
+        timer = setTimeout(() => {
+          timer = null
+          const p = pending
+          pending = null
+          if (p) deliver(p.event, p.args)
+        }, LIVE_REFRESH_WINDOW_MS - sinceLast)
+      }
+    }
+  }
+
+  const proxy = new Proxy(raw, {
+    get(target, prop) {
+      if (prop === 'on' || prop === 'addListener') {
+        return (event, fn) => {
+          if (SHIPMENT_EVENTS.includes(event)) {
+            if (!listeners[event]) listeners[event] = new Set()
+            listeners[event].add(fn)
+            if (!rawHandlers[event]) {
+              rawHandlers[event] = (...args) => onRaw(event, args)
+              target.on(event, rawHandlers[event])
+            }
+          } else {
+            target.on(event, fn)
+          }
+          return proxy
+        }
+      }
+      if (prop === 'off' || prop === 'removeListener') {
+        return (event, fn) => {
+          if (SHIPMENT_EVENTS.includes(event)) {
+            const set = listeners[event]
+            if (set) {
+              set.delete(fn)
+              if (set.size === 0 && rawHandlers[event]) {
+                target.off(event, rawHandlers[event])
+                delete rawHandlers[event]
+              }
+            }
+          } else {
+            target.off(event, fn)
+          }
+          return proxy
+        }
+      }
+      const value = Reflect.get(target, prop, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    }
+  })
+  return proxy
+}
+
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [socket, setSocket] = useState(null)
   const queryClient = useQueryClient()
+  const liveSocket = useMemo(() => (socket ? createThrottledSocket(socket) : null), [socket])
 
   useEffect(() => {
     const token = localStorage.getItem('pas_token')
@@ -169,41 +260,31 @@ function App() {
     }
   }, [user])
 
-  // ✅ LIVE EVERYWHERE (NEW) — one central listener, instead of adding
-  // socket handling to every single page individually. Previously only
-  // the single shipment detail page listened for live events at all;
-  // Dashboard, Analytics, Team Performance, Pipeline, Daily/Monthly
-  // Report, Employee Stats — none of them refreshed on their own when
-  // someone elsewhere created or changed a shipment, only on manual
-  // reload or whenever their normal refetch timer happened to fire.
-  //
-  // Whenever ANY shipment is created, edited, has its status change, or
-  // is archived/restored — anywhere in the app, by anyone — this clears
-  // React Query's entire cache of "not currently being looked at"
-  // freshness, so every page currently open silently refetches with the
-  // latest data next time it's due to render. Deliberately broad (no
-  // specific query keys listed) rather than trying to keep an exact list
-  // of every page's query key in sync by hand — simpler, and guaranteed
-  // not to miss a page as new ones get added later.
+  // ✅ LIVE EVERYWHERE — one central listener so pages without their own
+  // socket handling (Analytics, Reports, Team pages...) still refresh when
+  // anyone changes a shipment. Events arrive throttled (see above). This runs
+  // 300ms after the page-level handlers have already started their own
+  // refetches, and cancelRefetch:false means it only refreshes what ISN'T
+  // already loading — before, it cancelled and re-requested those, so the
+  // server did every lookup two or three times over.
   useEffect(() => {
-    if (!socket) return
-    const refreshEverything = () => { queryClient.invalidateQueries() }
-    socket.on('shipment:new', refreshEverything)
-    socket.on('shipment:update', refreshEverything)
-    socket.on('shipment:statusUpdate', refreshEverything)
-    socket.on('shipment:archiveUpdate', refreshEverything)
-    return () => {
-      socket.off('shipment:new', refreshEverything)
-      socket.off('shipment:update', refreshEverything)
-      socket.off('shipment:statusUpdate', refreshEverything)
-      socket.off('shipment:archiveUpdate', refreshEverything)
+    if (!liveSocket) return
+    let timer = null
+    const refreshEverything = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => { queryClient.invalidateQueries(undefined, { cancelRefetch: false }) }, 300)
     }
-  }, [socket, queryClient])
+    SHIPMENT_EVENTS.forEach((e) => liveSocket.on(e, refreshEverything))
+    return () => {
+      clearTimeout(timer)
+      SHIPMENT_EVENTS.forEach((e) => liveSocket.off(e, refreshEverything))
+    }
+  }, [liveSocket, queryClient])
 
   if (loading) return <PageLoader />
 
   return (
-    <SocketContext.Provider value={socket}>
+    <SocketContext.Provider value={liveSocket}>
       <Router>
         <ParticleEffects />
         <div className="relative z-10">
