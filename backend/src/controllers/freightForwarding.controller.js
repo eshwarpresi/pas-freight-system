@@ -289,36 +289,57 @@ function isArchiveEligible(shipment, debug) {
 // already happens instantly via markInvoiceCompleteIfReady the moment
 // completion happens — this is just a safety net for anything that
 // slips through, e.g. older shipments from before that change).
+// ✅ REWRITTEN — grandfathers shipments that were already verified complete.
+// completedAt is stamped only at the moment a shipment passed the
+// completeness check in force AT THAT TIME. Re-judging those shipments
+// against the newer, stricter field list (Pickup Date, Pre-Alerts,
+// Checklist Approval Date, Tracking No...) is what pushed ~1,300 finished
+// shipments back into Active and bloated every dashboard query. The
+// stricter list now applies only to NEW completions (see
+// markInvoiceCompleteIfReady). This is also one bulk query instead of
+// loading every shipment with all its relations and updating one by one.
+const INVOICE_PRESENT = { not: null, notIn: [''] };
 async function archiveMaturedInvoices() {
   let archivedCount = 0;
   try {
-    // ✅ CHANGED — no more 30-day wait. Any shipment whose invoice is
-    // marked complete (completedAt set) and passes isArchiveEligible
-    // gets archived immediately. This mainly matters as a safety-net
-    // sweep now, since markInvoiceCompleteIfReady already archives
-    // on the spot the moment completion happens — this catches any
-    // older shipments that completed before that change and are still
-    // sitting in Active.
-    const matured = await prisma.shipment.findMany({
-      where: { isArchived: false, isDeleted: false, accounts: { completedAt: { not: null } } },
-      select: { id: true, shipmentType: true, freightForwarding: true, cha: true, accounts: true }
+    const ready = await prisma.shipment.findMany({
+      where: {
+        isArchived: false, isDeleted: false,
+        accounts: { completedAt: { not: null }, invoiceNumber: INVOICE_PRESENT, invoiceDate: { not: null } }
+      },
+      select: { id: true }
     });
-    for (const s of matured) {
-      if (isArchiveEligible(s, true)) {
-        await prisma.shipment.update({
-          where: { id: s.id },
-          data: {
-            isArchived: true,
-            statusHistory: { create: { status: 'COMPLETED', remarks: 'Auto-archived — invoice complete' } }
-          }
-        });
-        archivedCount++;
-      }
+    if (ready.length > 0) {
+      const ids = ready.map((r) => r.id);
+      await prisma.shipment.updateMany({ where: { id: { in: ids } }, data: { isArchived: true } });
+      await prisma.statusHistory.createMany({
+        data: ids.map((shipmentId) => ({ shipmentId, status: 'COMPLETED', remarks: 'Auto-archived — invoice complete' }))
+      });
+      archivedCount = ids.length;
+      console.log(`📦 Archive sweep: moved ${archivedCount} completed shipment(s) to Archive`);
     }
+    // Visibility only — invoiced shipments that were never stamped complete
+    // are left alone rather than guessed at.
+    const unstamped = await prisma.shipment.count({
+      where: { isArchived: false, isDeleted: false, accounts: { completedAt: null, invoiceNumber: INVOICE_PRESENT, invoiceDate: { not: null } } }
+    });
+    if (unstamped > 0) console.log(`ℹ️ Archive sweep: ${unstamped} active shipment(s) have an invoice but no completion stamp (left in Active)`);
   } catch (error) {
     console.error('Error in archiveMaturedInvoices sweep:', error);
   }
   return archivedCount;
+}
+
+// Per-request callers (list + stats) use this instead: at most once a
+// minute, and never blocks the response. Running the sweep on EVERY
+// request was a large part of the slowness.
+let lastArchiveSweepAt = 0;
+const ARCHIVE_SWEEP_MIN_INTERVAL_MS = 60 * 1000;
+function archiveMaturedInvoicesThrottled() {
+  const now = Date.now();
+  if (now - lastArchiveSweepAt < ARCHIVE_SWEEP_MIN_INTERVAL_MS) return;
+  lastArchiveSweepAt = now;
+  archiveMaturedInvoices().catch(() => {});
 }
 
 // ─── RETROACTIVE ARCHIVE CLEANUP — HEAVY PASS (SCHEDULED, OR ON-DEMAND) ───
@@ -330,23 +351,27 @@ async function archiveMaturedInvoices() {
 // endpoint (POST /freight/run-archive-cleanup) for whenever you want it
 // to happen immediately rather than waiting for the schedule.
 async function restoreIneligibleArchives() {
+  // ✅ REWRITTEN — only moves a shipment back to Active if its invoice
+  // number or invoice date is actually missing. It used to re-judge every
+  // archived shipment against the full strict field list, which silently
+  // un-archived ~1,300 shipments that had been correctly completed under
+  // the rules that applied when they were archived.
   let restoredCount = 0;
   try {
-    const currentlyArchived = await prisma.shipment.findMany({
-      where: { isArchived: true, isDeleted: false },
-      select: { id: true, shipmentType: true, freightForwarding: true, cha: true, accounts: true }
+    const rows = await prisma.shipment.findMany({
+      where: {
+        isArchived: true, isDeleted: false,
+        OR: [{ accounts: null }, { accounts: { invoiceNumber: null } }, { accounts: { invoiceNumber: '' } }, { accounts: { invoiceDate: null } }]
+      },
+      select: { id: true }
     });
-    for (const s of currentlyArchived) {
-      if (!isArchiveEligible(s)) {
-        await prisma.shipment.update({
-          where: { id: s.id },
-          data: {
-            isArchived: false,
-            statusHistory: { create: { status: 'RESTORED', remarks: 'Moved back to Active — required fields are missing (auto-corrected)' } }
-          }
-        });
-        restoredCount++;
-      }
+    if (rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      await prisma.shipment.updateMany({ where: { id: { in: ids } }, data: { isArchived: false } });
+      await prisma.statusHistory.createMany({
+        data: ids.map((shipmentId) => ({ shipmentId, status: 'RESTORED', remarks: 'Moved back to Active — invoice details missing (auto-corrected)' }))
+      });
+      restoredCount = ids.length;
     }
   } catch (error) {
     console.error('Error in restoreIneligibleArchives sweep:', error);
@@ -376,7 +401,7 @@ const runArchiveCleanupNow = async (req, res) => {
 
 // Back-compat alias — old name some call sites may still reference.
 async function autoArchiveMatured() {
-  await archiveMaturedInvoices();
+  archiveMaturedInvoicesThrottled(); // non-blocking, at most once a minute
 }
 
 // ─── CREATE NEW SHIPMENT ───
@@ -918,8 +943,7 @@ const getAllShipments = async (req, res) => {
     // ✅ Runs the 30-day matured-invoice sweep before building the query,
     // so anything that just crossed the 30-day mark is already reflected
     // in isArchived by the time we filter/count below.
-    await archiveMaturedInvoices();
-
+    archiveMaturedInvoicesThrottled(); // non-blocking, at most once a minute
     const { status, search, isArchived, shipmentType, mine, userId, pendingOnly, today, date, thisMonthOnly, inProgressOnly, deliveredOnly, invoicedOnly, invoicedThisMonthOnly, invoicedTodayOnly, pipelineStage, cancelledOnly, createdFrom, createdTo, employeeId, referenceGroup, page = 1, limit = 25 } = req.query;
     
     const p = Math.max(1, parseInt(page)); const l = Math.min(100, Math.max(1, parseInt(limit) || 25));
@@ -1198,8 +1222,7 @@ const getShipmentStats = async (req, res) => {
       return res.json({ status: 'success', data: cached });
     }
 
-    await archiveMaturedInvoices();
-
+    archiveMaturedInvoicesThrottled(); // non-blocking, at most once a minute
     const { status, search, isArchived, shipmentType, mine, userId, referenceGroup, createdFrom, createdTo, employeeId } = req.query;
 
     const where = {

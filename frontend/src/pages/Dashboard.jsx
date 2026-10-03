@@ -214,9 +214,23 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         console.error('Failed to fetch bin count:', err)
       }
     }
-    fetchBinCount()
-    const interval = setInterval(fetchBinCount, 30000)
-    return () => clearInterval(interval)
+    // ✅ FIXED — was polling every 30s from every open tab, including
+    // background tabs nobody is looking at. Now pauses while the tab is
+    // hidden, refreshes the moment it's visible again, and polls every
+    // 60s while someone is actually watching.
+    let interval = null
+    const startPolling = () => { if (!interval) interval = setInterval(fetchBinCount, 60000) }
+    const stopPolling = () => { if (interval) { clearInterval(interval); interval = null } }
+    const onVisibilityChange = () => {
+      if (document.hidden) stopPolling()
+      else { fetchBinCount(); startPolling() }
+    }
+    if (!document.hidden) { fetchBinCount(); startPolling() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   }, [])
 
   useEffect(() => {

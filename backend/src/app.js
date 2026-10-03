@@ -36,7 +36,9 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // ✅ explicit preflight handler for every route
 
-app.use(compression({ level: 6, threshold: 100 }));
+// Level 1 + 1KB threshold: level 6 on every tiny response burns CPU the
+// instance doesn't have. Payloads are slightly larger, responses are faster.
+app.use(compression({ level: 1, threshold: 1024 }));
 app.use(helmet({
   // ✅ Default helmet sets Cross-Origin-Opener-Policy: same-origin, which
   // is exactly what caused the "postMessage blocked" warning with Google
@@ -45,7 +47,19 @@ app.use(helmet({
   // else helmet does.
   crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
 }));
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use(morgan(process.env.NODE_ENV === 'production' ? ':method :url :status :response-time ms' : 'dev', {
+  skip: (req) => req.originalUrl === '/api/health'
+}));
+// Flags any request slower than 1.5s so the log shows exactly which
+// endpoints are slow (search Render logs for "SLOW").
+app.use((req, res, next) => {
+  const t = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - t;
+    if (ms > 1500) console.warn(`🐌 SLOW ${ms}ms ${req.method} ${req.originalUrl}`);
+  });
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -80,14 +94,20 @@ function optionalAuth(req, res, next) {
 }
 
 // ========== ONLINE TRACKING MIDDLEWARE ==========
-async function trackUserActivity(req, res, next) {
-  if (req.user?.id) {
-    try {
-      await prisma.user.update({
-        where: { id: req.user.id },
-        data: { lastActive: new Date() }
-      }).catch(() => {}); // Silently fail if user doesn't exist yet
-    } catch (err) {}
+// Records "last active" for the Online Users list. It used to await a
+// database WRITE on every single request (a dashboard load is 6-10
+// requests), blocking each response on it. "Online" means active within
+// 5 minutes, so one write per user per minute is plenty — and it no
+// longer holds up the response.
+const lastActivityWrite = new Map();
+function trackUserActivity(req, res, next) {
+  const id = req.user?.id;
+  if (id) {
+    const now = Date.now();
+    if (now - (lastActivityWrite.get(id) || 0) > 60000) {
+      lastActivityWrite.set(id, now);
+      prisma.user.update({ where: { id }, data: { lastActive: new Date() } }).catch(() => {});
+    }
   }
   next();
 }
