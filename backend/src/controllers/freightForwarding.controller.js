@@ -2710,6 +2710,73 @@ const updateManualStatus = async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
+// ─── BULK STATUS / STAGE CHANGE (NEW) ───
+// One request changes many shipments at once, instead of one request (and
+// one database round trip) per shipment. Accepts a list of ids plus a new
+// status, a new stage, or both. Same rules as the single-shipment
+// versions: status is a manual override (it does NOT re-derive from the
+// filled-in fields), and choosing Cancelled — as a status OR a stage —
+// cancels the shipment, which then stays cancelled until someone picks a
+// different status.
+const VALID_STAGES = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled'];
+const BULK_STATUS_MAX = 500;
+const bulkUpdateStatus = async (req, res) => {
+  try {
+    const { ids, status, stage } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ status: 'error', message: 'No shipments selected' });
+    }
+    if (ids.length > BULK_STATUS_MAX) {
+      return res.status(400).json({ status: 'error', message: `Too many at once — select ${BULK_STATUS_MAX} or fewer` });
+    }
+    if (!status && !stage) {
+      return res.status(400).json({ status: 'error', message: 'Choose a status or a stage to apply' });
+    }
+    if (status && !VALID_MANUAL_STATUSES.includes(status)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid status value' });
+    }
+    if (stage && !VALID_STAGES.includes(stage)) {
+      return res.status(400).json({ status: 'error', message: 'Invalid stage value' });
+    }
+
+    const data = {};
+    if (status) data.currentStatus = status;
+    if (stage) {
+      data.shipmentStage = stage;
+      if (stage === 'Cancelled') data.currentStatus = 'CANCELLED';
+    }
+    const cancelling = data.currentStatus === 'CANCELLED';
+
+    // only touch shipments that actually exist and aren't in the Bin
+    const targets = await prisma.shipment.findMany({ where: { id: { in: ids }, isDeleted: false }, select: { id: true } });
+    const targetIds = targets.map((t) => t.id);
+    if (targetIds.length === 0) {
+      return res.status(404).json({ status: 'error', message: 'None of the selected shipments could be found' });
+    }
+
+    await prisma.shipment.updateMany({ where: { id: { in: targetIds } }, data });
+
+    const label = [status && `status ${status.replace(/_/g, ' ')}`, stage && `stage ${stage}`].filter(Boolean).join(' and ');
+    const actor = actorName(req);
+    await prisma.statusHistory.createMany({
+      data: targetIds.map((shipmentId) => ({
+        shipmentId,
+        status: cancelling ? 'CANCELLED' : 'MANUAL_STATUS',
+        remarks: cancelling ? 'Shipment cancelled (bulk change)' : `Bulk change — set ${label}`,
+        changedBy: actor
+      }))
+    });
+
+    // dashboard numbers must reflect this immediately, not after the cache expires
+    statsCache.clear();
+
+    res.json({ status: 'success', data: { updated: targetIds.length, skipped: ids.length - targetIds.length } });
+  } catch (e) {
+    console.error('Error in bulk status change:', e);
+    res.status(500).json({ status: 'error', message: 'Bulk change failed' });
+  }
+};
+
 const updateRemarks = async (req, res) => {
   try { const remarks = req.body.remarks; await prisma.shipment.update({ where: { id: req.params.id }, data: { remarks } }); await upsertStatusEntry(req.params.id, 'REMARKS', 'Remarks updated', actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
@@ -2862,6 +2929,7 @@ module.exports = {
   getShipmentBreakdown, // ✅ NEW — full Total Shipments reconciliation
   recomputeCurrentStatus, // ✅ NEW — shared by cha.controller.js and accounts.controller.js
   updateManualStatus, // ✅ NEW — manual Status dropdown, including Cancelled
+  bulkUpdateStatus, // ✅ NEW — change status/stage for many shipments at once
   getShipmentBreakdown, // ✅ NEW — full reconciled breakdown of Total Shipments
   createShipment, 
   deleteShipment, 

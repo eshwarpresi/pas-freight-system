@@ -5,6 +5,16 @@ import PipelineBoard from '../components/PipelineBoard'
 
 // ✅ NEW — dd-mm-yyyy everywhere on this page, instead of the previous
 // mixed locale-dependent formats.
+// ✅ BULK STATUS / STAGE CHANGE — option lists for the bulk action bar.
+// Must match VALID_MANUAL_STATUSES / VALID_STAGES in the backend controller.
+const BULK_STATUS_VALUES = [
+  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED',
+  'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
+  'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
+]
+const BULK_STAGE_VALUES = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
+const prettyStatus = (v) => v.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+
 function fmtDDMMYYYY(dateInput) {
   const d = new Date(dateInput)
   const dd = String(d.getDate()).padStart(2, '0')
@@ -806,6 +816,22 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     onError: () => addToast('Bulk archive failed', 'error')
   })
 
+  // ✅ NEW — change status and/or stage for every selected shipment in ONE
+  // request (instead of opening each shipment and changing it by hand).
+  const bulkStatusMutation = useMutation({
+    mutationFn: ({ ids, status, stage }) => api.put('/freight/shipments/bulk-status', { ids, status, stage }),
+    onSuccess: (res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
+      setSelected([])
+      const n = res.data?.data?.updated ?? vars.ids.length
+      addToast(`Updated ${n} shipment${n === 1 ? '' : 's'}`, 'success')
+      if (socket) socket.emit('shipment:updated', { refNo: `${n} shipment${n === 1 ? '' : 's'}`, bulk: true })
+    },
+    onError: (err) => addToast(err?.response?.data?.message || 'Bulk status change failed', 'error')
+  })
+
   // ─── BIN MUTATIONS (NO PERMANENT DELETE) ───
   const softDeleteMutation = useMutation({
     mutationFn: (id) => api.delete(`/freight/shipments/${id}/delete`),
@@ -1233,6 +1259,24 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
               </>
             ) : (
               <>
+                <select value="" disabled={bulkStatusMutation.isPending} className="px-3 py-1.5 border border-indigo-300/60 dark:border-indigo-700/60 rounded-lg text-xs font-semibold bg-[var(--bg-primary)] text-[var(--text-primary)] cursor-pointer disabled:opacity-50" title="Set the status of every selected shipment"
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (!v) return
+                    if (window.confirm(`Change the status of ${selected.length} shipment(s) to "${prettyStatus(v)}"?${v === 'CANCELLED' ? '\n\nCancelled shipments stay cancelled until you pick a different status.' : ''}`)) bulkStatusMutation.mutate({ ids: selected, status: v })
+                  }}>
+                  <option value="">{bulkStatusMutation.isPending ? 'Updating…' : 'Change status…'}</option>
+                  {BULK_STATUS_VALUES.map((v) => <option key={v} value={v}>{prettyStatus(v)}</option>)}
+                </select>
+                <select value="" disabled={bulkStatusMutation.isPending} className="px-3 py-1.5 border border-indigo-300/60 dark:border-indigo-700/60 rounded-lg text-xs font-semibold bg-[var(--bg-primary)] text-[var(--text-primary)] cursor-pointer disabled:opacity-50" title="Set the stage of every selected shipment"
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (!v) return
+                    if (window.confirm(`Change the stage of ${selected.length} shipment(s) to "${v}"?${v === 'Cancelled' ? '\n\nThis also cancels them.' : ''}`)) bulkStatusMutation.mutate({ ids: selected, stage: v })
+                  }}>
+                  <option value="">Change stage…</option>
+                  {BULK_STAGE_VALUES.map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
                 <button onClick={handleExportForClient} disabled={exportingClient} className="px-3.5 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg disabled:opacity-50 whitespace-nowrap">
                   {exportingClient ? <RefreshCw size={13} className="animate-spin"/> : <Download size={13}/>} Export for Client
                 </button>

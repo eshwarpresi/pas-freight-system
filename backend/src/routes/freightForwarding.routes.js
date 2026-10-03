@@ -4,6 +4,7 @@ const freightController = require('../controllers/freightForwarding.controller')
 
 // ─── CREATE ───
 router.post('/shipments', freightController.createShipment);
+router.put('/shipments/bulk-status', freightController.bulkUpdateStatus); // ✅ NEW — bulk status/stage change
 
 // ─── EXPORT (MUST be before /:id route) ───
 router.get('/export', freightController.exportShipments);
