@@ -281,6 +281,85 @@ const SECTION_KEY_TO_SLUG = {
   notificationemail: 'notification-settings',
 }
 
+// ✅ NEW — "what's still missing" for the completeness panel. Lists every
+// required field that is still empty, using the same labels as the fields on
+// the page. Must match the required-field lists in the backend (isArchiveEligible
+// in the controllers). Notification Email is NOT required.
+const isBlank = (v) => v === null || v === undefined || v === ''
+const missingOf = (pairs) => pairs.filter(([, v]) => isBlank(v)).map(([label]) => label)
+function getCompletenessSections(sh) {
+  const ff = sh.freightForwarding || {}
+  const cha = sh.cha || {}
+  const acc = sh.accounts || {}
+  const simple = ['Transport', 'DO Release', 'FF Only'].includes(sh.shipmentType)
+  const chaOnly = sh.shipmentType === 'CHA Only'
+  const isExport = sh.importExport === 'Export'
+  const sections = []
+  if (!simple && !chaOnly) {
+    sections.push({ title: 'Freight', tab: 'Freight tab', missing: missingOf([
+      ['Consignee Name', ff.consigneeName], ['Shipper Name', ff.shipperName],
+      ['Gross Weight', ff.grossWeight], ['Chargeable Weight', ff.weight],
+      ['Nomination Date', ff.nominationDate], ['Booking Date', ff.bookingDate], ['Pickup Date', ff.pickupDate],
+      ['ETD', ff.etd], ['ETA', ff.eta],
+      ['MAWB', ff.mawb], ['HAWB', ff.hawb], ['AWB Date', ff.awbDate],
+      ['Pre-Alerts Sent On', ff.preAlertsSentDate], ['DO Collection Date', cha.doCollectionDate]
+    ]) })
+  }
+  if (!simple) {
+    sections.push({ title: 'Customs', tab: 'Customs tab', missing: missingOf([
+      ['Job No', cha.jobNo], ['Checklist Date', cha.checklistDate], ['Approval Date', cha.checklistApprovalDate],
+      ...(isExport
+        ? [['SB No', cha.sbNo], ['SB Date', cha.sbDate], ['LEO Date', cha.leoDate], ['Hand Over Date', cha.handOverDate]]
+        : [['BOE No', cha.boeNo], ['BOE Date', cha.boeDate], ['OOC Date', cha.oocDate], ['Gate Pass Date', cha.gatePassDate], ['Delivery Date', cha.deliveryDate]]),
+      ['Tracking No', cha.trackingNumber]
+    ]) })
+  }
+  sections.push({ title: 'Invoice', tab: 'Accounts tab', missing: missingOf([
+    ['Invoice No', acc.invoiceNumber], ['Invoice Date', acc.invoiceDate], ['Sending Date', acc.sendingDate]
+  ]) })
+  return sections
+}
+
+function CompletenessPanel({ shipment }) {
+  if (!shipment || shipment.currentStatus === 'CANCELLED') return null
+  if (shipment.isArchived) {
+    return (
+      <div className="glass rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 px-4 py-2.5 flex items-center gap-2">
+        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">All required fields are complete — this shipment is in the Archive.</span>
+      </div>
+    )
+  }
+  const sections = getCompletenessSections(shipment)
+  const totalMissing = sections.reduce((n, sec) => n + sec.missing.length, 0)
+  if (totalMissing === 0) {
+    return (
+      <div className="glass rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 px-4 py-2.5 flex items-center gap-2">
+        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Every required field is filled in — this shipment moves to the Archive automatically.</span>
+      </div>
+    )
+  }
+  return (
+    <div className="glass rounded-xl border border-amber-300/60 dark:border-amber-700/60 px-4 py-3">
+      <div className="flex items-center gap-2">
+        <AlertCircle size={16} className="text-amber-500 shrink-0" />
+        <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+          {totalMissing} required field{totalMissing === 1 ? '' : 's'} still empty — this shipment moves to the Archive automatically as soon as they are filled in
+        </span>
+      </div>
+      {sections.filter((sec) => sec.missing.length > 0).map((sec) => (
+        <div key={sec.title} className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] font-semibold text-[var(--text-secondary)] mr-1">{sec.title} <span className="font-normal text-[var(--text-muted)]">({sec.tab})</span>:</span>
+          {sec.missing.map((label) => (
+            <span key={label} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">{label}</span>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function ShipmentDetail() {
   const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -606,6 +685,9 @@ export default function ShipmentDetail() {
       {/* ✅ EVERYONE INVOLVED (NEW) — full contributor list for this
           shipment, distinct from the 3 Handled By badges above. */}
       <EveryoneInvolved contributors={shipment.contributors} />
+
+      {/* ✅ NEW — shows exactly which required fields are still empty */}
+      <CompletenessPanel shipment={shipment} />
 
       {/* ✅ NEW — clear visual banner when a shipment has been manually
           cancelled (via the Status or Stage dropdown above), so this is

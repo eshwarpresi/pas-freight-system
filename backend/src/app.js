@@ -246,6 +246,15 @@ const deliveryChallanRoutes = require('./routes/deliveryChallan.routes'); // ✅
 app.use('/api/freight', authenticateToken, trackUserActivity, freightForwardingRoutes);
 app.use('/api/cha', authenticateToken, trackUserActivity, chaRoutes);
 app.use('/api/accounts', authenticateToken, trackUserActivity, accountsRoutes);
+// Restoring a shipment from Archive clears its "completed" stamp first, so the
+// automatic archiver treats it as open work again instead of moving it straight
+// back to Archive a minute later.
+app.put('/api/archive/shipments/:id/unarchive', authenticateToken, async (req, res, next) => {
+  try {
+    await prisma.shipment.update({ where: { id: req.params.id }, data: { accounts: { update: { completedAt: null } } } });
+  } catch (e) { /* no accounts record, or already clear — nothing to do */ }
+  next();
+});
 app.use('/api/archive', authenticateToken, trackUserActivity, archiveRoutes);
 app.use('/api/notifications', authenticateToken, notificationRoutes);
 app.use('/api/checklist', authenticateToken, checklistRoutes);

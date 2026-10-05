@@ -123,10 +123,17 @@ function isArchiveEligible(shipment, debug) {
 async function markInvoiceCompleteIfReady(id, req) {
   const shipment = await prisma.shipment.findUnique({
     where: { id },
-    select: { shipmentType: true, freightForwarding: true, cha: true, accounts: true }
+    // ✅ FIXED — refNo and importExport were missing from this select, so the
+  // check always treated every shipment as Import. Export shipments were
+  // judged against BOE/OOC/Gate Pass fields they never have, so they could
+  // never archive.
+  select: { refNo: true, shipmentType: true, importExport: true, freightForwarding: true, cha: true, accounts: true }
   });
   if (!shipment || !shipment.accounts) return false;
-  if (shipment.accounts.completedAt) return false; // already stamped
+  // Already stamped. If it was stamped a moment ago (by the save-time check in
+  // recomputeCurrentStatus), report it as just-completed so the message still
+  // says "moved to Archive".
+  if (shipment.accounts.completedAt) return (Date.now() - new Date(shipment.accounts.completedAt).getTime()) < 5000;
 
   if (isArchiveEligible(shipment, true)) {
     await prisma.shipment.update({

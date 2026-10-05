@@ -1,6 +1,6 @@
 const prisma = require('../utils/prisma');
 const { exportShipmentsToExcel, exportShipmentsForClient } = require('../utils/excelExport');
-const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail } = require('../utils/emailService');
+const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail, sendInvoiceReadyEmail } = require('../utils/emailService');
 
 // ✅ NEW — lightweight in-memory cache for the Dashboard stats endpoint.
 // This is your most frequently-hit endpoint, and its numbers don't need
@@ -122,7 +122,7 @@ function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
 async function recomputeCurrentStatus(shipmentId) {
   const s = await prisma.shipment.findUnique({
     where: { id: shipmentId },
-    select: { shipmentType: true, importExport: true, shipmentStage: true, currentStatus: true, freightForwarding: true, cha: true, accounts: true }
+    select: { refNo: true, isArchived: true, shipmentType: true, importExport: true, shipmentStage: true, currentStatus: true, freightForwarding: true, cha: true, accounts: true }
   });
   if (!s) return;
   // ✅ NEW — a manually cancelled shipment stays cancelled no matter what
@@ -147,6 +147,44 @@ async function recomputeCurrentStatus(shipmentId) {
     if (isStepCompleteBackend(key, ff, cha, accounts, s.shipmentStage)) lastComplete = key;
   }
   await prisma.shipment.update({ where: { id: shipmentId }, data: { currentStatus: lastComplete } });
+  // ✅ NEW — after ANY field is saved (Freight, Customs or Invoice tab), check
+  // whether the shipment is now fully complete and archive it on the spot.
+  // Before, this only ran when an invoice field was saved, so a shipment whose
+  // last missing field was on another tab sat in Active indefinitely.
+  if (!s.isArchived && s.accounts && !s.accounts.completedAt && isArchiveEligible(s)) {
+    await archiveIfComplete(shipmentId);
+  }
+}
+
+// Archives a shipment the moment every required field is filled in. Returns
+// true if it archived. Stamps completedAt so it only ever happens once, and
+// sends the "Invoice Ready" email (if enabled for the shipment) at that moment.
+async function archiveIfComplete(shipmentId, actor) {
+  try {
+    const sh = await prisma.shipment.findUnique({
+      where: { id: shipmentId },
+      select: { refNo: true, shipmentType: true, importExport: true, isArchived: true, isDeleted: true, currentStatus: true, freightForwarding: true, cha: true, accounts: true }
+    });
+    if (!sh || sh.isArchived || sh.isDeleted || sh.currentStatus === 'CANCELLED') return false;
+    if (!sh.accounts || sh.accounts.completedAt) return false;
+    if (!isArchiveEligible(sh)) return false;
+    await prisma.shipment.update({
+      where: { id: shipmentId },
+      data: {
+        isArchived: true,
+        accounts: { update: { completedAt: new Date() } },
+        statusHistory: { create: { status: 'INVOICE_COMPLETE', remarks: 'All required fields complete — moved to Archive', ...(actor ? { changedBy: actor } : {}) } }
+      }
+    });
+    if (sh.freightForwarding?.autoEmailEnabled && sh.freightForwarding.notificationEmail) {
+      const full = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { freightForwarding: true, cha: true, accounts: true } });
+      sendInvoiceReadyEmail(full).catch(() => {});
+    }
+    return true;
+  } catch (err) {
+    console.error('archiveIfComplete failed:', err.message);
+    return false;
+  }
 }
 
 // ─── STATUS -> TEAM MAP (NEW) ───
@@ -328,6 +366,28 @@ async function archiveMaturedInvoices() {
     console.error('Error in archiveMaturedInvoices sweep:', error);
   }
   return archivedCount;
+}
+
+// Startup-only backfill: shipments that are ALREADY fully complete but were
+// never stamped (their last missing field was saved before the save-time check
+// existed). Deliberately NOT run per request — that would also undo anyone
+// who restores a finished shipment on purpose.
+async function archiveNewlyCompleted() {
+  let n = 0;
+  try {
+    const candidates = await prisma.shipment.findMany({
+      where: {
+        isArchived: false, isDeleted: false, currentStatus: { not: 'CANCELLED' },
+        accounts: { completedAt: null, invoiceNumber: INVOICE_PRESENT, invoiceDate: { not: null }, sendingDate: { not: null } }
+      },
+      select: { id: true }
+    });
+    for (const c of candidates) { if (await archiveIfComplete(c.id)) n++; }
+    if (n > 0) console.log(`📦 Backfill: archived ${n} already-complete shipment(s)`);
+  } catch (error) {
+    console.error('Error in archiveNewlyCompleted:', error);
+  }
+  return n;
 }
 
 // Per-request callers (list + stats) use this instead: at most once a
@@ -2353,7 +2413,7 @@ function customsIncompleteFilter() {
     OR: [
       { cha: null },
       {
-        importExport: { not: 'Export' },
+        OR: [{ importExport: null }, { importExport: { not: 'Export' } }], // blank I/E counts as Import, same as everywhere else
         cha: { OR: [
           { jobNo: null }, { checklistDate: null }, { checklistApprovalDate: null },
           { boeNo: null }, { boeDate: null }, { oocDate: null }, { gatePassDate: null },
@@ -2375,7 +2435,7 @@ function customsCompleteFilter() {
   return {
     OR: [
       {
-        importExport: { not: 'Export' },
+        OR: [{ importExport: null }, { importExport: { not: 'Export' } }], // blank I/E counts as Import, same as everywhere else
         cha: {
           jobNo: { not: null }, checklistDate: { not: null }, checklistApprovalDate: { not: null },
           boeNo: { not: null }, boeDate: { not: null }, oocDate: { not: null }, gatePassDate: { not: null },
@@ -2425,16 +2485,15 @@ function getPipelineStageWhere(stage, isArchivedFlag = false) {
   if (stage === 'freight') {
     return {
       ...baseActive,
-      shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] },
       ...freightIncompleteFilter(),
-      AND: [getNotCancelledFilter()] // ✅ NEW — a stale enquiry belongs in Cancelled, not here
+      AND: [getNotCancelledFilter(), { OR: [{ shipmentType: null }, { shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] } }] }] // ✅ NEW — a stale enquiry belongs in Cancelled, not here
     };
   }
   if (stage === 'customs') {
     return {
       ...baseActive,
       OR: [
-        { AND: [{ shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] } }, freightCompleteFilter(), customsIncompleteFilter()] },
+        { AND: [{ OR: [{ shipmentType: null }, { shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] } }] }, freightCompleteFilter(), customsIncompleteFilter()] },
         { AND: [{ shipmentType: 'CHA Only' }, customsIncompleteFilter()] }
       ]
     };
@@ -2447,8 +2506,7 @@ function getPipelineStageWhere(stage, isArchivedFlag = false) {
     // 'simple' stage below exists for them specifically.
     return {
       ...baseActive,
-      shipmentType: { notIn: SIMPLE_PIPELINE_TYPES },
-      AND: [customsCompleteFilter(), invoiceIncompleteFilter()]
+      AND: [{ OR: [{ shipmentType: null }, { shipmentType: { notIn: SIMPLE_PIPELINE_TYPES } }] }, customsCompleteFilter(), invoiceIncompleteFilter()]
     };
   }
   if (stage === 'simple') {
@@ -2972,6 +3030,8 @@ module.exports = {
   getPipelineBoard, // ✅ NEW
   autoArchiveMatured, // back-compat alias (== archiveMaturedInvoices)
   archiveMaturedInvoices, // ✅ NEW — lightweight, safe to call per-request
+  archiveNewlyCompleted, // ✅ NEW — startup-only backfill
+  archiveIfComplete, // ✅ NEW — archive one shipment the moment it is complete
   restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)
   runArchiveCleanupNow, // ✅ NEW — on-demand trigger, no NODE_ENV dependency
   getShipmentById, 

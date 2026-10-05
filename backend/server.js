@@ -1,22 +1,34 @@
+const BOOT_STARTED = Date.now();
 const { execSync } = require('child_process');
 const https = require('https');
 const http = require('http');
 
 // Auto-migrate database on production (Render)
-if (process.env.NODE_ENV === 'production') {
+// Set SKIP_DB_PUSH=true in Render's environment to skip this on boot (saves
+// time on every restart). Remove it again whenever you ship a schema change.
+if (process.env.NODE_ENV === 'production' && process.env.SKIP_DB_PUSH !== 'true') {
   console.log('Running prisma db push...');
+  const pushStarted = Date.now();
   try {
     execSync('npx prisma db push --accept-data-loss', { 
       stdio: 'inherit',
       timeout: 60000
     });
-    console.log('Database tables created!');
+    console.log(`Database tables created! (db push took ${Math.round((Date.now() - pushStarted) / 1000)}s)`);
   } catch (e) {
     console.error('DB push error:', e.message);
   }
+} else if (process.env.SKIP_DB_PUSH === 'true') {
+  console.log('Skipping prisma db push (SKIP_DB_PUSH=true)');
 }
 
 const app = require('./src/app');
+
+// A stray unhandled promise rejection crashes Node 15+ outright, which means a
+// restart and a cold boot. Log it loudly instead so nothing is hidden.
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ UNHANDLED REJECTION (server kept running):', reason && reason.stack ? reason.stack : reason);
+});
 
 const PORT = process.env.PORT || 5000;
 
@@ -105,6 +117,14 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔌 WebSocket ready`);
+  console.log(`⏱️ [BOOT] ready in ${((Date.now() - BOOT_STARTED) / 1000).toFixed(1)}s`);
+
+  // Health heartbeat every 5 min: memory + uptime. A sudden uptime reset means
+  // the server restarted; rss near 512MB means it is about to run out of memory.
+  setInterval(() => {
+    const m = process.memoryUsage();
+    console.log(`[HEALTH] rss=${Math.round(m.rss / 1048576)}MB heap=${Math.round(m.heapUsed / 1048576)}MB uptime=${Math.round(process.uptime() / 60)}min sockets=${io.engine?.clientsCount ?? onlineUsers.size}`);
+  }, 5 * 60 * 1000);
 
   // Self-ping every 10 minutes to prevent Render free tier sleep
   if (process.env.NODE_ENV === 'production') {
@@ -167,7 +187,7 @@ server.listen(PORT, '0.0.0.0', () => {
   //     archived shipments made every click on the dashboard noticeably
   //     slow. It now runs ONLY here, on schedule, never per-request.
   if (process.env.NODE_ENV === 'production') {
-    const { archiveMaturedInvoices, restoreIneligibleArchives } = require('./src/controllers/freightForwarding.controller');
+    const { archiveMaturedInvoices, restoreIneligibleArchives, archiveNewlyCompleted } = require('./src/controllers/freightForwarding.controller');
 
     setInterval(async () => {
       try {
@@ -184,6 +204,7 @@ server.listen(PORT, '0.0.0.0', () => {
       try {
         await archiveMaturedInvoices();
         await restoreIneligibleArchives();
+        await archiveNewlyCompleted();
         console.log('[AUTO-ARCHIVE] Initial sweep complete');
       } catch (err) {
         console.error('[AUTO-ARCHIVE] Initial sweep failed:', err.message);
