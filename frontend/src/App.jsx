@@ -236,19 +236,29 @@ function App() {
       // Render's rate limiter (the 429s you were seeing) and make an
       // already-strained backend worse instead of giving it room to
       // recover. This backs off properly (1s → 2s → 4s ... capped at
-      // 30s) and gives up gracefully after a reasonable number of tries
-      // instead of retrying forever.
+      // 30s, with random jitter). It keeps trying for as long as the page is
+      // open — about 2 attempts a minute once capped, which is harmless —
+      // because giving up after a few tries meant every open tab silently
+      // lost live updates after one long restart and stayed that way until
+      // someone reloaded the page.
       const newSocket = io(SOCKET_URL, {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 30000,
         randomizationFactor: 0.5,
-        reconnectionAttempts: 8,
+        reconnectionAttempts: Infinity,
         timeout: 20000,
       })
       newSocket.on('connect', () => { console.log('🔌 Socket connected:', newSocket.id); newSocket.emit('user:join', { name: user.name || user.email, email: user.email }) })
       newSocket.on('connect_error', (err) => { console.log('Socket connection error:', err.message) })
+      // After any gap (restart, network drop, laptop asleep) live events were missed, so
+      // refresh everything once the moment the connection is back. First connect is skipped.
+      let hasConnectedBefore = false
+      newSocket.on('connect', () => {
+        if (hasConnectedBefore) queryClient.invalidateQueries(undefined, { cancelRefetch: false })
+        hasConnectedBefore = true
+      })
       newSocket.on('reconnect_failed', () => {
         // Stopped retrying after reconnectionAttempts is exhausted —
         // live updates just won't arrive until the person reloads the

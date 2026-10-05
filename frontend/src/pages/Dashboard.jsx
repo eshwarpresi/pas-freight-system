@@ -260,6 +260,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       return res.data.pagination?.total || 0
     },
     staleTime: 120000,
+    refetchInterval: 120000, // safety net: the number corrects itself within 2 min even if live updates are down
   })
 
   // ─── TODAY'S SHIPMENTS COUNT (NEW) ───
@@ -296,6 +297,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     },
     enabled: !showBin,
     staleTime: 60000,
+    refetchInterval: 120000, // safety net, as above
   })
 
   useEffect(() => {
@@ -708,7 +710,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         return res.data
       }
     },
-    staleTime: 60000, gcTime: 600000, refetchOnMount: true, refetchOnWindowFocus: false,
+    staleTime: 60000, gcTime: 600000, refetchOnMount: true, refetchOnWindowFocus: false, refetchInterval: 120000,
     placeholderData: () => { 
       if (!showBin) {
         try { const c = sessionStorage.getItem('cached_shipments'); return c ? JSON.parse(c) : undefined } catch { return undefined }

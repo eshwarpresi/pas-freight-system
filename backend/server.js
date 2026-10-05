@@ -112,6 +112,7 @@ io.on('connection', (socket) => {
 
 // Make io accessible to routes/controllers
 app.set('io', io);
+require('./src/controllers/freightForwarding.controller').setSocketServer(io); // lets the server broadcast changes it makes itself
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);

@@ -243,6 +243,16 @@ const checklistRoutes = require('./routes/checklist.routes');
 const deliveryChallanRoutes = require('./routes/deliveryChallan.routes'); // ✅ NEW
 
 // Apply auth + tracking middleware to ALL shipment routes
+// Any successful change to shipment data throws away the cached dashboard numbers
+// straight away, so the next refresh shows the truth instead of up to 8 seconds
+// of stale counts.
+const { clearStatsCache } = require('./controllers/freightForwarding.controller');
+app.use('/api', (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    res.on('finish', () => { if (res.statusCode < 400) clearStatsCache(); });
+  }
+  next();
+});
 app.use('/api/freight', authenticateToken, trackUserActivity, freightForwardingRoutes);
 app.use('/api/cha', authenticateToken, trackUserActivity, chaRoutes);
 app.use('/api/accounts', authenticateToken, trackUserActivity, accountsRoutes);

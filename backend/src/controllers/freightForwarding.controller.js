@@ -20,6 +20,15 @@ const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail, se
 const STATS_CACHE_TTL_MS = 8000;
 const statsCache = new Map(); // key -> { data, expiresAt }
 
+// Lets the server tell every open browser "shipments changed" when IT changes them
+// (automatic archiving, sweeps). Without this nobody found out until their next refresh.
+let socketServer = null;
+function setSocketServer(io) { socketServer = io; }
+function broadcastShipmentChange(refNo) {
+  try { if (socketServer) socketServer.emit('shipment:archiveUpdate', { refNo: refNo || 'Several shipments', auto: true }); } catch (e) { /* never block a save over a notification */ }
+}
+function clearStatsCache() { statsCache.clear(); }
+
 function getStatsCacheKey(query) {
   return JSON.stringify(query);
 }
@@ -247,6 +256,8 @@ async function archiveIfComplete(shipmentId, actor) {
         statusHistory: { create: { status: 'INVOICE_COMPLETE', remarks: 'All required fields complete — moved to Archive', ...(actor ? { changedBy: actor } : {}) } }
       }
     });
+    statsCache.clear();
+    broadcastShipmentChange(sh.refNo);
     if (sh.freightForwarding?.autoEmailEnabled && sh.freightForwarding.notificationEmail) {
       const full = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { freightForwarding: true, cha: true, accounts: true } });
       await sendInvoiceReadyOnce(full);
@@ -418,6 +429,8 @@ async function archiveMaturedInvoices() {
       });
       archivedCount = ids.length;
       console.log(`📦 Archive sweep: moved ${archivedCount} completed shipment(s) to Archive`);
+      statsCache.clear();
+      broadcastShipmentChange();
     }
   } catch (error) {
     console.error('Error in archiveMaturedInvoices sweep:', error);
@@ -509,6 +522,7 @@ async function archiveLegacyInvoiced() {
     });
     statsCache.clear();
     console.log(`📦 [LEGACY] moved ${ids.length} shipment(s) to Archive`);
+    broadcastShipmentChange();
     return ids.length;
   } catch (error) {
     console.error('archiveLegacyInvoiced failed:', error.message);
@@ -529,7 +543,11 @@ async function migrateFreightWorkflowStatuses() {
       select: { id: true }
     });
     for (const r of rows) { await recomputeCurrentStatus(r.id); }
-    if (rows.length > 0) console.log(`🔁 Workflow update: re-derived the status of ${rows.length} Freight shipment(s)`);
+    if (rows.length > 0) {
+      console.log(`🔁 Workflow update: re-derived the status of ${rows.length} Freight shipment(s)`);
+      statsCache.clear();
+      broadcastShipmentChange();
+    }
     return rows.length;
   } catch (error) {
     console.error('migrateFreightWorkflowStatuses failed:', error.message);
@@ -579,6 +597,8 @@ async function restoreIneligibleArchives() {
         data: ids.map((shipmentId) => ({ shipmentId, status: 'RESTORED', remarks: 'Moved back to Active — invoice details missing (auto-corrected)' }))
       });
       restoredCount = ids.length;
+      statsCache.clear();
+      broadcastShipmentChange();
     }
   } catch (error) {
     console.error('Error in restoreIneligibleArchives sweep:', error);
@@ -3184,6 +3204,8 @@ module.exports = {
   archiveIfComplete, // ✅ NEW — archive one shipment the moment it is complete
   sendInvoiceReadyOnce, // ✅ NEW — Invoice Ready email, at most once per shipment ever
   sendMilestoneEmailOnce, // ✅ NEW — Pre-Alerts / BOE / Hand Over emails, once each
+  clearStatsCache, // ✅ NEW — used by app.js to drop cached dashboard numbers on every write
+  setSocketServer, // ✅ NEW — lets the server broadcast changes it makes itself
   restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)
   runArchiveCleanupNow, // ✅ NEW — on-demand trigger, no NODE_ENV dependency
   getShipmentById, 
