@@ -187,7 +187,7 @@ server.listen(PORT, '0.0.0.0', () => {
   //     archived shipments made every click on the dashboard noticeably
   //     slow. It now runs ONLY here, on schedule, never per-request.
   if (process.env.NODE_ENV === 'production') {
-    const { archiveMaturedInvoices, restoreIneligibleArchives, archiveNewlyCompleted } = require('./src/controllers/freightForwarding.controller');
+    const { archiveMaturedInvoices, restoreIneligibleArchives, archiveNewlyCompleted, archiveLegacyInvoiced } = require('./src/controllers/freightForwarding.controller');
 
     setInterval(async () => {
       try {
@@ -205,6 +205,7 @@ server.listen(PORT, '0.0.0.0', () => {
         await archiveMaturedInvoices();
         await restoreIneligibleArchives();
         await archiveNewlyCompleted();
+        await archiveLegacyInvoiced();
         console.log('[AUTO-ARCHIVE] Initial sweep complete');
       } catch (err) {
         console.error('[AUTO-ARCHIVE] Initial sweep failed:', err.message);

@@ -356,12 +356,6 @@ async function archiveMaturedInvoices() {
       archivedCount = ids.length;
       console.log(`📦 Archive sweep: moved ${archivedCount} completed shipment(s) to Archive`);
     }
-    // Visibility only — invoiced shipments that were never stamped complete
-    // are left alone rather than guessed at.
-    const unstamped = await prisma.shipment.count({
-      where: { isArchived: false, isDeleted: false, accounts: { completedAt: null, invoiceNumber: INVOICE_PRESENT, invoiceDate: { not: null } } }
-    });
-    if (unstamped > 0) console.log(`ℹ️ Archive sweep: ${unstamped} active shipment(s) have an invoice but no completion stamp (left in Active)`);
   } catch (error) {
     console.error('Error in archiveMaturedInvoices sweep:', error);
   }
@@ -388,6 +382,75 @@ async function archiveNewlyCompleted() {
     console.error('Error in archiveNewlyCompleted:', error);
   }
   return n;
+}
+
+// ─── ONE-TIME CLEANUP OF OLD FINISHED WORK (startup only, off by default) ───
+// The stricter "complete" rules pushed ~1,400 old, already-invoiced shipments
+// back into Active. They have no completion stamp, so the normal sweep leaves
+// them alone — and they can never meet the new field list. This reports how
+// many there are (always) and archives them ONLY when you ask, via Render env:
+//   ARCHIVE_LEGACY_BEFORE=YYYY-MM-DD      archive those invoiced before that date
+//   ARCHIVE_LEGACY_AUTO_RESTORED=true     archive only the ones the system itself
+//                                         moved out of Archive
+//   ARCHIVE_LEGACY_DRY_RUN=true           just log the count, change nothing
+// Remove the variables afterwards.
+async function archiveLegacyInvoiced() {
+  try {
+    const rows = await prisma.shipment.findMany({
+      where: {
+        isArchived: false, isDeleted: false, currentStatus: { not: 'CANCELLED' },
+        accounts: { completedAt: null, invoiceNumber: INVOICE_PRESENT, invoiceDate: { not: null } }
+      },
+      select: { id: true, accounts: { select: { invoiceDate: true } } }
+    });
+    const byMonth = {};
+    rows.forEach((r) => {
+      const d = r.accounts && r.accounts.invoiceDate;
+      const k = d ? new Date(d).toISOString().slice(0, 7) : 'unknown';
+      byMonth[k] = (byMonth[k] || 0) + 1;
+    });
+    console.log(`ℹ️ [LEGACY] ${rows.length} active shipment(s) have an invoice but no completion stamp. By invoice month: ${JSON.stringify(byMonth)}`);
+
+    const autoRestored = new Set();
+    try {
+      const hist = await prisma.statusHistory.findMany({
+        where: { status: 'RESTORED', changedBy: null, shipmentId: { in: rows.map((r) => r.id) } },
+        select: { shipmentId: true }
+      });
+      hist.forEach((h) => autoRestored.add(h.shipmentId));
+      console.log(`ℹ️ [LEGACY] Of those, ${autoRestored.size} were moved out of Archive automatically by the system`);
+    } catch (e) {
+      console.log('ℹ️ [LEGACY] could not check the auto-restore history:', e.message);
+    }
+
+    const before = process.env.ARCHIVE_LEGACY_BEFORE;
+    const wantRestored = process.env.ARCHIVE_LEGACY_AUTO_RESTORED === 'true';
+    if (!before && !wantRestored) return 0; // nothing requested
+
+    let chosen;
+    if (wantRestored) {
+      chosen = rows.filter((r) => autoRestored.has(r.id));
+    } else {
+      const cutoff = new Date(`${before}T00:00:00+05:30`);
+      if (isNaN(cutoff.getTime())) { console.error('[LEGACY] ARCHIVE_LEGACY_BEFORE must look like 2026-09-15'); return 0; }
+      chosen = rows.filter((r) => r.accounts && r.accounts.invoiceDate && new Date(r.accounts.invoiceDate) < cutoff);
+    }
+    const dry = process.env.ARCHIVE_LEGACY_DRY_RUN === 'true';
+    console.log(`📦 [LEGACY] ${chosen.length} shipment(s) selected${dry ? ' — DRY RUN, nothing changed' : ''}`);
+    if (dry || chosen.length === 0) return 0;
+
+    const ids = chosen.map((r) => r.id);
+    await prisma.shipment.updateMany({ where: { id: { in: ids } }, data: { isArchived: true } });
+    await prisma.statusHistory.createMany({
+      data: ids.map((shipmentId) => ({ shipmentId, status: 'COMPLETED', remarks: 'Archived — finished before the stricter completeness rules' }))
+    });
+    statsCache.clear();
+    console.log(`📦 [LEGACY] moved ${ids.length} shipment(s) to Archive`);
+    return ids.length;
+  } catch (error) {
+    console.error('archiveLegacyInvoiced failed:', error.message);
+    return 0;
+  }
 }
 
 // Per-request callers (list + stats) use this instead: at most once a
@@ -3031,6 +3094,7 @@ module.exports = {
   autoArchiveMatured, // back-compat alias (== archiveMaturedInvoices)
   archiveMaturedInvoices, // ✅ NEW — lightweight, safe to call per-request
   archiveNewlyCompleted, // ✅ NEW — startup-only backfill
+  archiveLegacyInvoiced, // ✅ NEW — startup-only, env-controlled cleanup of old finished work
   archiveIfComplete, // ✅ NEW — archive one shipment the moment it is complete
   restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)
   runArchiveCleanupNow, // ✅ NEW — on-demand trigger, no NODE_ENV dependency
