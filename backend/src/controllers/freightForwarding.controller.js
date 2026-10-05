@@ -82,7 +82,7 @@ function actorName(req) {
 // Step orders mirror the frontend's FULL_STEPS/CHA_IMPORT_STEPS/etc
 // exactly (see ShipmentDetail.jsx) — keep these in sync if that ever
 // changes.
-const FULL_STEP_ORDER = ['ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const FULL_STEP_ORDER = ['ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const CHA_IMPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const CHA_EXPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'SB_FILED', 'LEO_DONE', 'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const TRANSPORT_STEP_ORDER = ['ENQUIRY', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
@@ -104,6 +104,12 @@ function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
     case 'PICKUP_DONE': return !!ff.pickupDate;
     case 'SCHEDULED': return !!(ff.etd || ff.eta);
     case 'AWB_GENERATED': return !!(ff.mawb || ff.hawb);
+    case 'DRAFT': {
+      // no date field of its own: done once the Stage is Draft or anything after it
+      const i = STAGE_ORDER_FOR_STATUS.indexOf(shipmentStage);
+      return i !== -1 && i >= STAGE_ORDER_FOR_STATUS.indexOf('Draft');
+    }
+    case 'PRE_ALERTS': return !!ff.preAlertsSentDate;
     case 'CHECKLIST_APPROVED': return !!cha.checklistDate;
     case 'BOE_FILED': return !!cha.boeNo;
     case 'DO_COLLECTED': return !!cha.doCollectionDate;
@@ -449,6 +455,27 @@ async function archiveLegacyInvoiced() {
     return ids.length;
   } catch (error) {
     console.error('archiveLegacyInvoiced failed:', error.message);
+    return 0;
+  }
+}
+
+// The Freight workflow no longer has an "AWB" step (it is Draft -> Pre-Alerts now).
+// Freight shipments still saved as AWB Generated get their status re-derived once,
+// at startup, so they land on the right step. FF Only etc. keep AWB and are skipped.
+async function migrateFreightWorkflowStatuses() {
+  try {
+    const rows = await prisma.shipment.findMany({
+      where: {
+        isDeleted: false, currentStatus: 'AWB_GENERATED',
+        OR: [{ shipmentType: null }, { shipmentType: { notIn: ['FF Only', 'DO Release', 'Transport', 'CHA Only'] } }]
+      },
+      select: { id: true }
+    });
+    for (const r of rows) { await recomputeCurrentStatus(r.id); }
+    if (rows.length > 0) console.log(`🔁 Workflow update: re-derived the status of ${rows.length} Freight shipment(s)`);
+    return rows.length;
+  } catch (error) {
+    console.error('migrateFreightWorkflowStatuses failed:', error.message);
     return 0;
   }
 }
@@ -2814,7 +2841,7 @@ const updateStage = async (req, res) => {
 // would just recalculate from the underlying fields and likely undo
 // the manual choice).
 const VALID_MANUAL_STATUSES = [
-  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED',
+  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ];
@@ -3095,6 +3122,7 @@ module.exports = {
   archiveMaturedInvoices, // ✅ NEW — lightweight, safe to call per-request
   archiveNewlyCompleted, // ✅ NEW — startup-only backfill
   archiveLegacyInvoiced, // ✅ NEW — startup-only, env-controlled cleanup of old finished work
+  migrateFreightWorkflowStatuses, // ✅ NEW — startup-only, moves old AWB-status Freight shipments onto the new steps
   archiveIfComplete, // ✅ NEW — archive one shipment the moment it is complete
   restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)
   runArchiveCleanupNow, // ✅ NEW — on-demand trigger, no NODE_ENV dependency

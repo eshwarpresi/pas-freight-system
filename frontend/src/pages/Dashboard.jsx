@@ -8,7 +8,7 @@ import PipelineBoard from '../components/PipelineBoard'
 // ✅ BULK STATUS / STAGE CHANGE — option lists for the bulk action bar.
 // Must match VALID_MANUAL_STATUSES / VALID_STAGES in the backend controller.
 const BULK_STATUS_VALUES = [
-  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED',
+  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ]
@@ -911,7 +911,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // ─── BADGE STYLES ───
   const getStatusBadge = (s) => {
     const b = {
-      'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 ring-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 ring-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 ring-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 ring-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 ring-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 ring-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 ring-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 ring-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white ring-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 ring-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 ring-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 ring-gray-300'
+      'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 ring-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 ring-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 ring-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 ring-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 ring-cyan-300','DRAFT':'bg-gradient-to-r from-fuchsia-400 to-fuchsia-300 text-fuchsia-900 ring-fuchsia-300','PRE_ALERTS':'bg-gradient-to-r from-pink-400 to-pink-300 text-pink-900 ring-pink-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 ring-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 ring-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 ring-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 ring-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 ring-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 ring-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white ring-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 ring-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 ring-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 ring-gray-300'
     }; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 ring-gray-300'
   }
 
@@ -954,6 +954,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     {l:'Booked',v:'BOOKED',i:Calendar},
     {l:'Pickup',v:'PICKUP_DONE',i:Truck},
     {l:'Scheduled',v:'SCHEDULED',i:Clock},
+    {l:'Draft',v:'DRAFT',i:FileText},
+    {l:'Pre-Alerts',v:'PRE_ALERTS',i:Mail},
     {l:'AWB',v:'AWB_GENERATED',i:PlaneTakeoff},
     {l:'Checklist',v:'CHECKLIST_APPROVED',i:FileCheck},
     {l:'BOE',v:'BOE_FILED',i:FileText},

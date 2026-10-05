@@ -141,7 +141,7 @@ export default function FreightDashboard() {
   const getStatusBadge = (s) => {
     const b = {
       'ENQUIRY':'bg-amber-400 text-amber-900','RATES_ADDED':'bg-sky-400 text-sky-900','NOMINATED':'bg-violet-400 text-violet-900',
-      'BOOKED':'bg-indigo-400 text-indigo-900','SCHEDULED':'bg-cyan-400 text-cyan-900','AWB_GENERATED':'bg-teal-400 text-teal-900',
+      'BOOKED':'bg-indigo-400 text-indigo-900','SCHEDULED':'bg-cyan-400 text-cyan-900','DRAFT':'bg-fuchsia-400 text-fuchsia-900','PRE_ALERTS':'bg-pink-400 text-pink-900','AWB_GENERATED':'bg-teal-400 text-teal-900',
       'DELIVERED':'bg-emerald-500 text-white','INVOICE_GENERATED':'bg-orange-400 text-orange-900','INVOICE_SENT':'bg-rose-400 text-rose-900',
     }
     return b[s] || 'bg-gray-400 text-gray-700'

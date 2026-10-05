@@ -14,7 +14,7 @@ import {
 const STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
 // ✅ NEW — must match VALID_MANUAL_STATUSES in freightForwarding.controller.js exactly
 const STATUS_DROPDOWN_OPTIONS = [
-  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'AWB_GENERATED',
+  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ]
@@ -42,7 +42,7 @@ const SECTION_TO_STATUS = {
 
 const FULL_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',d:'Pricing added',i:DollarSign},{s:'NOMINATED',l:'Nominated',d:'Agent assigned',i:User},
-  {s:'BOOKED',l:'Booked',d:'Confirmed with carrier',i:Calendar},{s:'PICKUP_DONE',l:'Pickup',d:'Cargo picked up',i:Truck},{s:'SCHEDULED',l:'Scheduled',d:'ETD/ETA set',i:Clock},{s:'AWB_GENERATED',l:'AWB',d:'Air Waybill created',i:Barcode},
+  {s:'BOOKED',l:'Booked',d:'Confirmed with carrier',i:Calendar},{s:'PICKUP_DONE',l:'Pickup',d:'Cargo picked up',i:Truck},{s:'SCHEDULED',l:'Scheduled',d:'ETD/ETA set',i:Clock},{s:'DRAFT',l:'Draft',d:'Draft stage reached',i:FileSignature,optional:true},{s:'PRE_ALERTS',l:'Pre-Alerts',d:'Pre-alerts sent',i:Mail},
   {s:'CHECKLIST_APPROVED',l:'Checklist',d:'Customs checklist done',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',d:'Bill of Entry filed',i:FileText},{s:'DO_COLLECTED',l:'DO',d:'Delivery Order collected',i:FileCheck},
   {s:'OOC_DONE',l:'OOC',d:'Out of Charge',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',d:'Customs gate cleared',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Cargo delivered',i:MapPin},
   {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice dispatched',i:Send}
@@ -242,6 +242,14 @@ function isStageAtOrPastQuoted(shipmentStage) {
   return idx !== -1 && idx >= quotedIdx
 }
 
+// Draft has no date field of its own — it is marked done once the shipment's Stage is
+// set to Draft or anything after it (Cancelled doesn't count as "after").
+function isStageAtOrPastDraft(shipmentStage) {
+  if (shipmentStage === 'Cancelled') return false
+  const idx = STAGE_OPTIONS.indexOf(shipmentStage)
+  return idx !== -1 && idx >= STAGE_OPTIONS.indexOf('Draft')
+}
+
 function isStepComplete(statusKey, ff, cha, accounts, shipmentStage) {
   switch (statusKey) {
     case 'ENQUIRY': return true
@@ -251,6 +259,8 @@ function isStepComplete(statusKey, ff, cha, accounts, shipmentStage) {
     case 'PICKUP_DONE': return !!ff.pickupDate
     case 'SCHEDULED': return !!(ff.etd || ff.eta)
     case 'AWB_GENERATED': return !!(ff.mawb || ff.hawb)
+    case 'DRAFT': return isStageAtOrPastDraft(shipmentStage)
+    case 'PRE_ALERTS': return !!ff.preAlertsSentDate
     case 'CHECKLIST_APPROVED': return !!cha.checklistDate
     case 'BOE_FILED': return !!cha.boeNo
     case 'DO_COLLECTED': return !!cha.doCollectionDate
@@ -412,7 +422,10 @@ export default function ShipmentDetail() {
   // DO Collection shown under Freight instead of Customs) apply only here.
   const isStandardFreight = !isTransport && !isDORelease && !isFFOnly && !isCHAOnly
   const steps = isFFOnly ? FF_ONLY_STEPS : isDORelease ? DO_RELEASE_STEPS : isTransport ? TRANSPORT_STEPS : isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
-  const cur = steps.findIndex(s => s.s === shipment?.currentStatus)
+  const curStored = steps.findIndex(s => s.s === shipment?.currentStatus)
+  // If the saved status isn't one of this mode's steps (e.g. an older Freight shipment still
+  // marked "AWB Generated"), fall back to the furthest step actually completed.
+  const cur = curStored !== -1 ? curStored : steps.reduce((last, st, i) => (isStepComplete(st.s, shipment?.freightForwarding || {}, shipment?.cha || {}, shipment?.accounts || {}, shipment?.shipmentStage) ? i : last), 0)
 
   useEffect(() => {
     if (shipment && !initialTabSet) {
@@ -708,7 +721,7 @@ export default function ShipmentDetail() {
       <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
         <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isFFOnly ? 'FF Only Workflow' : isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
         <div className="flex items-center gap-0 min-w-max mt-1">
-          {steps.map((step, i) => { const Icon = step.i; const complete = isStepComplete(step.s, ff, cha, accounts, shipment.shipmentStage); const now = i === cur; const missing = !complete && i <= cur
+          {steps.map((step, i) => { const Icon = step.i; const complete = isStepComplete(step.s, ff, cha, accounts, shipment.shipmentStage); const now = i === cur; const missing = !complete && i <= cur && !step.optional
             return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${complete || missing || now ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${missing ? 'border-red-500 bg-red-50 dark:bg-red-900/30' : now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : complete ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={missing ? `${step.d} — not filled in yet` : step.d}>{missing ? <AlertCircle size={16} className="text-red-500" /> : complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${missing ? 'text-red-600 dark:text-red-400' : now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${complete ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
           })}
         </div>
