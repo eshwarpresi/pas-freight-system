@@ -1,6 +1,6 @@
 const prisma = require('../utils/prisma');
 const { exportShipmentsToExcel, exportShipmentsForClient } = require('../utils/excelExport');
-const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail, sendInvoiceReadyEmail } = require('../utils/emailService');
+const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail, sendInvoiceReadyEmail, sendMilestoneEmail } = require('../utils/emailService');
 
 // ✅ NEW — lightweight in-memory cache for the Dashboard stats endpoint.
 // This is your most frequently-hit endpoint, and its numbers don't need
@@ -162,6 +162,71 @@ async function recomputeCurrentStatus(shipmentId) {
   }
 }
 
+// ─── MILESTONE EMAILS, BY SHIPMENT MODE ───
+// Every mode sends "Enquiry Received" at creation and "Invoice Ready" when the
+// shipment completes. In between:
+//   Freight (all 3 tabs) : Pre-Alerts, then BOE number (Import) / Hand Over (Export)
+//   FF Only              : Pre-Alerts
+//   CHA Import           : BOE number
+//   CHA Export           : Hand Over
+//   Transport, DO Release: nothing in between
+const MILESTONES = {
+  PRE_ALERTS: {
+    label: 'Pre-Alerts',
+    applies: (s) => !['DO Release', 'Transport', 'CHA Only'].includes(s.shipmentType),
+    isSet: (s) => !!(s.freightForwarding && s.freightForwarding.preAlertsSentDate)
+  },
+  BOE: {
+    label: 'BOE number',
+    applies: (s) => !['FF Only', 'DO Release', 'Transport'].includes(s.shipmentType) && s.importExport !== 'Export',
+    isSet: (s) => !!(s.cha && s.cha.boeNo)
+  },
+  HAND_OVER: {
+    label: 'Hand Over',
+    applies: (s) => !['FF Only', 'DO Release', 'Transport'].includes(s.shipmentType) && s.importExport === 'Export',
+    isSet: (s) => !!(s.cha && s.cha.handOverDate)
+  }
+};
+
+// Sends one milestone email, at most once per shipment EVER. Does nothing unless
+// the shipment has automatic emails switched on, has a Notification Email, the
+// milestone applies to its mode, and the field has actually been filled in. The
+// history entry is the permanent "already sent" record (and shows on the timeline).
+async function sendMilestoneEmailOnce(shipmentId, milestone) {
+  try {
+    const rule = MILESTONES[milestone];
+    if (!rule) return;
+    const s = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { freightForwarding: true, cha: true, accounts: true } });
+    if (!s || s.isDeleted || s.currentStatus === 'CANCELLED') return;
+    const ff = s.freightForwarding;
+    if (!ff || !ff.autoEmailEnabled || !ff.notificationEmail) return;
+    if (!rule.applies(s) || !rule.isSet(s)) return;
+    const key = `EMAIL_${milestone}`;
+    const already = await prisma.statusHistory.findFirst({ where: { shipmentId, status: key }, select: { id: true } });
+    if (already) return;
+    await prisma.statusHistory.create({ data: { shipmentId, status: key, remarks: `${rule.label} email sent to ${ff.notificationEmail}` } });
+    sendMilestoneEmail(s, milestone).catch(() => {});
+  } catch (err) {
+    console.error('sendMilestoneEmailOnce failed:', err.message);
+  }
+}
+
+// Sends the "Invoice Ready" email at most once per shipment, EVER. Restoring a
+// finished shipment from Archive clears its completion stamp (so it stays open
+// while someone edits it), which meant it could send this email a second time
+// when it completed again. This permanent history entry is the record that stops that.
+async function sendInvoiceReadyOnce(full) {
+  try {
+    if (!full || !full.freightForwarding || !full.freightForwarding.autoEmailEnabled || !full.freightForwarding.notificationEmail) return;
+    const already = await prisma.statusHistory.findFirst({ where: { shipmentId: full.id, status: 'EMAIL_INVOICE_READY' }, select: { id: true } });
+    if (already) return;
+    await prisma.statusHistory.create({ data: { shipmentId: full.id, status: 'EMAIL_INVOICE_READY', remarks: `Invoice Ready email sent to ${full.freightForwarding.notificationEmail}` } });
+    sendInvoiceReadyEmail(full).catch(() => {});
+  } catch (err) {
+    console.error('sendInvoiceReadyOnce failed:', err.message);
+  }
+}
+
 // Archives a shipment the moment every required field is filled in. Returns
 // true if it archived. Stamps completedAt so it only ever happens once, and
 // sends the "Invoice Ready" email (if enabled for the shipment) at that moment.
@@ -184,7 +249,7 @@ async function archiveIfComplete(shipmentId, actor) {
     });
     if (sh.freightForwarding?.autoEmailEnabled && sh.freightForwarding.notificationEmail) {
       const full = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { freightForwarding: true, cha: true, accounts: true } });
-      sendInvoiceReadyEmail(full).catch(() => {});
+      await sendInvoiceReadyOnce(full);
     }
     return true;
   } catch (err) {
@@ -250,16 +315,8 @@ async function checkAndStampFreightComplete(shipmentId, req) {
       where: { id: shipmentId },
       data: { freightCompletedById: req.user.id, freightCompletedByName: actorName(req) }
     });
-    // ✅ NEW — Email 2 of 3: Freight Confirmed. This block only ever runs
-    // once per shipment (guarded by the freightCompletedById check
-    // above), so there's no risk of sending this twice. No CC.
-    const full = await prisma.shipment.findUnique({
-      where: { id: shipmentId },
-      include: { freightForwarding: true, cha: true, accounts: true }
-    });
-    if (full?.freightForwarding?.autoEmailEnabled && full.freightForwarding.notificationEmail) {
-      sendFreightConfirmedEmail(full).catch(() => {});
-    }
+    // (The old "Shipment Is Moving" email that used to go here is retired — the
+    // second customer email now goes after Pre-Alerts is saved. See sendMilestoneEmailOnce.)
   }
 }
 
@@ -2973,6 +3030,7 @@ const updateRates = async (req, res) => {
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_UPDATED', parts.join(' | '), actorName(req)); 
       await checkAndStampFreightComplete(req.params.id, req);
       await recomputeCurrentStatus(req.params.id); // ✅ NEW — lets status move through RATES_ADDED, and move back if rate/weight is cleared
+      if (preAlertsSentDate) sendMilestoneEmailOnce(req.params.id, 'PRE_ALERTS'); // 2nd customer email — fire and forget
     } 
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); 
     sendStatusEmail(s).catch(() => {}); 
@@ -3124,6 +3182,8 @@ module.exports = {
   archiveLegacyInvoiced, // ✅ NEW — startup-only, env-controlled cleanup of old finished work
   migrateFreightWorkflowStatuses, // ✅ NEW — startup-only, moves old AWB-status Freight shipments onto the new steps
   archiveIfComplete, // ✅ NEW — archive one shipment the moment it is complete
+  sendInvoiceReadyOnce, // ✅ NEW — Invoice Ready email, at most once per shipment ever
+  sendMilestoneEmailOnce, // ✅ NEW — Pre-Alerts / BOE / Hand Over emails, once each
   restoreIneligibleArchives, // ✅ NEW — heavy full-archive scan, SCHEDULED ONLY (call from server.js, not per-request)
   runArchiveCleanupNow, // ✅ NEW — on-demand trigger, no NODE_ENV dependency
   getShipmentById, 

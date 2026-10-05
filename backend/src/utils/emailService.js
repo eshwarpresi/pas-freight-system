@@ -185,6 +185,70 @@ async function sendInvoiceReadyEmail(shipment) {
 // send path and ROW/SECTION helpers as before, so it looks and behaves
 // consistently with every other email this app sends. Not part of the
 // client-facing milestone emails above — untouched by that change.
+// Customer emails sent at specific milestones. Which shipments get which is
+// decided in the controller (see MILESTONES); this only builds and sends them.
+//   PRE_ALERTS — after Pre-Alerts Sent On is saved   (Freight, FF Only)
+//   BOE        — after the BOE number is saved       (Freight Import, CHA Import)
+//   HAND_OVER  — after the Hand Over date is saved   (Freight Export, CHA Export)
+async function sendMilestoneEmail(shipment, milestone) {
+  try {
+    const ff = shipment.freightForwarding || {};
+    const cha = shipment.cha || {};
+    if (!ff.notificationEmail) return;
+    const route = (ff.fromLocation || ff.toLocation) ? `${ff.fromLocation || '—'} → ${ff.toLocation || '—'}` : null;
+    const awb = ff.mawb || ff.hawb;
+    let subject, headline, bodyText, rows, closingText;
+
+    if (milestone === 'PRE_ALERTS') {
+      subject = `Pre-Alerts Sent — ${shipment.refNo}`;
+      headline = 'Pre-alerts for your shipment have been sent.';
+      bodyText = "Your shipment details have been pre-alerted to the destination side, so everything is lined up ahead of arrival. Here's where things stand.";
+      rows = [
+        ['Reference Number', shipment.refNo],
+        ['AWB Number', awb],
+        ['Route', route],
+        ['Pre-Alert Sent On', ff.preAlertsSentDate ? FMT(ff.preAlertsSentDate) : null],
+        ['Estimated Arrival', ff.eta ? FMT(ff.eta) : null],
+      ];
+      closingText = shipment.shipmentType === 'FF Only'
+        ? "We'll send your invoice as soon as the shipment is complete. If you have any questions in the meantime, just reply to this email."
+        : "We'll update you again as customs formalities move forward. If you have any questions in the meantime, just reply to this email.";
+    } else if (milestone === 'BOE') {
+      subject = `Customs Update: Bill of Entry Filed — ${shipment.refNo}`;
+      headline = 'Your Bill of Entry has been filed.';
+      bodyText = 'Customs documentation for your shipment is under way. The Bill of Entry has been filed, and our team is following it through clearance.';
+      rows = [
+        ['Reference Number', shipment.refNo],
+        ['BOE Number', cha.boeNo],
+        ['BOE Date', cha.boeDate ? FMT(cha.boeDate) : null],
+        ['AWB Number', awb],
+        ['Route', route],
+      ];
+      closingText = "We'll keep you posted as it clears customs. If you have any questions in the meantime, just reply to this email.";
+    } else if (milestone === 'HAND_OVER') {
+      subject = `Shipment Handed Over — ${shipment.refNo}`;
+      headline = 'Your shipment has been handed over.';
+      bodyText = 'Your export cargo has been handed over for dispatch. Here are the details.';
+      rows = [
+        ['Reference Number', shipment.refNo],
+        ['Shipping Bill Number', cha.sbNo],
+        ['Hand Over Date', cha.handOverDate ? FMT(cha.handOverDate) : null],
+        ['AWB Number', awb],
+        ['Route', route],
+      ];
+      closingText = "We'll send your invoice shortly. If you have any questions in the meantime, just reply to this email.";
+    } else {
+      return;
+    }
+
+    const html = buildManifestEmail({ headline, bodyText, rows: rows.filter(([, v]) => v), closingText }).replace('{{REFNO}}', shipment.refNo);
+    await sendRawEmail({ to: ff.notificationEmail, subject, html });
+    console.log(`${milestone} email sent to`, ff.notificationEmail);
+  } catch (error) {
+    console.error(`${milestone} email failed:`, error.message);
+  }
+}
+
 async function sendDailyReportEmail(report, recipients) {
   try {
     if (!recipients || recipients.length === 0) { console.log('No daily report recipients configured'); return; }
@@ -279,6 +343,7 @@ async function sendDailyReportEmail(report, recipients) {
 }
 
 module.exports = {
+  sendMilestoneEmail,
   sendStatusEmail, // now a no-op — see comment above
   sendDailyReportEmail,
   sendEnquiryReceivedEmail, // ✅ NEW
