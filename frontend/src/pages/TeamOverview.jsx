@@ -10,11 +10,13 @@
 // the 3 workflow teams (Freight/Customs/Accounts) that employee belongs
 // to. This is what the Team Performance report groups by.
 
+import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
-import { Users, ArrowUpRight, Loader2, RefreshCw, Package, CheckCircle2, Clock } from 'lucide-react'
+import { useSocket } from '../App'
+import { Users, ArrowUpRight, Loader2, RefreshCw, Package, CheckCircle2, Clock, AlertTriangle, X } from 'lucide-react'
 
 const AVATAR_GRADIENTS = [
   'from-indigo-500 to-blue-600',
@@ -60,8 +62,53 @@ export default function TeamOverview() {
     onError: () => addToast('Failed to update team', 'error')
   })
 
-  const team = data || []
-  const maxCount = Math.max(...team.map((t) => t.shipmentCount), 1)
+  const [filter, setFilter] = useState('ALL')
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const socket = useSocket()
+
+  // Live: refresh when shipments change so counts stay accurate
+  useEffect(() => {
+    if (!socket) return
+    const refresh = () => queryClient.invalidateQueries({ queryKey: ['team-overview'] })
+    const events = ['shipment:new', 'shipment:update', 'shipment:statusUpdate', 'shipment:archiveUpdate']
+    events.forEach((e) => socket.on(e, refresh))
+    return () => events.forEach((e) => socket.off(e, refresh))
+  }, [socket, queryClient])
+
+  const allMembers = data || []
+  const counts = useMemo(() => {
+    const c = { ALL: allMembers.length, FREIGHT: 0, CUSTOMS: 0, ACCOUNTS: 0, NONE: 0 }
+    allMembers.forEach((m) => { if (m.team && c[m.team] !== undefined) c[m.team]++; else c.NONE++ })
+    return c
+  }, [allMembers])
+  const team = allMembers.filter((m) =>
+    filter === 'ALL' ? true : filter === 'NONE' ? !m.team : m.team === filter
+  )
+
+  const toggle = (id) => setSelected((prev) => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+  const selectAllShown = () => setSelected(new Set(team.map((m) => m.id)))
+  const clearSel = () => setSelected(new Set())
+
+  const bulkAssign = async (teamValue) => {
+    if (selected.size === 0) return
+    setBulkBusy(true)
+    const ids = [...selected]
+    const results = await Promise.allSettled(
+      ids.map((id) => api.put(`/freight/employees/${id}/team`, { team: teamValue || null }))
+    )
+    const failed = results.filter((r) => r.status === 'rejected').length
+    setBulkBusy(false)
+    clearSel()
+    queryClient.invalidateQueries({ queryKey: ['team-overview'] })
+    queryClient.invalidateQueries({ queryKey: ['employee-performance'] })
+    if (failed) addToast(`${ids.length - failed} updated, ${failed} failed`, 'error')
+    else addToast(`${ids.length} member${ids.length > 1 ? 's' : ''} moved to ${TEAM_OPTIONS.find((o) => o.value === teamValue)?.label || 'No team'}`, 'success')
+  }
+
+  const maxCount = Math.max(...allMembers.map((t) => t.shipmentCount), 1)
 
   if (isLoading) {
     return (
@@ -87,11 +134,48 @@ export default function TeamOverview() {
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[11px] font-semibold tracking-wider text-indigo-600 dark:text-indigo-400 uppercase bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-0.5 rounded-md">Admin</span>
-          <span className="text-xs text-[var(--text-secondary)]">{team.length} team members</span>
+          <span className="text-xs text-[var(--text-secondary)]">{allMembers.length} team members</span>
         </div>
         <h1 className="text-[28px] font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent tracking-tight">Team</h1>
         <p className="text-sm text-[var(--text-muted)] mt-1">Click a name for their full dashboard, or "View Pending" for just their unfinished shipments. Use the team dropdown to assign each person to Freight, Customs, or Accounts — this powers the Team Performance report.</p>
       </div>
+
+      {counts.NONE > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-300/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+          <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-amber-800 dark:text-amber-300 flex-1">
+            <b>{counts.NONE} member{counts.NONE > 1 ? 's have' : ' has'} no team.</b> Team reports and reminders can only reach people who are assigned to Freight, Customs or Accounts.
+          </p>
+          <button onClick={() => { setFilter('NONE'); setSelected(new Set(allMembers.filter((m) => !m.team).map((m) => m.id))) }} className="text-xs font-semibold text-amber-700 dark:text-amber-300 underline whitespace-nowrap">Select them</button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {[['ALL', 'All'], ['FREIGHT', 'Freight'], ['CUSTOMS', 'Customs'], ['ACCOUNTS', 'Accounts'], ['NONE', 'No team']].map(([k, label]) => (
+          <button key={k} onClick={() => setFilter(k)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${filter === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-indigo-400'}`}>
+            {label} <span className="opacity-70">({counts[k]})</span>
+          </button>
+        ))}
+        {team.length > 0 && (
+          <button onClick={selectAllShown} className="ml-auto text-xs font-semibold text-indigo-600 dark:text-indigo-400 underline">Select all shown</button>
+        )}
+      </div>
+
+      {selected.size > 0 && (
+        <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-300/60 bg-indigo-50 dark:bg-indigo-900/30 px-4 py-2.5 shadow-lg">
+          <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300">{selected.size} selected</span>
+          <span className="text-xs text-[var(--text-secondary)]">Move to:</span>
+          {TEAM_OPTIONS.map((opt) => (
+            <button key={opt.value || 'none'} disabled={bulkBusy} onClick={() => bulkAssign(opt.value)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50 ${opt.value ? TEAM_BADGE[opt.value] : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'}`}>
+              {opt.label}
+            </button>
+          ))}
+          {bulkBusy && <Loader2 size={14} className="animate-spin text-indigo-500" />}
+          <button onClick={clearSel} className="ml-auto p-1 text-[var(--text-muted)] hover:text-red-500"><X size={16} /></button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {team.map((member, i) => {
@@ -105,7 +189,10 @@ export default function TeamOverview() {
               key={member.id}
               className="glass rounded-xl p-4 border border-[var(--glass-border)] transition-all hover-lift group"
             >
-              <Link to={`/team/${member.id}?name=${encodeURIComponent(displayName)}`} className="flex items-center gap-3 mb-3">
+              <div className="flex items-center gap-3 mb-3">
+              <input type="checkbox" checked={selected.has(member.id)} onChange={() => toggle(member.id)}
+                className="w-4 h-4 accent-indigo-600 flex-shrink-0 cursor-pointer" aria-label={`Select ${displayName}`} />
+              <Link to={`/team/${member.id}?name=${encodeURIComponent(displayName)}`} className="flex items-center gap-3 flex-1 min-w-0">
                 <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white text-sm font-bold shadow-md flex-shrink-0`}>
                   {initial}
                 </div>
@@ -115,6 +202,7 @@ export default function TeamOverview() {
                 </div>
                 <ArrowUpRight size={15} className="text-[var(--text-muted)] group-hover:text-indigo-500 transition-colors flex-shrink-0" />
               </Link>
+              </div>
 
               {/* ✅ TEAM ASSIGNMENT (NEW) */}
               <div className="mb-3" onClick={(e) => e.stopPropagation()}>
@@ -183,7 +271,7 @@ export default function TeamOverview() {
         {team.length === 0 && (
           <div className="col-span-full glass rounded-xl border border-[var(--border-color)] p-16 text-center">
             <Users size={28} className="text-[var(--text-muted)] mx-auto mb-3" />
-            <p className="text-sm text-[var(--text-secondary)]">No team members found yet.</p>
+            <p className="text-sm text-[var(--text-secondary)]">{filter === 'ALL' ? 'No team members found yet.' : 'No members in this group.'}</p>
           </div>
         )}
       </div>
