@@ -142,6 +142,21 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('🔄 Keep-alive ping enabled (every 10 minutes)');
   }
 
+
+  // ─── SMART REMINDERS SCHEDULER (NEW) ───
+  // Checks every 20 minutes. The sweep itself decides what is due (per
+  // shipment, India time, Sundays skipped, quiet 8 PM–9 AM). Mode comes
+  // from env REMINDERS_MODE: off | dry (default, logs only) | bell | live.
+  {
+    const { runReminderSweep } = require('./src/services/reminders.service');
+    const tick = async () => {
+      try { await runReminderSweep(); } catch (err) { console.error('[REMINDER] sweep failed:', err.message); }
+    };
+    setInterval(tick, 20 * 60 * 1000);
+    setTimeout(tick, 60 * 1000); // first check one minute after boot
+    console.log(`⏰ Smart reminders scheduler enabled (mode=${process.env.REMINDERS_MODE || 'dry'})`);
+  }
+
   // ─── DAILY REPORT EMAIL SCHEDULER (NEW) ───
   // Checks every minute; when it's 18:30 IST and today's report hasn't
   // already gone out, builds and emails it. No cron dependency needed —

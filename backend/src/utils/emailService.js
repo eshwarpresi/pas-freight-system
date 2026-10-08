@@ -342,7 +342,103 @@ async function sendDailyReportEmail(report, recipients) {
   }
 }
 
+
+// ─── REMINDER EMAILS (NEW) ───
+const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function reminderShell(title, intro, bodyHtml) {
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F7F6F3;max-width:680px;margin:auto;">
+    <tr><td style="background:#1B2A4A;padding:24px 28px;">
+      <span style="font-family:Georgia,'Times New Roman',serif;font-size:19px;color:#F7F6F3;">PAS Freight Services</span>
+    </td></tr>
+    <tr><td style="padding:28px 28px 8px;">
+      <p style="font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#1B2A4A;margin:0 0 10px;">${title}</p>
+      <p style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#2A2A2A;margin:0 0 18px;">${intro}</p>
+    </td></tr>
+    <tr><td style="padding:0 28px 24px;">${bodyHtml}</td></tr>
+    <tr><td style="padding:16px 28px;border-top:1px solid #E7E8EA;">
+      <p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8A8F98;margin:0;">PAS Freight Services · Automatic reminder. Updating the pending step in the app stops it for everyone.</p>
+    </td></tr>
+  </table>`;
+}
+
+const TH = 'padding:8px 10px;text-align:left;font-size:11px;color:#6B6F76;background:#EFEFEA;font-family:Arial,Helvetica,sans-serif;';
+const TD = 'padding:9px 10px;border-bottom:1px solid #E7E8EA;font-size:13px;color:#2A2A2A;font-family:Arial,Helvetica,sans-serif;vertical-align:top;';
+
+function dueBadge(lateDays) {
+  return lateDays > 0
+    ? `<span style="color:#B3261E;font-weight:bold;">${lateDays} working day${lateDays > 1 ? 's' : ''} late</span>`
+    : `<span style="color:#B26A00;font-weight:bold;">Due today</span>`;
+}
+
+// One grouped email per person
+async function sendReminderDigestEmail({ to, name, rows, frontendUrl }) {
+  const late = rows.filter((r) => r.lateDays > 0).length;
+  const subject = late
+    ? `Reminder: ${rows.length} shipment${rows.length > 1 ? 's' : ''} need you (${late} overdue)`
+    : `Reminder: ${rows.length} shipment${rows.length > 1 ? 's' : ''} due today`;
+  const tr = rows.slice(0, 12).map((r) => `
+    <tr>
+      <td style="${TD}"><a href="${frontendUrl}/shipment/${r.shipmentId}" style="color:#1B2A4A;font-weight:bold;text-decoration:none;">${esc(r.refNo)}</a><br><span style="color:#6B6F76;font-size:12px;">${esc(r.customer)}</span></td>
+      <td style="${TD}">${esc(r.label)}<br><span style="color:#6B6F76;font-size:12px;">Needs: ${esc(r.missing)}</span></td>
+      <td style="${TD}">${dueBadge(r.lateDays)}</td>
+    </tr>`).join('');
+  const more = rows.length > 12 ? `<p style="font-family:Arial,sans-serif;font-size:12px;color:#6B6F76;">…and ${rows.length - 12} more in the app.</p>` : '';
+  const body = `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #D8D9DB;border-collapse:collapse;">
+      <tr><th style="${TH}">Shipment</th><th style="${TH}">Pending step</th><th style="${TH}">Status</th></tr>
+      ${tr}
+    </table>${more}
+    <p style="font-family:Arial,sans-serif;font-size:13px;color:#2A2A2A;margin:18px 0 0;">
+      <a href="${frontendUrl}/reminders" style="background:#1B2A4A;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px;display:inline-block;">Open my reminders</a><br>
+      <span style="font-size:12px;color:#6B6F76;">Waiting on a customer? Snooze or mark it from the Reminders page.</span>
+    </p>`;
+  const html = reminderShell(`Hi ${esc((name || '').split(' ')[0] || 'there')},`, 'These shipments are waiting on your team:', body);
+  await sendRawEmail({ to, subject, html });
+}
+
+// One email to the MD
+async function sendEscalationEmail({ to, items, waiting, frontendUrl }) {
+  const byTeam = {};
+  items.forEach((i) => { (byTeam[i.team] = byTeam[i.team] || []).push(i); });
+  const teamLabel = { FREIGHT: 'Freight team', CUSTOMS: 'Customs team', ACCOUNTS: 'Accounts team' };
+  const counts = {};
+  items.forEach((i) => { counts[i.handlerName] = (counts[i.handlerName] || 0) + 1; });
+  const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const subject = `PAS Freight: ${items.length} shipment${items.length > 1 ? 's' : ''} stuck 3+ working days` + (ranked.length ? ` (${ranked.slice(0, 3).map(([n, c]) => n.split(' (')[0] + ' ' + c).join(', ')})` : '');
+
+  const sections = ['FREIGHT', 'CUSTOMS', 'ACCOUNTS'].map((t) => {
+    const list = (byTeam[t] || []).sort((a, b) => b.lateDays - a.lateDays);
+    if (!list.length) return `<p style="font-family:Arial,sans-serif;font-size:13px;color:#2E7D32;margin:14px 0 4px;">✅ ${teamLabel[t]}: all clear</p>`;
+    const rows = list.map((i) => `
+      <tr>
+        <td style="${TD}"><a href="${frontendUrl}/shipment/${i.shipmentId}" style="color:#1B2A4A;font-weight:bold;text-decoration:none;">${esc(i.refNo)}</a>${i.again ? ' <span style="color:#B3261E;font-size:11px;">Escalated again</span>' : ''}<br><span style="color:#6B6F76;font-size:12px;">${esc(i.customer)} · ${esc(i.mode)}</span></td>
+        <td style="${TD}">${esc(i.label)}<br><span style="color:#6B6F76;font-size:12px;">Missing: ${esc(i.missing)}</span></td>
+        <td style="${TD}"><span style="color:#B3261E;font-weight:bold;">${i.lateDays} wd</span></td>
+        <td style="${TD}"><b>${esc(i.handlerName)}</b>${i.handlerPhone ? `<br><a href="tel:${esc(i.handlerPhone)}" style="color:#1B2A4A;font-size:12px;">${esc(i.handlerPhone)}</a>` : ''}</td>
+      </tr>`).join('');
+    return `
+      <p style="font-family:Georgia,serif;font-size:15px;color:#1B2A4A;margin:20px 0 6px;">${teamLabel[t]} — ${list.length} stuck</p>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #D8D9DB;border-collapse:collapse;">
+        <tr><th style="${TH}">Shipment</th><th style="${TH}">Stuck at</th><th style="${TH}">Late</th><th style="${TH}">Handler (call)</th></tr>
+        ${rows}
+      </table>`;
+  }).join('');
+
+  const rank = ranked.length ? `<p style="font-family:Arial,sans-serif;font-size:13px;color:#2A2A2A;margin:20px 0 4px;"><b>Who to call first:</b> ${ranked.map(([n, c]) => `${esc(n)} (${c})`).join(' · ')}</p>` : '';
+  const wait = (waiting && waiting.length) ? `
+    <p style="font-family:Georgia,serif;font-size:15px;color:#B26A00;margin:20px 0 6px;">🟡 Marked "waiting" (not their fault)</p>
+    ${waiting.map((w) => `<p style="font-family:Arial,sans-serif;font-size:13px;margin:2px 0;">${esc(w.refNo)} · ${esc(w.label)} · ${esc(w.handlerName)} — <i>${esc(w.note || 'no reason given')}</i></p>`).join('')}` : '';
+  const body = `${sections}${rank}${wait}
+    <p style="margin:20px 0 0;"><a href="${frontendUrl}/reminders" style="background:#1B2A4A;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px;display:inline-block;font-family:Arial,sans-serif;font-size:13px;">Open live Reminders page</a></p>`;
+  const html = reminderShell('Shipments that need a call today', 'Working days only (Sundays excluded). Handler = the person who last worked that section, otherwise the shipment owner.', body);
+  await sendRawEmail({ to, subject, html });
+}
+
 module.exports = {
+  sendReminderDigestEmail,
+  sendEscalationEmail,
   sendMilestoneEmail,
   sendStatusEmail, // now a no-op — see comment above
   sendDailyReportEmail,

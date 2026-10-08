@@ -267,6 +267,7 @@ app.put('/api/archive/shipments/:id/unarchive', authenticateToken, async (req, r
 });
 app.use('/api/archive', authenticateToken, trackUserActivity, archiveRoutes);
 app.use('/api/notifications', authenticateToken, notificationRoutes);
+app.use('/api/reminders', authenticateToken, trackUserActivity, require('./routes/reminders.routes')); // ✅ NEW — smart reminders
 app.use('/api/checklist', authenticateToken, checklistRoutes);
 app.use('/api/delivery-challan', authenticateToken, deliveryChallanRoutes); // ✅ NEW
 

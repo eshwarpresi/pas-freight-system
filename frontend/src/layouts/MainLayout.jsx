@@ -6,7 +6,7 @@ import {
   LogOut, User, ChevronDown, ChevronLeft, ChevronRight, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText,
   BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink,
-  Layers, Users, Shield, BarChart2, TrendingUp
+  Layers, Users, Shield, BarChart2, TrendingUp, BellRing
 } from 'lucide-react'
 import api, { onNetworkStatusChange } from '../lib/api'
 import { useSocket } from '../App'
@@ -197,6 +197,7 @@ export default function MainLayout({ user }) {
     { path: '/team', icon: Users, label: 'Team', color: 'text-indigo-500' },
     { path: '/daily-report', icon: BarChart2, label: 'Daily Report', color: 'text-emerald-500' },
     { path: '/team-performance', icon: TrendingUp, label: 'Team Performance', color: 'text-rose-500' },
+    { path: '/reminders', icon: BellRing, label: 'Reminders', color: 'text-orange-500' },
   ]
 
   const dashboardLinks = [

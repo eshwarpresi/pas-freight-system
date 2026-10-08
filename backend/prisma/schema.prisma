@@ -25,6 +25,7 @@ model User {
   // Freight and Customs teams today, and we need to tell those two apart
   // for the Team Performance report. Null = not yet assigned (e.g. Admins).
   team      String?
+  phone     String? // ✅ NEW — shown to the MD in reminder escalation mails
   lastActive DateTime? // Track when user was last active
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -353,4 +354,27 @@ model PartyName {
 
   @@unique([type, name])
   @@index([type])
+}
+
+
+// ==========================================
+// REMINDER LOG (NEW)
+// Remembers which reminder rungs were already sent for a shipment's step
+// (so nothing is ever sent twice), plus snoozes / "waiting on customer"
+// pauses and the per-day email counters. Deliberately NOT a relation to
+// Shipment, so it can never block deleting or archiving a shipment.
+// ==========================================
+model ReminderLog {
+  id         String    @id @default(uuid())
+  shipmentId String    // 'GLOBAL' for per-person / MD digest counters
+  step       String    // PRE_ALERTS, BOE, OOC, INVOICE ... or DIGEST / MD_DIGEST
+  rung       String    // SOON, DUE, LATE1, ESC1, ESC2, SNOOZE, WAITING (or userId for DIGEST)
+  until      DateTime? // snooze / waiting expiry
+  note       String?   // "waiting on customer" reason
+  createdBy  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([shipmentId, step, rung])
+  @@index([step, createdAt])
+  @@index([rung])
 }

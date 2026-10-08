@@ -2303,7 +2303,7 @@ const deletePartyName = async (req, res) => {
 const getTeamOverview = async (req, res) => {
   try {
     const users = await prisma.user.findMany({
-      select: { id: true, name: true, email: true, role: true, team: true }
+      select: { id: true, name: true, email: true, role: true, team: true, phone: true }
     });
     const shipments = await prisma.shipment.findMany({
       where: { isDeleted: false },

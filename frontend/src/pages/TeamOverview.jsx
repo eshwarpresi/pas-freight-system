@@ -40,6 +40,31 @@ const TEAM_BADGE = {
   ACCOUNTS: 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40',
 }
 
+// Phone number box — saved when you leave the field. Shown to the MD in
+// reminder escalation emails so he can call the handler directly.
+function PhoneField({ member, onSaved }) {
+  const [val, setVal] = useState(member.phone || '')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setVal(member.phone || '') }, [member.phone])
+  const save = async () => {
+    if ((val || '') === (member.phone || '')) return
+    setSaving(true)
+    try {
+      await api.put(`/reminders/phone/${member.id}`, { phone: val })
+      onSaved(true)
+    } catch { onSaved(false) } finally { setSaving(false) }
+  }
+  return (
+    <input
+      type="tel" value={val} placeholder="Phone number"
+      onChange={(e) => setVal(e.target.value)} onBlur={save}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+      disabled={saving}
+      className="w-full mb-3 text-[11px] rounded-lg px-2.5 py-1.5 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50"
+    />
+  )
+}
+
 export default function TeamOverview() {
   const { addToast } = useToast()
   const queryClient = useQueryClient()
@@ -217,6 +242,11 @@ export default function TeamOverview() {
                   ))}
                 </select>
               </div>
+
+              <PhoneField member={member} onSaved={(ok) => {
+                if (ok) { queryClient.invalidateQueries({ queryKey: ['team-overview'] }); addToast('Phone saved', 'success') }
+                else addToast('Could not save phone (admins only)', 'error')
+              }} />
 
               <div className="flex items-center gap-2 mb-2">
                 <Package size={13} className="text-[var(--text-muted)]" />

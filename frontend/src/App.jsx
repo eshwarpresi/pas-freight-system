@@ -19,6 +19,7 @@ const EmployeeStats = lazy(() => import('./pages/EmployeeStats')) // ✅ NEW
 const TeamOverview = lazy(() => import('./pages/TeamOverview')) // ✅ NEW — Admin only
 const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard')) // ✅ NEW — Admin only
 const DailyReport = lazy(() => import('./pages/DailyReport')) // ✅ NEW — Admin only
+const Reminders = lazy(() => import('./pages/Reminders')) // ✅ NEW — smart reminders
 const TeamPerformance = lazy(() => import('./pages/TeamPerformance')) // ✅ NEW — Admin only
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
@@ -318,6 +319,7 @@ function App() {
 
                 {/* ✅ Team Performance — now open to everyone */}
                 <Route path="team-performance" element={<TeamPerformance />} />
+                <Route path="reminders" element={<Reminders />} />
 
                 <Route path="freight" element={<FreightDashboard />} />
                 <Route path="cha" element={<CHADashboard />} />
