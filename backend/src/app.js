@@ -28,7 +28,7 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 // cold start) don't reliably auto-answer preflight requests unless this
 // is spelled out explicitly.
 const corsOptions = {
-  origin: ['https://pas-freight-system.onrender.com', 'http://localhost:5173', 'http://localhost:5174'],
+  origin: ['https://pas-freight-system.onrender.com', 'https://pasfreight.com', 'https://www.pasfreight.com', 'http://localhost:5173', 'http://localhost:5174'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
@@ -253,6 +253,8 @@ app.use('/api', (req, res, next) => {
   }
   next();
 });
+// ✅ NEW — PUBLIC shipment tracking (no login; milestone dates only, rate-limited)
+app.use('/api/track', require('./routes/tracking.routes'));
 app.use('/api/freight', authenticateToken, trackUserActivity, freightForwardingRoutes);
 app.use('/api/cha', authenticateToken, trackUserActivity, chaRoutes);
 app.use('/api/accounts', authenticateToken, trackUserActivity, accountsRoutes);
