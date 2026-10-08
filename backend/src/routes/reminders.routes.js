@@ -21,7 +21,10 @@ router.get('/', async (req, res) => {
         return me?.team === i.team;
       });
     }
-    res.json({ status: 'success', data: { ...data, items, isAdmin: isAdmin(req) } });
+    // Friendly name for the welcome banner
+    const email = String(req.user?.email || '').toLowerCase();
+    const greetName = email.startsWith('shivu@') ? 'Shivu Sir' : String(req.user?.name || '').trim().split(' ')[0] || 'there';
+    res.json({ status: 'success', data: { ...data, items, isAdmin: isAdmin(req), me: { name: req.user?.name || '', greetName } } });
   } catch (err) {
     console.error('Reminders overview failed:', err);
     res.status(500).json({ status: 'error', message: 'Failed to load reminders' });

@@ -143,6 +143,21 @@ server.listen(PORT, '0.0.0.0', () => {
   }
 
 
+  // ─── ENSURE ADMIN ACCOUNTS (NEW) ───
+  // These emails are always Admin (the MD and the support account). Override
+  // with env ADMIN_EMAILS="a@x.com,b@x.com" if the list ever changes.
+  (async () => {
+    try {
+      const prisma = require('./src/utils/prisma');
+      const emails = (process.env.ADMIN_EMAILS || 'shivu@pasfreight.com,support@pasfreight.com')
+        .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+      const r = await prisma.user.updateMany({ where: { email: { in: emails }, NOT: { role: 'ADMIN' } }, data: { role: 'ADMIN' } });
+      if (r.count) console.log(`👑 Set ${r.count} account(s) to Admin: ${emails.join(', ')}`);
+    } catch (err) {
+      console.error('[ADMIN] could not ensure admin accounts:', err.message);
+    }
+  })();
+
   // ─── SMART REMINDERS SCHEDULER (NEW) ───
   // Checks every 20 minutes. The sweep itself decides what is due (per
   // shipment, India time, Sundays skipped, quiet 8 PM–9 AM). Mode comes

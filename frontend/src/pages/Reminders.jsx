@@ -11,7 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
 import { useSocket } from '../App'
-import { BellRing, Loader2, RefreshCw, Phone, Clock, AlarmClock, PauseCircle, CheckCircle2 } from 'lucide-react'
+import { BellRing, Loader2, RefreshCw, Phone, Clock, AlarmClock, PauseCircle, CheckCircle2, Search, Download, X } from 'lucide-react'
 
 const TEAM_LABEL = { FREIGHT: 'Freight', CUSTOMS: 'Customs', ACCOUNTS: 'Accounts' }
 const TEAM_BADGE = {
@@ -32,11 +32,87 @@ const fmtDay = (d) => {
   return `${day}-${m}-${y}`
 }
 
+// Welcome banner shown to Admins (the MD and support): a calm, one-glance
+// summary of where the company stands right now.
+function AdminWelcome({ name, items, onPickTeam, onPickPerson }) {
+  const hourIST = Number(new Date().toLocaleString('en-IN', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }))
+  const greeting = hourIST < 12 ? 'Good morning' : hourIST < 17 ? 'Good afternoon' : 'Good evening'
+  const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' })
+  const active = items.filter((i) => !i.paused)
+  const late = active.filter((i) => i.state === 'LATE')
+  const stuck3 = late.filter((i) => i.lateDays >= 3)
+
+  const teams = ['FREIGHT', 'CUSTOMS', 'ACCOUNTS'].map((t) => {
+    const mine = active.filter((i) => i.team === t)
+    return { t, late: mine.filter((i) => i.state === 'LATE').length, today: mine.filter((i) => i.state === 'DUE').length }
+  })
+
+  const byPerson = {}
+  stuck3.forEach((i) => {
+    const k = i.handler?.name || 'Unassigned'
+    if (!byPerson[k]) byPerson[k] = { name: k, phone: i.handler?.phone, n: 0 }
+    byPerson[k].n++
+  })
+  const callFirst = Object.values(byPerson).sort((a, b) => b.n - a.n).slice(0, 3)
+
+  return (
+    <div className="rounded-2xl p-5 sm:p-6 text-white shadow-lg bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-800 relative overflow-hidden">
+      <div className="absolute -right-10 -top-10 w-44 h-44 rounded-full bg-white/10" />
+      <div className="absolute -right-2 top-16 w-24 h-24 rounded-full bg-white/5" />
+      <div className="relative">
+        <p className="text-xs opacity-80">{today}</p>
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mt-0.5">{greeting}, {name} 👋</h2>
+        <p className="text-sm opacity-90 mt-1">
+          {stuck3.length === 0
+            ? (late.length === 0 ? 'Everything is on track right now. Nothing is overdue.' : `${late.length} shipment${late.length > 1 ? 's are' : ' is'} running late, none for more than 2 working days.`)
+            : `${stuck3.length} shipment${stuck3.length > 1 ? 's have' : ' has'} been stuck for 3 or more working days.`}
+        </p>
+
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-4">
+          {teams.map((x) => (
+            <button key={x.t} type="button" onClick={() => onPickTeam(x.t)}
+              className="text-left rounded-xl bg-white/10 hover:bg-white/20 transition-colors p-3 backdrop-blur-sm">
+              <p className="text-[11px] opacity-80">{TEAM_LABEL[x.t]} team</p>
+              {x.late === 0 ? (
+                <p className="text-sm font-bold mt-0.5">✅ On track</p>
+              ) : (
+                <p className="text-sm font-bold mt-0.5">{x.late} overdue</p>
+              )}
+              <p className="text-[10px] opacity-70">{x.today} due today</p>
+            </button>
+          ))}
+        </div>
+
+        {callFirst.length > 0 && (
+          <div className="mt-4">
+            <p className="text-[11px] uppercase tracking-wider opacity-70 mb-1.5">📞 Worth a call today</p>
+            <div className="flex flex-wrap gap-2">
+              {callFirst.map((c) => (
+                <span key={c.name} className="inline-flex items-center gap-2 rounded-lg bg-white/15 px-3 py-1.5 text-xs">
+                  <button type="button" onClick={() => onPickPerson(c.name)} className="font-bold underline-offset-2 hover:underline">{c.name}</button>
+                  <span className="opacity-80">{c.n} stuck</span>
+                  {c.phone && <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1 font-semibold"><Phone size={11} />{c.phone}</a>}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Reminders() {
   const { addToast } = useToast()
   const queryClient = useQueryClient()
   const socket = useSocket()
   const [tab, setTab] = useState('ALL')
+  const [status, setStatus] = useState('ALL') // ALL | LATE | DUE | SOON | PAUSED
+  const [search, setSearch] = useState('')
+  const [handler, setHandler] = useState('ALL')
+  const [modeFilter, setModeFilter] = useState('ALL')
+  const [minLate, setMinLate] = useState(0) // 0 = any, 3 = "3+ days late"
+  const [sort, setSort] = useState('LATE') // LATE | DUE | REF
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
@@ -72,10 +148,41 @@ export default function Reminders() {
   const active = items.filter((i) => !i.paused)
   const waiting = items.filter((i) => i.paused)
 
+  const handlerOptions = useMemo(() => [...new Set(items.map((i) => i.handler?.name || 'Unassigned'))].sort(), [items])
+  const modeOptions = useMemo(() => [...new Set(items.map((i) => i.mode))].sort(), [items])
+
   const shown = useMemo(() => {
-    const list = tab === 'ALL' ? items : items.filter((i) => i.team === tab)
-    return [...list].sort((a, b) => (a.paused ? 1 : 0) - (b.paused ? 1 : 0) || b.lateDays - a.lateDays)
-  }, [items, tab])
+    const q = search.trim().toLowerCase()
+    const list = items.filter((i) => {
+      if (tab !== 'ALL' && i.team !== tab) return false
+      if (status === 'PAUSED' ? !i.paused : (status !== 'ALL' && (i.paused || i.state !== status))) return false
+      if (handler !== 'ALL' && (i.handler?.name || 'Unassigned') !== handler) return false
+      if (modeFilter !== 'ALL' && i.mode !== modeFilter) return false
+      if (minLate && (i.paused || i.lateDays < minLate)) return false
+      if (q && !`${i.refNo} ${i.customer} ${i.handler?.name || ''} ${i.label}`.toLowerCase().includes(q)) return false
+      return true
+    })
+    const bySort = {
+      LATE: (a, b) => b.lateDays - a.lateDays,
+      DUE: (a, b) => a.dueDay.localeCompare(b.dueDay),
+      REF: (a, b) => a.refNo.localeCompare(b.refNo),
+    }[sort]
+    return [...list].sort((a, b) => (a.paused ? 1 : 0) - (b.paused ? 1 : 0) || bySort(a, b))
+  }, [items, tab, status, search, handler, modeFilter, minLate, sort])
+
+  const filtersActive = tab !== 'ALL' || status !== 'ALL' || search || handler !== 'ALL' || modeFilter !== 'ALL' || minLate
+  const clearFilters = () => { setTab('ALL'); setStatus('ALL'); setSearch(''); setHandler('ALL'); setModeFilter('ALL'); setMinLate(0) }
+
+  const exportCsv = () => {
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const rows = [['Ref', 'Customer', 'Mode', 'Team', 'Pending step', 'Needs', 'Due date', 'Working days late', 'Handler', 'Phone', 'Paused']]
+    shown.forEach((i) => rows.push([i.refNo, i.customer, i.mode, TEAM_LABEL[i.team], i.label, i.missing, i.dueDay, i.lateDays, i.handler?.name, i.handler?.phone || '', i.paused ? (i.paused.type + (i.paused.note ? ': ' + i.paused.note : '')) : '']))
+    const blob = new Blob([rows.map((r) => r.map(esc).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `reminders-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+  }
 
   const counts = {
     overdue: active.filter((i) => i.state === 'LATE').length,
@@ -123,18 +230,28 @@ export default function Reminders() {
         </p>
       </div>
 
+      {isAdmin && (
+        <AdminWelcome
+          name={data?.me?.greetName || 'there'}
+          items={items}
+          onPickTeam={(t) => { setTab(t); setStatus('LATE') }}
+          onPickPerson={(n) => { setHandler(n); setStatus('ALL') }}
+        />
+      )}
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          ['Overdue', counts.overdue, 'text-red-600 bg-red-50 dark:bg-red-900/20', AlarmClock],
-          ['Due today', counts.today, 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', Clock],
-          ['Due tomorrow', counts.soon, 'text-sky-600 bg-sky-50 dark:bg-sky-900/20', BellRing],
-          ['Waiting / snoozed', counts.waiting, 'text-gray-600 bg-gray-100 dark:bg-gray-800/40', PauseCircle],
-        ].map(([label, n, cls, Icon]) => (
-          <div key={label} className={`rounded-xl p-4 ${cls}`}>
+          ['LATE', 'Overdue', counts.overdue, 'text-red-600 bg-red-50 dark:bg-red-900/20', AlarmClock],
+          ['DUE', 'Due today', counts.today, 'text-amber-600 bg-amber-50 dark:bg-amber-900/20', Clock],
+          ['SOON', 'Due tomorrow', counts.soon, 'text-sky-600 bg-sky-50 dark:bg-sky-900/20', BellRing],
+          ['PAUSED', 'Waiting / snoozed', counts.waiting, 'text-gray-600 bg-gray-100 dark:bg-gray-800/40', PauseCircle],
+        ].map(([key, label, n, cls, Icon]) => (
+          <button key={key} type="button" onClick={() => setStatus(status === key ? 'ALL' : key)}
+            className={`rounded-xl p-4 text-left transition-all ${cls} ${status === key ? 'ring-2 ring-indigo-500 scale-[1.02]' : 'hover:scale-[1.01]'}`}>
             <Icon size={16} className="mb-1 opacity-80" />
             <p className="text-2xl font-bold leading-none">{n}</p>
             <p className="text-[11px] mt-1 opacity-80">{label}</p>
-          </div>
+          </button>
         ))}
       </div>
 
@@ -152,25 +269,63 @@ export default function Reminders() {
         </div>
       )}
 
-      {isAdmin && (
-        <div className="flex flex-wrap gap-2">
-          {['ALL', 'FREIGHT', 'CUSTOMS', 'ACCOUNTS'].map((k) => {
-            const n = k === 'ALL' ? items.length : items.filter((i) => i.team === k).length
-            return (
-              <button key={k} onClick={() => setTab(k)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${tab === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-indigo-400'}`}>
-                {k === 'ALL' ? 'All teams' : TEAM_LABEL[k]} <span className="opacity-70">({n})</span>
-              </button>
-            )
-          })}
+      {/* Sticky filter bar — stays visible while you scroll the list */}
+      <div className="sticky top-0 z-20 -mx-1 px-1 py-2">
+        <div className="glass rounded-xl border border-[var(--glass-border)] p-3 space-y-2 shadow-md">
+          {isAdmin && (
+            <div className="flex flex-wrap gap-2">
+              {['ALL', 'FREIGHT', 'CUSTOMS', 'ACCOUNTS'].map((k) => {
+                const n = k === 'ALL' ? items.length : items.filter((i) => i.team === k).length
+                return (
+                  <button key={k} onClick={() => setTab(k)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${tab === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border-[var(--border-color)] hover:border-indigo-400'}`}>
+                    {k === 'ALL' ? 'All teams' : TEAM_LABEL[k]} <span className="opacity-70">({n})</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search ref, customer, person…"
+                className="w-full text-xs rounded-lg pl-8 pr-2.5 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </div>
+            <select value={handler} onChange={(e) => setHandler(e.target.value)} className="text-xs rounded-lg px-2.5 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+              <option value="ALL">All people</option>
+              {handlerOptions.map((h) => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <select value={modeFilter} onChange={(e) => setModeFilter(e.target.value)} className="text-xs rounded-lg px-2.5 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+              <option value="ALL">All shipment types</option>
+              {modeOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select value={minLate} onChange={(e) => setMinLate(Number(e.target.value))} className="text-xs rounded-lg px-2.5 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+              <option value={0}>Any lateness</option>
+              <option value={1}>1+ days late</option>
+              <option value={3}>3+ days late</option>
+              <option value={7}>7+ days late</option>
+            </select>
+            <select value={sort} onChange={(e) => setSort(e.target.value)} className="text-xs rounded-lg px-2.5 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+              <option value="LATE">Most late first</option>
+              <option value="DUE">Due date</option>
+              <option value="REF">Reference no.</option>
+            </select>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-[var(--text-secondary)]">Showing <b>{shown.length}</b> of {items.length}</span>
+            {filtersActive && (
+              <button onClick={clearFilters} className="inline-flex items-center gap-1 text-rose-600 font-semibold"><X size={12} /> Clear filters</button>
+            )}
+            <button onClick={exportCsv} disabled={!shown.length} className="ml-auto inline-flex items-center gap-1 font-semibold text-indigo-600 dark:text-indigo-400 disabled:opacity-40"><Download size={12} /> Download list</button>
+          </div>
         </div>
-      )}
+      </div>
 
       {shown.length === 0 ? (
         <div className="glass rounded-xl border border-[var(--border-color)] p-16 text-center">
           <CheckCircle2 size={30} className="text-emerald-500 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-[var(--text-primary)]">All clear 🎉</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Nothing is due or overdue{tab !== 'ALL' ? ' for this team' : ''} right now.</p>
+          <p className="text-sm font-semibold text-[var(--text-primary)]">{filtersActive ? 'No shipments match these filters' : 'All clear 🎉'}</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">{filtersActive ? 'Try clearing a filter.' : 'Nothing is due or overdue right now.'}</p>
         </div>
       ) : (
         <div className="space-y-2">
