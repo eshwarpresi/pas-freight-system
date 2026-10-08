@@ -5,7 +5,7 @@
 // own team is responsible for. Snooze / "waiting on customer" pause a
 // reminder (and the MD's escalation) for that step.
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
@@ -102,17 +102,43 @@ function AdminWelcome({ name, items, onPickTeam, onPickPerson }) {
   )
 }
 
+// Remember the filters, how far down the list you were, and the scroll position,
+// so coming back from a shipment puts you exactly where you were.
+const UI_KEY = 'pas_reminders_ui'
+const PAGE = 40
+function loadUi() {
+  try { return JSON.parse(window.sessionStorage.getItem(UI_KEY) || '{}') || {} } catch { return {} }
+}
+function saveUi(patch) {
+  try { window.sessionStorage.setItem(UI_KEY, JSON.stringify({ ...loadUi(), ...patch })) } catch { /* ignore */ }
+}
+function getScrollParent(el) {
+  let n = el?.parentElement
+  while (n && n !== document.body) {
+    const oy = window.getComputedStyle(n).overflowY
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n
+    n = n.parentElement
+  }
+  return window
+}
+
 export default function Reminders() {
   const { addToast } = useToast()
   const queryClient = useQueryClient()
   const socket = useSocket()
-  const [tab, setTab] = useState('ALL')
-  const [status, setStatus] = useState('ALL') // ALL | LATE | DUE | SOON | PAUSED
-  const [search, setSearch] = useState('')
-  const [handler, setHandler] = useState('ALL')
-  const [modeFilter, setModeFilter] = useState('ALL')
-  const [minLate, setMinLate] = useState(0) // 0 = any, 3 = "3+ days late"
-  const [sort, setSort] = useState('LATE') // LATE | DUE | REF
+  const saved = useMemo(loadUi, [])
+  const [tab, setTab] = useState(saved.tab || 'ALL')
+  const [status, setStatus] = useState(saved.status || 'ALL') // ALL | LATE | DUE | SOON | UPCOMING | PAUSED
+  const [search, setSearch] = useState(saved.search || '')
+  const [handler, setHandler] = useState(saved.handler || 'ALL')
+  const [modeFilter, setModeFilter] = useState(saved.modeFilter || 'ALL')
+  const [minLate, setMinLate] = useState(saved.minLate || 0) // 0 = any, 3 = "3+ days late"
+  const [sort, setSort] = useState(saved.sort || 'LATE') // LATE | DUE | REF
+  const [visible, setVisible] = useState(saved.visible || PAGE)
+  const [dialog, setDialog] = useState(null) // { type: 'SNOOZE'|'WAITING', item, days, note }
+  const rootRef = useRef(null)
+  const sentinelRef = useRef(null)
+  const restoredRef = useRef(false)
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
@@ -143,6 +169,10 @@ export default function Reminders() {
     onError: () => addToast('Could not update reminder', 'error'),
   })
 
+  useEffect(() => {
+    saveUi({ tab, status, search, handler, modeFilter, minLate, sort, visible })
+  }, [tab, status, search, handler, modeFilter, minLate, sort, visible])
+
   const items = data?.items || []
   const isAdmin = !!data?.isAdmin
   const active = items.filter((i) => !i.paused)
@@ -163,12 +193,56 @@ export default function Reminders() {
       return true
     })
     const bySort = {
-      LATE: (a, b) => b.lateDays - a.lateDays,
+      LATE: (a, b) => b.lateDays - a.lateDays || a.dueDay.localeCompare(b.dueDay),
       DUE: (a, b) => a.dueDay.localeCompare(b.dueDay),
       REF: (a, b) => a.refNo.localeCompare(b.refNo),
     }[sort]
     return [...list].sort((a, b) => (a.paused ? 1 : 0) - (b.paused ? 1 : 0) || bySort(a, b))
   }, [items, tab, status, search, handler, modeFilter, minLate, sort])
+
+  // whenever a filter changes, start again from the first page of results
+  const firstRun = useRef(true)
+  useEffect(() => {
+    if (firstRun.current) { firstRun.current = false; return }
+    setVisible(PAGE)
+  }, [tab, status, search, handler, modeFilter, minLate, sort])
+
+  // auto-load more rows as you scroll down
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) setVisible((v) => v + PAGE)
+    }, { rootMargin: '600px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [shown.length, visible])
+
+  // restore scroll position once the list is on screen; remember it while scrolling
+  useEffect(() => {
+    if (!data || restoredRef.current) return
+    restoredRef.current = true
+    const y = saved.scroll || 0
+    if (!y) return
+    const t = setTimeout(() => {
+      const sp = getScrollParent(rootRef.current)
+      if (sp === window) window.scrollTo(0, y); else sp.scrollTop = y
+    }, 60)
+    return () => clearTimeout(t)
+  }, [data, saved.scroll])
+  useEffect(() => {
+    const sp = getScrollParent(rootRef.current)
+    let tick = null
+    const onScroll = () => {
+      if (tick) return
+      tick = setTimeout(() => {
+        tick = null
+        saveUi({ scroll: sp === window ? window.scrollY : sp.scrollTop })
+      }, 150)
+    }
+    sp.addEventListener('scroll', onScroll, { passive: true })
+    return () => { sp.removeEventListener('scroll', onScroll); if (tick) clearTimeout(tick) }
+  }, [data])
 
   const filtersActive = tab !== 'ALL' || status !== 'ALL' || search || handler !== 'ALL' || modeFilter !== 'ALL' || minLate
   const clearFilters = () => { setTab('ALL'); setStatus('ALL'); setSearch(''); setHandler('ALL'); setModeFilter('ALL'); setMinLate(0) }
@@ -185,6 +259,7 @@ export default function Reminders() {
   }
 
   const counts = {
+    upcoming: active.filter((i) => i.state === 'UPCOMING').length,
     overdue: active.filter((i) => i.state === 'LATE').length,
     today: active.filter((i) => i.state === 'DUE').length,
     soon: active.filter((i) => i.state === 'SOON').length,
@@ -217,7 +292,7 @@ export default function Reminders() {
   const mode = MODE_INFO[data?.mode] || MODE_INFO.dry
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div ref={rootRef} className="space-y-6 animate-fade-in">
       <div>
         <div className="flex flex-wrap items-center gap-2 mb-1">
           <span className={`text-[11px] font-semibold tracking-wider uppercase px-2.5 py-0.5 rounded-md ${mode.cls}`}>{mode.label}</span>
@@ -305,6 +380,14 @@ export default function Reminders() {
               <option value={3}>3+ days late</option>
               <option value={7}>7+ days late</option>
             </select>
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="text-xs rounded-lg px-2.5 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+              <option value="ALL">All statuses</option>
+              <option value="LATE">Overdue</option>
+              <option value="DUE">Due today</option>
+              <option value="SOON">Due tomorrow</option>
+              <option value="UPCOMING">Not due yet</option>
+              <option value="PAUSED">Waiting / snoozed</option>
+            </select>
             <select value={sort} onChange={(e) => setSort(e.target.value)} className="text-xs rounded-lg px-2.5 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
               <option value="LATE">Most late first</option>
               <option value="DUE">Due date</option>
@@ -329,9 +412,9 @@ export default function Reminders() {
         </div>
       ) : (
         <div className="space-y-2">
-          {shown.map((i) => {
+          {shown.slice(0, visible).map((i) => {
             const late = i.state === 'LATE'
-            const dot = i.paused ? 'bg-gray-400' : late ? 'bg-red-500' : i.state === 'DUE' ? 'bg-amber-500' : 'bg-sky-500'
+            const dot = i.paused ? 'bg-gray-400' : late ? 'bg-red-500' : i.state === 'DUE' ? 'bg-amber-500' : i.state === 'SOON' ? 'bg-sky-500' : 'bg-emerald-400'
             return (
               <div key={`${i.shipmentId}-${i.step}`} className={`glass rounded-xl border p-3 sm:p-4 flex flex-col lg:flex-row lg:items-center gap-3 ${late && !i.paused ? 'border-red-300/60' : 'border-[var(--glass-border)]'}`}>
                 <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -350,7 +433,7 @@ export default function Reminders() {
 
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className={`px-2 py-0.5 rounded-md font-semibold ${TEAM_BADGE[i.team]}`}>{TEAM_LABEL[i.team]}</span>
-                  <span className={`px-2 py-0.5 rounded-md font-semibold ${late ? 'bg-red-100 text-red-700' : i.state === 'DUE' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>
+                  <span className={`px-2 py-0.5 rounded-md font-semibold ${late ? 'bg-red-100 text-red-700' : i.state === 'DUE' ? 'bg-amber-100 text-amber-700' : i.state === 'SOON' ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>
                     {late ? `${i.lateDays} working day${i.lateDays > 1 ? 's' : ''} late` : i.state === 'DUE' ? 'Due today' : `Due ${fmtDay(i.dueDay)}`}
                   </span>
                   <span className="text-[var(--text-secondary)]">👤 {i.handler?.name}{i.handler?.phone && <a href={`tel:${i.handler.phone}`} className="ml-1 underline">{i.handler.phone}</a>}</span>
@@ -358,18 +441,52 @@ export default function Reminders() {
 
                 {!i.paused && (
                   <div className="flex gap-2 flex-shrink-0">
-                    <button disabled={pauseMutation.isPending} onClick={() => pauseMutation.mutate({ shipmentId: i.shipmentId, step: i.step, type: 'SNOOZE', days: 1 })}
-                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-[var(--border-color)] hover:border-indigo-400 disabled:opacity-50">Snooze 1 day</button>
-                    <button disabled={pauseMutation.isPending} onClick={() => {
-                      const note = window.prompt('Waiting on customer — reason (the MD will see this):', '')
-                      if (note === null) return
-                      pauseMutation.mutate({ shipmentId: i.shipmentId, step: i.step, type: 'WAITING', days: 5, note })
-                    }} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-50">Waiting on customer</button>
+                    <button disabled={pauseMutation.isPending} onClick={() => setDialog({ type: 'SNOOZE', item: i, days: 1, note: '' })}
+                      className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-[var(--border-color)] hover:border-indigo-400 disabled:opacity-50">Snooze</button>
+                    <button disabled={pauseMutation.isPending} onClick={() => setDialog({ type: 'WAITING', item: i, days: 5, note: '' })} className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-50">Waiting on customer</button>
                   </div>
                 )}
               </div>
             )
           })}
+          {visible < shown.length && (
+            <div ref={sentinelRef} className="flex items-center justify-center gap-3 py-4 text-xs text-[var(--text-muted)]">
+              <Loader2 size={14} className="animate-spin" /> Loading more…
+              <button onClick={() => setVisible((v) => v + PAGE)} className="font-semibold text-indigo-600 underline">Show more</button>
+            </div>
+          )}
+          {visible >= shown.length && shown.length > PAGE && (
+            <p className="text-center text-xs text-[var(--text-muted)] py-3">That's all {shown.length} shipments.</p>
+          )}
+        </div>
+      )}
+
+      {dialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setDialog(null)}>
+          <div className="glass w-full max-w-md rounded-2xl border border-[var(--glass-border)] p-5 shadow-2xl bg-[var(--bg-primary)]" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-[var(--text-primary)]">
+              {dialog.type === 'WAITING' ? 'Waiting on customer' : 'Snooze reminder'}
+            </h3>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">{dialog.item.refNo} · {dialog.item.label}</p>
+            {dialog.type === 'WAITING' && (
+              <textarea autoFocus rows={3} value={dialog.note} onChange={(e) => setDialog({ ...dialog, note: e.target.value })}
+                placeholder="Reason (Shivu Sir will see this)"
+                className="w-full mt-3 text-sm rounded-lg px-3 py-2 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            )}
+            <label className="block text-xs text-[var(--text-secondary)] mt-3">Pause reminders for
+              <select value={dialog.days} onChange={(e) => setDialog({ ...dialog, days: Number(e.target.value) })}
+                className="ml-2 text-xs rounded-lg px-2.5 py-1.5 border border-[var(--border-color)] bg-[var(--bg-secondary)] text-[var(--text-primary)]">
+                {[1, 2, 3, 5, 7].map((d) => <option key={d} value={d}>{d} working day{d > 1 ? 's' : ''}</option>)}
+              </select>
+            </label>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setDialog(null)} className="px-4 py-2 rounded-lg text-xs font-semibold border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]">Cancel</button>
+              <button disabled={pauseMutation.isPending} onClick={() => {
+                pauseMutation.mutate({ shipmentId: dialog.item.shipmentId, step: dialog.item.step, type: dialog.type, days: dialog.days, note: dialog.note })
+                setDialog(null)
+              }} className="px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">Save</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

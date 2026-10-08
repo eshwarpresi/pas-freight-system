@@ -284,7 +284,7 @@ async function computeItems() {
 
   // The Reminders PAGE shows the last 45 days (so the MD can see the backlog);
   // notifications / emails only cover shipments created on/after REMINDERS_SINCE.
-  const d45 = new Date(Date.now() - 45 * DAY_MS);
+  const d45 = new Date(Date.now() - 90 * DAY_MS);
   const displaySince = cfg.since < d45 ? cfg.since : d45;
   const shipments = await prisma.shipment.findMany({
     where: {
@@ -322,7 +322,7 @@ async function computeItems() {
     if (lateDays > 0) state = 'LATE';
     else if (lateDays === 0) state = 'DUE';
     else if (today === dayBefore || workingDaysBetween(today, step.dueDay) === 1) state = 'SOON';
-    if (!state) continue; // far in the future — stay quiet
+    if (!state) state = 'UPCOMING'; // not due yet — shown on the page, never reminded
 
     const pause = pauseMap.get(`${s.id}|${step.step}`);
     let paused = null;
