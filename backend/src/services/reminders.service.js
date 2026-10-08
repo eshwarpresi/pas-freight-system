@@ -282,11 +282,15 @@ async function computeItems() {
   const today = nowIST().day;
   const people = await loadPeople();
 
+  // The Reminders PAGE shows the last 45 days (so the MD can see the backlog);
+  // notifications / emails only cover shipments created on/after REMINDERS_SINCE.
+  const d45 = new Date(Date.now() - 45 * DAY_MS);
+  const displaySince = cfg.since < d45 ? cfg.since : d45;
   const shipments = await prisma.shipment.findMany({
     where: {
       isDeleted: false,
       isArchived: false,
-      createdAt: { gte: cfg.since },
+      createdAt: { gte: displaySince },
     },
     select: {
       id: true, refNo: true, createdAt: true, currentStatus: true, shipmentStage: true,
@@ -390,7 +394,9 @@ async function runReminderSweep({ force = false } = {}) {
   const inWindow = !isSunday(n) && now.hour >= 9 && now.hour < 20;
   if (!inWindow && !force) return { skipped: 'quiet hours / Sunday' };
 
-  const { items, people } = await computeItems();
+  const { items: allItems, people } = await computeItems();
+  // Only shipments created on/after REMINDERS_SINCE ever trigger a bell or email
+  const items = allItems.filter((i) => i.shipment.createdAt >= cfg.since);
   const live = cfg.mode === 'live';
   const bellOn = cfg.mode === 'bell' || live;
 
