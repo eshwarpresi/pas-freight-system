@@ -24,6 +24,7 @@ const TeamPerformance = lazy(() => import('./pages/TeamPerformance')) // ✅ NEW
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
+const Track = lazy(() => import('./pages/Track')) // ✅ NEW — PUBLIC shipment tracking
 
 function PageLoader() {
   return (
@@ -302,6 +303,7 @@ function App() {
           <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage setUser={setUser} />} />
+              <Route path="/track" element={<Track />} />
               <Route path="/" element={<ProtectedRoute><Layout user={user} /></ProtectedRoute>}>
                 {/* ✅ Admins see everything by default (like before). Everyone
                     else lands on their own shipments only. The full
