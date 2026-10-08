@@ -122,8 +122,15 @@ function nextStep(s) {
   const type = s.shipmentType;
   const isExport = s.importExport === 'Export';
 
+  // Pre-Alerts is a NEW step. Shipments that already have old-workflow AWB
+  // data, or any Customs / Accounts data, are clearly past it — never nag
+  // about those.
+  const pastFreight =
+    has(ff.awbDate) || has(ff.mawb) || has(ff.hawb) ||
+    Object.values(cha).some(has) || Object.values(acc).some(has);
+
   const freightStep = () => {
-    if (has(ff.preAlertsSentDate)) return null;
+    if (has(ff.preAlertsSentDate) || pastFreight) return null;
     const etd = d2(ff.etd);
     return {
       team: 'FREIGHT', step: 'PRE_ALERTS', label: 'Pre-Alerts not sent', missing: 'Pre-Alerts Sent Date',
@@ -200,6 +207,11 @@ function nextStep(s) {
   }
 
   if (!out) return null;
+  // A back-dated date (e.g. BOE date typed as last month) must not make a
+  // fresh record look weeks late: a step is never due before the record
+  // itself could reasonably have reached it.
+  const floor = addWorkingDays(created, 2);
+  if (dayNum(out.dueDay) < dayNum(floor)) out.dueDay = floor;
   out.dueDay = nextWorkingDay(out.dueDay); // a Sunday due-date rolls to Monday
   return out;
 }
@@ -256,7 +268,7 @@ function handlerFor(item, people) {
   if (name) return { name, phone: user?.phone || null, assigned: true };
   const teamUsers = people.byTeam[item.team] || [];
   if (teamUsers.length) {
-    return { name: `${item.team === 'CUSTOMS' ? 'Customs' : 'Accounts'} team (${teamUsers.map((u) => u.name).join(', ')})`, phone: null, assigned: false };
+    return { name: `${item.team === 'CUSTOMS' ? 'Customs' : 'Accounts'} team (not started yet)`, phone: null, assigned: false };
   }
   return { name: 'Unassigned', phone: null, assigned: false };
 }
@@ -282,9 +294,9 @@ async function computeItems() {
       createdById: true, createdByName: true, coHandlerId: true, coHandlerName: true,
       customsHandledById: true, customsHandledByName: true,
       accountsHandledById: true, accountsHandledByName: true,
-      freightForwarding: { select: { consigneeName: true, shipperName: true, customerName: true, etd: true, eta: true, preAlertsSentDate: true, deliveryDate: true } },
-      cha: { select: { boeNo: true, boeDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, sbNo: true, sbDate: true, leoDate: true, handOverDate: true } },
-      accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true, completedAt: true } },
+      freightForwarding: { select: { consigneeName: true, shipperName: true, customerName: true, etd: true, eta: true, preAlertsSentDate: true, deliveryDate: true, awbDate: true, mawb: true, hawb: true } },
+      cha: { select: { jobNo: true, checklistDate: true, boeNo: true, boeDate: true, oocDate: true, gatePassDate: true, deliveryDate: true, sbNo: true, sbDate: true, leoDate: true, handOverDate: true } },
+      accounts: { select: { invoiceNumber: true, invoiceDate: true, sendingDate: true } },
     },
   });
 
@@ -492,14 +504,20 @@ async function runReminderSweep({ force = false } = {}) {
       if (mdToday < 1) {
         try {
           // include everything currently overdue by 3+ days, not only new rungs, for a full picture
-          const stuck = items.filter((i) => !i.paused && i.lateDays >= 3 && cfg.teams.includes(i.team));
+          const allStuck = items.filter((i) => !i.paused && i.lateDays >= 3 && cfg.teams.includes(i.team))
+            .sort((a, b) => b.lateDays - a.lateDays);
+          const stuck = allStuck.slice(0, 40);
+          const counts = {};
+          allStuck.forEach((i) => { counts[i.handler.name] = (counts[i.handler.name] || 0) + 1; });
           await sendEscalationEmail({
             to: cfg.mdEmail,
             items: stuck.map((i) => ({
               refNo: i.refNo, customer: i.customer, mode: i.mode, team: i.team, label: i.label, missing: i.missing,
               lateDays: i.lateDays, handlerName: i.handler.name, handlerPhone: i.handler.phone, shipmentId: i.shipmentId,
-              again: escalations.some((e) => e.item.shipmentId === i.shipmentId && e.rung === 'ESC2'),
+              again: escalations.some((e) => e.item.shipmentId === i.shipmentId && e.rung === 'ESC2') && sent.has(`${i.shipmentId}|${i.step}|ESC1`),
             })),
+            total: allStuck.length,
+            counts,
             waiting: items.filter((i) => i.paused && i.lateDays >= 3).map((i) => ({ refNo: i.refNo, team: i.team, label: i.label, note: i.paused.note, handlerName: i.handler.name })),
             frontendUrl: cfg.frontendUrl,
           });

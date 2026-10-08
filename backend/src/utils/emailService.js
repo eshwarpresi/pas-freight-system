@@ -399,14 +399,15 @@ async function sendReminderDigestEmail({ to, name, rows, frontendUrl }) {
 }
 
 // One email to the MD
-async function sendEscalationEmail({ to, items, waiting, frontendUrl }) {
+async function sendEscalationEmail({ to, items, waiting, frontendUrl, total, counts: allCounts }) {
   const byTeam = {};
   items.forEach((i) => { (byTeam[i.team] = byTeam[i.team] || []).push(i); });
   const teamLabel = { FREIGHT: 'Freight team', CUSTOMS: 'Customs team', ACCOUNTS: 'Accounts team' };
-  const counts = {};
-  items.forEach((i) => { counts[i.handlerName] = (counts[i.handlerName] || 0) + 1; });
+  const counts = allCounts || {};
+  if (!allCounts) items.forEach((i) => { counts[i.handlerName] = (counts[i.handlerName] || 0) + 1; });
+  const totalCount = total || items.length;
   const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const subject = `PAS Freight: ${items.length} shipment${items.length > 1 ? 's' : ''} stuck 3+ working days` + (ranked.length ? ` (${ranked.slice(0, 3).map(([n, c]) => n.split(' (')[0] + ' ' + c).join(', ')})` : '');
+  const subject = `PAS Freight: ${totalCount} shipment${totalCount > 1 ? 's' : ''} stuck 3+ working days` + (ranked.length ? ` (${ranked.slice(0, 3).map(([n, c]) => n.split(' (')[0] + ' ' + c).join(', ')})` : '');
 
   const sections = ['FREIGHT', 'CUSTOMS', 'ACCOUNTS'].map((t) => {
     const list = (byTeam[t] || []).sort((a, b) => b.lateDays - a.lateDays);
@@ -432,7 +433,7 @@ async function sendEscalationEmail({ to, items, waiting, frontendUrl }) {
     ${waiting.map((w) => `<p style="font-family:Arial,sans-serif;font-size:13px;margin:2px 0;">${esc(w.refNo)} · ${esc(w.label)} · ${esc(w.handlerName)} — <i>${esc(w.note || 'no reason given')}</i></p>`).join('')}` : '';
   const body = `${sections}${rank}${wait}
     <p style="margin:20px 0 0;"><a href="${frontendUrl}/reminders" style="background:#1B2A4A;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px;display:inline-block;font-family:Arial,sans-serif;font-size:13px;">Open live Reminders page</a></p>`;
-  const html = reminderShell('Shipments that need a call today', 'Working days only (Sundays excluded). Handler = the person who last worked that section, otherwise the shipment owner.', body);
+  const html = reminderShell('Shipments that need a call today', `Working days only (Sundays excluded). Handler = the person who last worked that section, otherwise the shipment owner.${totalCount > items.length ? ` Showing the ${items.length} most overdue of ${totalCount} — the rest are on the Reminders page.` : ''}`, body);
   await sendRawEmail({ to, subject, html });
 }
 
