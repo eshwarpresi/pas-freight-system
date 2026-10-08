@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import AdminWelcomeBanner from '../components/AdminWelcomeBanner'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { 
   LayoutDashboard, Package, Menu, X, 
@@ -234,6 +235,7 @@ export default function MainLayout({ user }) {
 
   const handleLogout = async () => {
     try { await api.post('/auth/logout') } catch (e) {}
+    try { Object.keys(sessionStorage).filter((k) => k.startsWith('pas_welcome_')).forEach((k) => sessionStorage.removeItem(k)) } catch (e) {} // so the Welcome banner shows again at next login
     localStorage.removeItem('pas_token')
     delete api.defaults.headers.common['Authorization']
     navigate('/login')
@@ -458,7 +460,7 @@ export default function MainLayout({ user }) {
           <button onClick={handleLogout} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><LogOut size={18} className="text-red-500" /></button>
         </header>
 
-        <main className="p-4 sm:p-6 lg:p-8 w-full"><Outlet /></main>
+        <main className="p-4 sm:p-6 lg:p-8 w-full">{isAdmin && <AdminWelcomeBanner user={user} />}<Outlet /></main>
       </div>
     </div>
   )
