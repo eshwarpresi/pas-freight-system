@@ -156,6 +156,7 @@ const findByRef = async (ref) => {
   }
   return sh;
 };
+const ymd = (v) => { if (!v) return null; const x = new Date(v); return isNaN(x) ? null : x.toISOString().slice(0, 10); };
 const refreshCaches = () => {
   try { require('../controllers/freightForwarding.controller').clearStatsCache(); } catch (e) {}
   try { require('../services/reminders.service').clearOverviewCache(); } catch (e) {}
@@ -185,6 +186,10 @@ router.get('/shipment/:ref', async (req, res) => {
         weight: f.weight == null ? null : Number(f.weight),
         cbm: f.cbm == null ? null : Number(f.cbm),
         containerType: f.containerType || null, noOfContainers: f.noOfContainers ?? null,
+        // used by the CAN / Freight Certificate software
+        packageType: f.packageType || null, portLocation: f.portLocation || null,
+        mawb: f.mawb || null, hawb: f.hawb || null,
+        etd: ymd(f.etd), eta: ymd(f.eta),
       },
     });
   } catch (err) {
@@ -258,6 +263,51 @@ router.post('/shipment/:ref/stage', async (req, res) => {
     res.json({ status: 'success', data: { refNo: sh.refNo, stage: finalStage, moved, applied, skipped } });
   } catch (err) {
     console.error('Integration stage update failed:', err);
+    res.status(500).json({ status: 'error', message: 'Could not update the shipment' });
+  }
+});
+
+// CAN / Freight Certificate software tells the DSR: "CAN (or Freight Certificate) prepared for this shipment".
+//   body: { docType: 'CAN' | 'FREIGHT CERTIFICATE', jobNo, preparedBy, updates: { mawb, hawb, etd, eta } }
+// Only EMPTY DSR fields are filled (the DSR stays the master). A history line is added so the team and
+// the tracking page can see that the document was prepared.
+router.post('/shipment/:ref/document', async (req, res) => {
+  try {
+    if (!guard(req, res)) return;
+    const sh = await findByRef(req.params.ref);
+    if (!sh) return res.status(404).json({ status: 'error', message: 'No shipment with this reference in the DSR' });
+    const isFC = /freight/i.test(String(req.body?.docType || ''));
+    const label = isFC ? 'Freight Certificate' : 'CAN';
+    const jobNo = s(req.body?.jobNo);
+    const by = s(req.body?.preparedBy);
+    const upd = req.body?.updates && typeof req.body.updates === 'object' ? req.body.updates : {};
+    const ff = sh.freightForwarding || null;
+    const applied = [], ffData = {};
+    if (ff) {
+      const map = {
+        mawb: s, hawb: s, etd: d, eta: d,
+        shipperName: s, consigneeName: s, fromLocation: s, portLocation: s, commodityName: s,
+        noOfPackages: i, grossWeight: n, weight: n, cbm: n,
+      };
+      for (const key of Object.keys(map)) {
+        if (!(key in upd)) continue;
+        const val = map[key](upd[key]);
+        if (val === null || val === undefined) continue;
+        const cur = ff[key];
+        if (cur === null || cur === undefined || cur === '') { ffData[key] = val; applied.push(key); }
+      }
+    }
+    if (Object.keys(ffData).length) await prisma.freightForwarding.update({ where: { shipmentId: sh.id }, data: ffData });
+    const notes = [`${label} prepared${jobNo ? ' (Job No ' + jobNo + ')' : ''}${by ? ' by ' + by : ''}`];
+    if (applied.length) notes.push(`Details filled from ${label} software: ${applied.join(', ')}`);
+    await prisma.shipment.update({
+      where: { id: sh.id },
+      data: { statusHistory: { create: notes.map((r) => ({ status: sh.currentStatus || 'ENQUIRY', remarks: r, changedBy: 'CAN/FC software' })) } },
+    });
+    refreshCaches();
+    res.json({ status: 'success', data: { refNo: sh.refNo, applied } });
+  } catch (err) {
+    console.error('Integration document update failed:', err);
     res.status(500).json({ status: 'error', message: 'Could not update the shipment' });
   }
 });
