@@ -140,11 +140,22 @@ const guard = (req, res) => {
   if (!keyOk(req)) { res.status(401).json({ status: 'error', message: 'Invalid or missing API key' }); return false; }
   return true;
 };
-const findByRef = (ref) => prisma.shipment.findFirst({
-  where: { refNo: { equals: String(ref || '').trim(), mode: 'insensitive' }, isDeleted: false },
-  orderBy: { createdAt: 'desc' },
-  select: { id: true, refNo: true, shipmentType: true, importExport: true, shipmentStage: true, currentStatus: true, remarks: true, freightForwarding: true },
-});
+const REF_SELECT = { id: true, refNo: true, shipmentType: true, importExport: true, shipmentStage: true, currentStatus: true, remarks: true, freightForwarding: true };
+// Exact reference first; if none, a reference that STARTS WITH what was typed (so PPI260506 finds PPI260506-RS)
+const findByRef = async (ref) => {
+  const q = String(ref || '').trim();
+  let sh = await prisma.shipment.findFirst({
+    where: { refNo: { equals: q, mode: 'insensitive' }, isDeleted: false },
+    orderBy: { createdAt: 'desc' }, select: REF_SELECT,
+  });
+  if (!sh && q.length >= 8) {
+    sh = await prisma.shipment.findFirst({
+      where: { refNo: { startsWith: q, mode: 'insensitive' }, isDeleted: false },
+      orderBy: { createdAt: 'desc' }, select: REF_SELECT,
+    });
+  }
+  return sh;
+};
 const refreshCaches = () => {
   try { require('../controllers/freightForwarding.controller').clearStatsCache(); } catch (e) {}
   try { require('../services/reminders.service').clearOverviewCache(); } catch (e) {}
