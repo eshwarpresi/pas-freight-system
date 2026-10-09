@@ -193,31 +193,69 @@ router.get('/shipment/:ref', async (req, res) => {
   }
 });
 
-// Quotation software tells the DSR: quotation sent ("Quoted") or customer nominated ("Nomination")
+// Quotation software tells the DSR: quotation sent ("Quoted") / customer nominated ("Nomination"),
+// and optionally sends back details entered in the quotation:
+//   updates: { fromLocation, toLocation, terms, commodityName, noOfPackages, grossWeight, weight, cbm }
+//   - fields that are EMPTY in the DSR are filled in;
+//   - fields that already have a value are only replaced when overwrite === true.
+// "stage" is optional (omit it to send details only).
+const UPDATE_FIELDS = {
+  fromLocation: s, toLocation: s, terms: (v) => (s(v) ? s(v).toUpperCase() : null), commodityName: s,
+  noOfPackages: i, grossWeight: n, weight: n, cbm: n,
+};
 router.post('/shipment/:ref/stage', async (req, res) => {
   try {
     if (!guard(req, res)) return;
-    const stage = String(req.body?.stage || '');
-    if (!['Quoted', 'Nomination'].includes(stage)) return res.status(400).json({ status: 'error', message: 'stage must be Quoted or Nomination' });
+    const stage = req.body?.stage ? String(req.body.stage) : '';
+    if (stage && !['Quoted', 'Nomination'].includes(stage)) return res.status(400).json({ status: 'error', message: 'stage must be Quoted or Nomination' });
     const quoteNo = s(req.body?.quoteNo);
     const sh = await findByRef(req.params.ref);
     if (!sh) return res.status(404).json({ status: 'error', message: 'No shipment with this reference in the DSR' });
 
-    const cur = sh.shipmentStage || '';
-    const allowedFrom = stage === 'Quoted' ? ['', 'Enquiry'] : ['', 'Enquiry', 'Quoted'];
-    const moved = allowedFrom.includes(cur);
-    const note = stage === 'Quoted'
-      ? `Quotation${quoteNo ? ' ' + quoteNo : ''} prepared and sent`
-      : `Customer nominated${quoteNo ? ' (quotation ' + quoteNo + ')' : ''}`;
-    await prisma.shipment.update({
-      where: { id: sh.id },
-      data: {
-        ...(moved ? { shipmentStage: stage } : {}),
-        statusHistory: { create: { status: sh.currentStatus || 'ENQUIRY', remarks: note, changedBy: 'Quotation software' } },
-      },
-    });
+    // 1) details coming back from the quotation
+    const ff = sh.freightForwarding || null;
+    const overwrite = req.body?.overwrite === true;
+    const applied = [], skipped = [], ffData = {};
+    const upd = req.body?.updates && typeof req.body.updates === 'object' ? req.body.updates : {};
+    if (ff) {
+      for (const key of Object.keys(UPDATE_FIELDS)) {
+        if (!(key in upd)) continue;
+        const val = UPDATE_FIELDS[key](upd[key]);
+        if (val === null || val === undefined) continue;
+        const cur = ff[key];
+        const empty = cur === null || cur === undefined || cur === '';
+        if (empty || overwrite) { ffData[key] = val; applied.push(key); } else skipped.push(key);
+      }
+    }
+
+    // 2) stage (only moves forward)
+    let moved = false, finalStage = sh.shipmentStage || '';
+    const data = {};
+    const notes = [];
+    if (stage) {
+      const allowedFrom = stage === 'Quoted' ? ['', 'Enquiry'] : ['', 'Enquiry', 'Quoted'];
+      moved = allowedFrom.includes(finalStage);
+      if (moved) { data.shipmentStage = stage; finalStage = stage; }
+      notes.push(stage === 'Quoted'
+        ? `Quotation${quoteNo ? ' ' + quoteNo : ''} prepared and sent`
+        : `Customer nominated${quoteNo ? ' (quotation ' + quoteNo + ')' : ''}`);
+    }
+    if (applied.length) notes.push(`Details updated from quotation${quoteNo ? ' ' + quoteNo : ''}: ${applied.join(', ')}`);
+
+    if (Object.keys(ffData).length) {
+      await prisma.freightForwarding.update({ where: { shipmentId: sh.id }, data: ffData });
+    }
+    if (notes.length || Object.keys(data).length) {
+      await prisma.shipment.update({
+        where: { id: sh.id },
+        data: {
+          ...data,
+          statusHistory: { create: notes.map((r) => ({ status: sh.currentStatus || 'ENQUIRY', remarks: r, changedBy: 'Quotation software' })) },
+        },
+      });
+    }
     refreshCaches();
-    res.json({ status: 'success', data: { refNo: sh.refNo, stage: moved ? stage : cur, moved } });
+    res.json({ status: 'success', data: { refNo: sh.refNo, stage: finalStage, moved, applied, skipped } });
   } catch (err) {
     console.error('Integration stage update failed:', err);
     res.status(500).json({ status: 'error', message: 'Could not update the shipment' });
