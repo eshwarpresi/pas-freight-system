@@ -33,6 +33,12 @@ const corsOptions = {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
+// ✅ NEW — server-to-server links (Quotation software → DSR). Mounted BEFORE the global CORS
+// because the Quotation file may be opened from anywhere. Protected by x-api-key, not by origin.
+app.use('/api/integrations',
+  cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'x-api-key'] }),
+  express.json({ limit: '100kb' }),
+  require('./routes/integrations.routes'));
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // ✅ explicit preflight handler for every route
 
