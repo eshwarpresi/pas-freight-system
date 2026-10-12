@@ -70,14 +70,34 @@ async function getGmailClient() {
   return google.gmail({ version: 'v1', auth: oauth2Client });
 }
 
-async function sendRawEmail({ to, cc, subject, html }) {
+// Header-safe helpers (no line breaks; non-English names/subjects encoded)
+const clean = (v) => String(v || '').replace(/[\r\n]+/g, ' ').replace(/[<>"]/g, '').trim();
+const encWord = (v) => (/^[\x20-\x7E]*$/.test(v) ? v : `=?UTF-8?B?${Buffer.from(v, 'utf8').toString('base64')}?=`);
+const okEmail = (v) => /^[^\s<>",;]+@[^\s<>",;]+\.[^\s<>",;]+$/.test(String(v || '').trim());
+
+// `sender` = the employee this mail is "from": { name, email }.
+// One Gmail login can only truly send as itself, so the mail goes out as
+//   From: "Employee Name - PAS Freight" <company mailbox>
+//   Reply-To: employee's own email   (customer replies reach the employee)
+//   Cc: employee                      (employee gets a copy)
+// If the company has added the employee's address as a "Send mail as" alias
+// in Gmail, set SEND_AS_EMPLOYEE=true and the real From becomes the employee.
+async function sendRawEmail({ to, cc, subject, html, sender }) {
   const gmail = await getGmailClient();
+  const sName = clean(sender && sender.name);
+  const sMail = okEmail(sender && sender.email) ? String(sender.email).trim() : '';
+  const label = sName ? `${sName} - PAS Freight` : 'PAS Freight';
+  const fromAddr = (sMail && String(process.env.SEND_AS_EMPLOYEE).toLowerCase() === 'true') ? sMail : EMAIL_USER;
+  const ccList = [cc, sMail].filter(Boolean).join(', ');
+  const ccFinal = Array.from(new Set(ccList.split(',').map(x => x.trim()).filter(Boolean)
+    .filter(x => x.toLowerCase() !== String(to).trim().toLowerCase()))).join(', ');
   const headers = [
-    `From: "PAS Freight" <${EMAIL_USER}>`,
+    `From: "${encWord(label)}" <${fromAddr}>`,
     `To: ${to}`,
   ];
-  if (cc) headers.push(`Cc: ${cc}`);
-  headers.push(`Subject: ${subject}`, `MIME-Version: 1.0`, `Content-Type: text/html; charset=UTF-8`, '', html);
+  if (sMail) headers.push(`Reply-To: ${sMail}`);
+  if (ccFinal) headers.push(`Cc: ${ccFinal}`);
+  headers.push(`Subject: ${encWord(clean(subject))}`, `MIME-Version: 1.0`, `Content-Type: text/html; charset=UTF-8`, '', html);
   const raw = Buffer.from(headers.join('\r\n'))
     .toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
@@ -86,7 +106,7 @@ async function sendRawEmail({ to, cc, subject, html }) {
 // ─── EMAIL 1: ENQUIRY RECEIVED (NEW) ───
 // Fires once, at creation, only if the shipment's "Send automatic update
 // emails" toggle was switched on. CC'd to whoever created the shipment.
-async function sendEnquiryReceivedEmail(shipment, employeeEmail) {
+async function sendEnquiryReceivedEmail(shipment, employeeEmail, sender) {
   try {
     const ff = shipment.freightForwarding || {};
     if (!ff.notificationEmail) return;
@@ -104,7 +124,8 @@ async function sendEnquiryReceivedEmail(shipment, employeeEmail) {
 
     await sendRawEmail({
       to: ff.notificationEmail,
-      cc: employeeEmail || undefined,
+      cc: sender ? undefined : (employeeEmail || undefined),
+      sender,
       subject: `Your Enquiry Has Been Received — ${shipment.refNo}`,
       html,
     });
@@ -119,7 +140,7 @@ async function sendEnquiryReceivedEmail(shipment, employeeEmail) {
 // + a weight/rate present) — piggybacks on the existing
 // checkAndStampFreightComplete "only ever stamps once" gate, so this
 // naturally never double-sends. No CC.
-async function sendFreightConfirmedEmail(shipment) {
+async function sendFreightConfirmedEmail(shipment, sender) {
   try {
     const ff = shipment.freightForwarding || {};
     if (!ff.notificationEmail) return;
@@ -138,6 +159,7 @@ async function sendFreightConfirmedEmail(shipment) {
 
     await sendRawEmail({
       to: ff.notificationEmail,
+      sender,
       subject: `Your Shipment Is Moving — ${shipment.refNo}`,
       html,
     });
@@ -151,7 +173,7 @@ async function sendFreightConfirmedEmail(shipment) {
 // Fires once, the moment the invoice is marked complete — piggybacks on
 // the existing markInvoiceCompleteIfReady "only ever marks once" gate.
 // No CC.
-async function sendInvoiceReadyEmail(shipment) {
+async function sendInvoiceReadyEmail(shipment, sender) {
   try {
     const ff = shipment.freightForwarding || {};
     const acc = shipment.accounts || {};
@@ -170,6 +192,7 @@ async function sendInvoiceReadyEmail(shipment) {
 
     await sendRawEmail({
       to: ff.notificationEmail,
+      sender,
       subject: `Invoice Ready — Thank You for Choosing PAS Freight — ${shipment.refNo}`,
       html,
     });
@@ -190,7 +213,7 @@ async function sendInvoiceReadyEmail(shipment) {
 //   PRE_ALERTS — after Pre-Alerts Sent On is saved   (Freight, FF Only)
 //   BOE        — after the BOE number is saved       (Freight Import, CHA Import)
 //   HAND_OVER  — after the Hand Over date is saved   (Freight Export, CHA Export)
-async function sendMilestoneEmail(shipment, milestone) {
+async function sendMilestoneEmail(shipment, milestone, sender) {
   try {
     const ff = shipment.freightForwarding || {};
     const cha = shipment.cha || {};
@@ -242,7 +265,7 @@ async function sendMilestoneEmail(shipment, milestone) {
     }
 
     const html = buildManifestEmail({ headline, bodyText, rows: rows.filter(([, v]) => v), closingText }).replace('{{REFNO}}', shipment.refNo);
-    await sendRawEmail({ to: ff.notificationEmail, subject, html });
+    await sendRawEmail({ to: ff.notificationEmail, subject, html, sender });
     console.log(`${milestone} email sent to`, ff.notificationEmail);
   } catch (error) {
     console.error(`${milestone} email failed:`, error.message);

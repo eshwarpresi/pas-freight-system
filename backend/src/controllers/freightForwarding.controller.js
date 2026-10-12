@@ -78,6 +78,21 @@ function actorName(req) {
   return req.user?.name || req.user?.email || null;
 }
 
+// Who a customer email should appear to come from. Pass the logged-in user
+// ({name,email}) when known; otherwise falls back to the employee named on the
+// shipment's latest history entry, then to whoever created the shipment.
+async function resolveSender(shipmentId, hint) {
+  try {
+    if (hint && typeof hint === 'object' && hint.email) return { name: hint.name || '', email: hint.email };
+    const byName = async (n) => (n ? prisma.user.findFirst({ where: { name: n }, select: { name: true, email: true } }) : null);
+    if (typeof hint === 'string') { const u = await byName(hint); if (u) return u; }
+    const hist = await prisma.statusHistory.findMany({ where: { shipmentId }, orderBy: { createdAt: 'desc' }, take: 8, select: { changedBy: true } });
+    for (const h of hist) { const u = await byName(h.changedBy); if (u) return u; }
+    const sh = await prisma.shipment.findUnique({ where: { id: shipmentId }, select: { createdByUser: { select: { name: true, email: true } } } });
+    return sh?.createdByUser || undefined;
+  } catch (e) { return undefined; }
+}
+
 // ─── DYNAMIC CURRENT STATUS (NEW) ───
 // Previously, each update function manually set currentStatus forward
 // (e.g. "if a nomination date was given, set status to NOMINATED") —
@@ -201,7 +216,7 @@ const MILESTONES = {
 // the shipment has automatic emails switched on, has a Notification Email, the
 // milestone applies to its mode, and the field has actually been filled in. The
 // history entry is the permanent "already sent" record (and shows on the timeline).
-async function sendMilestoneEmailOnce(shipmentId, milestone) {
+async function sendMilestoneEmailOnce(shipmentId, milestone, actor) {
   try {
     const rule = MILESTONES[milestone];
     if (!rule) return;
@@ -214,7 +229,8 @@ async function sendMilestoneEmailOnce(shipmentId, milestone) {
     const already = await prisma.statusHistory.findFirst({ where: { shipmentId, status: key }, select: { id: true } });
     if (already) return;
     await prisma.statusHistory.create({ data: { shipmentId, status: key, remarks: `${rule.label} email sent to ${ff.notificationEmail}` } });
-    sendMilestoneEmail(s, milestone).catch(() => {});
+    const sender = await resolveSender(shipmentId, actor);
+    sendMilestoneEmail(s, milestone, sender).catch(() => {});
   } catch (err) {
     console.error('sendMilestoneEmailOnce failed:', err.message);
   }
@@ -224,13 +240,14 @@ async function sendMilestoneEmailOnce(shipmentId, milestone) {
 // finished shipment from Archive clears its completion stamp (so it stays open
 // while someone edits it), which meant it could send this email a second time
 // when it completed again. This permanent history entry is the record that stops that.
-async function sendInvoiceReadyOnce(full) {
+async function sendInvoiceReadyOnce(full, actor) {
   try {
     if (!full || !full.freightForwarding || !full.freightForwarding.autoEmailEnabled || !full.freightForwarding.notificationEmail) return;
     const already = await prisma.statusHistory.findFirst({ where: { shipmentId: full.id, status: 'EMAIL_INVOICE_READY' }, select: { id: true } });
     if (already) return;
     await prisma.statusHistory.create({ data: { shipmentId: full.id, status: 'EMAIL_INVOICE_READY', remarks: `Invoice Ready email sent to ${full.freightForwarding.notificationEmail}` } });
-    sendInvoiceReadyEmail(full).catch(() => {});
+    const sender = await resolveSender(full.id, actor);
+    sendInvoiceReadyEmail(full, sender).catch(() => {});
   } catch (err) {
     console.error('sendInvoiceReadyOnce failed:', err.message);
   }
@@ -260,7 +277,7 @@ async function archiveIfComplete(shipmentId, actor) {
     broadcastShipmentChange(sh.refNo);
     if (sh.freightForwarding?.autoEmailEnabled && sh.freightForwarding.notificationEmail) {
       const full = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { freightForwarding: true, cha: true, accounts: true } });
-      await sendInvoiceReadyOnce(full);
+      await sendInvoiceReadyOnce(full, actor);
     }
     return true;
   } catch (err) {
@@ -671,7 +688,7 @@ const createShipment = async (req, res) => {
     // to the employee who created it. Fire-and-forget — a failed email
     // should never block or fail the shipment creation itself.
     if (autoEmailEnabled && notificationEmail) {
-      sendEnquiryReceivedEmail(shipment, req.user?.email).catch(() => {});
+      sendEnquiryReceivedEmail(shipment, req.user?.email, req.user ? { name: req.user.name, email: req.user.email } : undefined).catch(() => {});
     }
     res.status(201).json({ status: 'success', data: shipment });
   } catch (error) { console.error('Error creating shipment:', error); res.status(500).json({ status: 'error', message: 'Failed to create shipment' }); }
@@ -3050,7 +3067,7 @@ const updateRates = async (req, res) => {
       if (parts.length > 0) await upsertStatusEntry(req.params.id, 'RATES_UPDATED', parts.join(' | '), actorName(req)); 
       await checkAndStampFreightComplete(req.params.id, req);
       await recomputeCurrentStatus(req.params.id); // ✅ NEW — lets status move through RATES_ADDED, and move back if rate/weight is cleared
-      if (preAlertsSentDate) sendMilestoneEmailOnce(req.params.id, 'PRE_ALERTS'); // 2nd customer email — fire and forget
+      if (preAlertsSentDate) sendMilestoneEmailOnce(req.params.id, 'PRE_ALERTS', req.user); // 2nd customer email — fire and forget
     } 
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); 
     sendStatusEmail(s).catch(() => {}); 

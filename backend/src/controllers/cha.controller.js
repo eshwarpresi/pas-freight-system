@@ -71,7 +71,7 @@ const updateBOE = async (req, res) => {
       await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
-    if (req.body.boeNo) sendMilestoneEmailOnce(req.params.id, 'BOE'); // customer email — fire and forget
+    if (req.body.boeNo) sendMilestoneEmailOnce(req.params.id, 'BOE', req.user); // customer email — fire and forget
     res.json({ status: 'success', data: s });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
@@ -190,7 +190,7 @@ const updateHandOver = async (req, res) => {
       await recomputeCurrentStatus(id);
     }
     const s = await getFullShipment(id);
-    if (req.body.handOverDate) sendMilestoneEmailOnce(req.params.id, 'HAND_OVER'); // customer email — fire and forget
+    if (req.body.handOverDate) sendMilestoneEmailOnce(req.params.id, 'HAND_OVER', req.user); // customer email — fire and forget
     res.json({ status: 'success', data: s });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
