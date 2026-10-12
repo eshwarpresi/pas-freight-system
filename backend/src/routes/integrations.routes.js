@@ -218,10 +218,40 @@ router.post('/shipment/:ref/stage', async (req, res) => {
   try {
     if (!guard(req, res)) return;
     const stage = req.body?.stage ? String(req.body.stage) : '';
-    if (stage && !['Quoted', 'Nomination'].includes(stage)) return res.status(400).json({ status: 'error', message: 'stage must be Quoted or Nomination' });
+    if (stage && !['Quoted', 'Nomination', 'Lost'].includes(stage)) return res.status(400).json({ status: 'error', message: 'stage must be Quoted, Nomination or Lost' });
     const quoteNo = s(req.body?.quoteNo);
     const sh = await findByRef(req.params.ref);
     if (!sh) return res.status(404).json({ status: 'error', message: 'No shipment with this reference in the DSR' });
+
+    // LOST: the customer did not take the quotation → the shipment is cancelled in the DSR.
+    // Only allowed while it is still at enquiry / quoted / nomination (never cancels a shipment that is already moving).
+    if (stage === 'Lost') {
+      const cur = sh.shipmentStage || 'Enquiry';
+      if (cur === 'Cancelled' || sh.currentStatus === 'CANCELLED') {
+        return res.json({ status: 'success', data: { refNo: sh.refNo, stage: 'Cancelled', moved: false, applied: [], skipped: [], note: 'already cancelled' } });
+      }
+      if (!['Enquiry', 'Quoted', 'Nomination'].includes(cur)) {
+        return res.json({ status: 'success', data: { refNo: sh.refNo, stage: cur, moved: false, applied: [], skipped: [], blocked: `Shipment is already at "${cur}" — not cancelled automatically. Cancel it in the DSR if needed.` } });
+      }
+      const reason = s(req.body?.reason);
+      await prisma.shipment.update({
+        where: { id: sh.id },
+        data: {
+          shipmentStage: 'Cancelled',
+          currentStatus: 'CANCELLED',
+          statusHistory: { create: { status: 'CANCELLED', remarks: `Quotation${quoteNo ? ' ' + quoteNo : ''} lost — shipment cancelled${reason ? ' (' + reason + ')' : ''}`, changedBy: 'Quotation software' } },
+        },
+      });
+      refreshCaches();
+      return res.json({ status: 'success', data: { refNo: sh.refNo, stage: 'Cancelled', moved: true, applied: [], skipped: [] } });
+    }
+
+    // Quotation set back to Sent/Won after being Lost → re-open the cancelled shipment
+    let reopened = false;
+    if (stage && (sh.shipmentStage === 'Cancelled' || sh.currentStatus === 'CANCELLED')) {
+      await prisma.shipment.update({ where: { id: sh.id }, data: { shipmentStage: 'Enquiry', currentStatus: 'ENQUIRY' } });
+      sh.shipmentStage = 'Enquiry'; sh.currentStatus = 'ENQUIRY'; reopened = true;
+    }
 
     // 1) details coming back from the quotation
     const ff = sh.freightForwarding || null;
@@ -247,6 +277,7 @@ router.post('/shipment/:ref/stage', async (req, res) => {
       const allowedFrom = stage === 'Quoted' ? ['', 'Enquiry'] : ['', 'Enquiry', 'Quoted'];
       moved = allowedFrom.includes(finalStage);
       if (moved) { data.shipmentStage = stage; finalStage = stage; }
+      if (reopened) notes.push('Shipment re-opened (quotation status changed back from Lost)');
       notes.push(stage === 'Quoted'
         ? `Quotation${quoteNo ? ' ' + quoteNo : ''} prepared and sent`
         : `Customer nominated${quoteNo ? ' (quotation ' + quoteNo + ')' : ''}`);
