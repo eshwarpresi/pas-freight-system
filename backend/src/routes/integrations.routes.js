@@ -116,6 +116,7 @@ router.post('/quotation/nominated', async (req, res) => {
             noOfContainers: i(b.noOfContainers),
             notificationEmail: s(b.notificationEmail),
             sellingRate: n(b.sellingRate),
+            nominationDate: new Date(),
             autoEmailEnabled: false,
           },
         },
@@ -124,6 +125,7 @@ router.post('/quotation/nominated', async (req, res) => {
       select: { id: true, refNo: true },
     });
 
+    await recompute(shipment.id);
     refreshCaches();
     res.status(201).json({ status: 'success', duplicate: false, refNumberFromQuote: refFromQuote, data: shipment });
   } catch (err) {
@@ -157,6 +159,10 @@ const findByRef = async (ref) => {
   return sh;
 };
 const ymd = (v) => { if (!v) return null; const x = new Date(v); return isNaN(x) ? null : x.toISOString().slice(0, 10); };
+// Moves the shipment's STATUS (not just the stage) using the DSR's own rule, same as saving it in the app
+const recompute = async (id) => {
+  try { await require('../controllers/freightForwarding.controller').recomputeCurrentStatus(id); } catch (e) { console.error('recompute failed:', e.message); }
+};
 const refreshCaches = () => {
   try { require('../controllers/freightForwarding.controller').clearStatsCache(); } catch (e) {}
   try { require('../services/reminders.service').clearOverviewCache(); } catch (e) {}
@@ -247,6 +253,8 @@ router.post('/shipment/:ref/stage', async (req, res) => {
     }
     if (applied.length) notes.push(`Details updated from quotation${quoteNo ? ' ' + quoteNo : ''}: ${applied.join(', ')}`);
 
+    // A nomination also stamps the Nomination date (if empty) so the status moves to "Nominated"
+    if (stage === 'Nomination' && ff && !ff.nominationDate) ffData.nominationDate = new Date();
     if (Object.keys(ffData).length) {
       await prisma.freightForwarding.update({ where: { shipmentId: sh.id }, data: ffData });
     }
@@ -259,6 +267,7 @@ router.post('/shipment/:ref/stage', async (req, res) => {
         },
       });
     }
+    await recompute(sh.id);
     refreshCaches();
     res.json({ status: 'success', data: { refNo: sh.refNo, stage: finalStage, moved, applied, skipped } });
   } catch (err) {
@@ -304,6 +313,7 @@ router.post('/shipment/:ref/document', async (req, res) => {
       where: { id: sh.id },
       data: { statusHistory: { create: notes.map((r) => ({ status: sh.currentStatus || 'ENQUIRY', remarks: r, changedBy: 'CAN/FC software' })) } },
     });
+    await recompute(sh.id);
     refreshCaches();
     res.json({ status: 'success', data: { refNo: sh.refNo, applied } });
   } catch (err) {
