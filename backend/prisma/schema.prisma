@@ -168,6 +168,7 @@ model FreightForwarding {
   commodityName   String?   // ✅ NEW — Freight module only (standard Import/Export shipments)
   preAlertsSentDate DateTime? // ✅ NEW — Freight module only (standard Import/Export shipments)
   packageType     String?   // Box/Carton, Envelope, Parcel, Pallet, etc
+  quotedCharges   Json?     // charge lines from the Quotation software (flows on to the CAN software)
   deliveryDate    DateTime? // Delivery date
   transportMode   String?   // Air, Sea, Courier, or custom
   

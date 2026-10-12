@@ -196,6 +196,7 @@ router.get('/shipment/:ref', async (req, res) => {
         packageType: f.packageType || null, portLocation: f.portLocation || null,
         mawb: f.mawb || null, hawb: f.hawb || null,
         etd: ymd(f.etd), eta: ymd(f.eta),
+        quotedCharges: f.quotedCharges || null,
       },
     });
   } catch (err) {
@@ -203,6 +204,20 @@ router.get('/shipment/:ref', async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Lookup failed' });
   }
 });
+
+// Charge lines from the quotation → stored on the shipment, picked up later by the CAN software
+const cleanCharges = (arr) => {
+  if (!Array.isArray(arr)) return null;
+  const str = (v, n) => String(v === undefined || v === null ? '' : v).trim().slice(0, n);
+  const num2 = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? String(Math.round(x * 100) / 100) : ''; };
+  const lines = arr.slice(0, 60).map((l) => ({
+    particulars: str(l && l.particulars, 120).toUpperCase(),
+    currency: str(l && l.currency, 8).toUpperCase() || 'INR',
+    rate: num2(l && l.rate), unit: num2(l && l.unit) || '1', total: num2(l && l.total),
+    roe: num2(l && l.roe) || '1', netCost: num2(l && l.netCost),
+  })).filter((l) => l.particulars);
+  return lines;
+};
 
 // Quotation software tells the DSR: quotation sent ("Quoted") / customer nominated ("Nomination"),
 // and optionally sends back details entered in the quotation:
@@ -284,9 +299,18 @@ router.post('/shipment/:ref/stage', async (req, res) => {
     }
     if (applied.length) notes.push(`Details updated from quotation${quoteNo ? ' ' + quoteNo : ''}: ${applied.join(', ')}`);
 
+    // charge lines from the quotation (replaces the previous version — the quotation is the source)
+    if (ff && Array.isArray(req.body?.charges)) {
+      const lines = cleanCharges(req.body.charges);
+      if (lines) {
+        ffData.quotedCharges = lines.length ? { quoteNo: quoteNo || null, savedAt: new Date().toISOString(), lines } : null;
+        applied.push('charges');
+      }
+    }
     // A nomination also stamps the Nomination date (if empty) so the status moves to "Nominated"
     if (stage === 'Nomination' && ff && !ff.nominationDate) ffData.nominationDate = new Date();
     if (Object.keys(ffData).length) {
+      if (ffData.quotedCharges === null) ffData.quotedCharges = require('@prisma/client').Prisma.DbNull;
       await prisma.freightForwarding.update({ where: { shipmentId: sh.id }, data: ffData });
     }
     if (notes.length || Object.keys(data).length) {
