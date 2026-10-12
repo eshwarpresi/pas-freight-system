@@ -43,6 +43,21 @@ const css = `
 .tk .st li.done span{color:#475569}
 .tk .log li{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9;font-size:14px}
 .tk .log li:last-child{border:0}.tk .log span{color:#64748b;white-space:nowrap}
+.tk-msg{margin-top:14px;padding:12px 14px;border-radius:12px;background:#eff6ff;color:#1e3a8a;font-size:15px;line-height:1.5}
+.tk-msg.warn{background:#fff7ed;color:#9a3412}.tk-msg.bad{background:#fef2f2;color:#991b1b}
+.tk-team{border:1px solid #e2e8f0;border-radius:14px;padding:16px;margin-bottom:12px}
+.tk-team.on{border-color:#1d6fe8;background:#f5f9ff;box-shadow:0 0 0 3px rgba(29,111,232,.10)}
+.tk-team h4{margin:0 0 2px;font-size:16px;color:#0b2a5b;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tk-team .now{font-size:11px;font-weight:700;background:#1d6fe8;color:#fff;border-radius:999px;padding:3px 9px;letter-spacing:.3px}
+.tk-team p{margin:0 0 10px;color:#64748b;font-size:13px}
+.tk-person{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 0;border-top:1px solid #eef2f7}
+.tk-av{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#0b2a5b,#1d6fe8);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.tk-pi{flex:1;min-width:140px}.tk-pi b{display:block;font-size:15px}.tk-pi span{font-size:13px;color:#64748b;word-break:break-all}
+.tk-btns{display:flex;gap:8px;flex-wrap:wrap}
+.tk-btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:10px;font-size:14px;font-weight:600;text-decoration:none;border:1px solid #cbd5e1;color:#0b2a5b;background:#fff;cursor:pointer}
+.tk-btn.call{background:#1d6fe8;border-color:#1d6fe8;color:#fff}.tk-btn.wa{background:#16a34a;border-color:#16a34a;color:#fff}
+.tk-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+@media print{.tk-hero,.tk-form,.tk-acts,.tk-btns{display:none!important}.tk-wrap{margin-top:0}}
 .tk-foot{text-align:center;color:#64748b;font-size:13px;line-height:1.6}
 @media(max-width:480px){.tk-status{font-size:22px}.tk-form{flex-direction:column}}
 `
@@ -53,6 +68,18 @@ const dtm = (d) => d ? new Date(d).toLocaleString('en-IN', { day: '2-digit', mon
 function Field({ label, value }) {
   if (value === null || value === undefined || value === '') return null
   return <div><small>{label}</small><b>{value}</b></div>
+}
+
+function Reach({ ref_, phone, whatsapp, email, label }) {
+  const subject = encodeURIComponent(`Shipment ${ref_}`)
+  const wa = whatsapp ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hello, I need an update on shipment ${ref_}`)}` : null
+  return (
+    <div className="tk-btns">
+      {phone && <a className="tk-btn call" href={`tel:+${(phone.tel || phone).toString().replace(/\D/g, '').replace(/^(\d{10})$/, '91$1')}`}>📞 Call</a>}
+      {wa && <a className="tk-btn wa" href={wa} target="_blank" rel="noreferrer">💬 WhatsApp</a>}
+      {email && <a className="tk-btn" href={`mailto:${email}?subject=${subject}`}>✉️ {label || 'Email'}</a>}
+    </div>
+  )
 }
 
 export default function Track() {
@@ -114,6 +141,7 @@ export default function Track() {
               {r.nextStep && <div className="tk-next">Next: {r.nextStep.label}{r.nextStep.date ? ` — ${r.nextStep.estimated ? 'expected ' : ''}${dt(r.nextStep.date)}` : ''}</div>}
               <div className="tk-bar"><i style={{ width: `${r.progress}%` }} /></div>
               <div className="tk-pct">{r.progress}% complete</div>
+              {r.message && <div className={`tk-msg ${r.cancelled ? 'bad' : r.delayed ? 'warn' : ''}`}>{r.delayed ? '⚠️ ' : ''}{r.message}</div>}
               {(r.route.from || r.route.to) && (
                 <div className="tk-route" style={{ marginTop: 18 }}>
                   <div><small>From</small><b>{r.route.from || '—'}</b></div>
@@ -157,6 +185,40 @@ export default function Track() {
               </ul>
             </div>
 
+            {r.contacts && (
+              <div className="tk-card">
+                <h3>Who is handling your shipment</h3>
+                {r.contacts.teams.map((tm) => (
+                  <div key={tm.key} className={`tk-team ${tm.active ? 'on' : ''}`}>
+                    <h4>{tm.title}{tm.active && <span className="now">HANDLING NOW</span>}</h4>
+                    <p>{tm.blurb}</p>
+                    {tm.people.map((p) => (
+                      <div className="tk-person" key={p.name}>
+                        <div className="tk-av">{p.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}</div>
+                        <div className="tk-pi"><b>{p.name}</b><span>{[p.phone, p.email].filter(Boolean).join(' · ')}</span></div>
+                        <Reach ref_={r.reference} phone={p.phone ? { tel: p.phone } : null} whatsapp={p.whatsapp} email={p.email} />
+                      </div>
+                    ))}
+                    {tm.people.length === 0 && (
+                      <div className="tk-person">
+                        <div className="tk-pi"><span>{tm.email}</span></div>
+                        <Reach ref_={r.reference} phone={r.contacts.company.phones[0]} whatsapp={r.contacts.company.phones[0]?.whatsapp} email={tm.email} label="Email team" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                <div className="tk-team">
+                  <h4>Need help urgently?</h4>
+                  <p>Call us any working day, or write to us and quote <b>{r.reference}</b>.</p>
+                  <div className="tk-btns">
+                    {r.contacts.company.phones.map((p) => <a key={p.display} className="tk-btn call" href={`tel:+${p.tel.length === 10 ? '91' + p.tel : p.tel}`}>📞 {p.display}</a>)}
+                    <a className="tk-btn" href={`mailto:${r.contacts.company.email}?subject=${encodeURIComponent('Shipment ' + r.reference)}`}>✉️ {r.contacts.company.email}</a>
+                    {r.contacts.company.escalationEmail && <a className="tk-btn" href={`mailto:${r.contacts.company.escalationEmail}?subject=${encodeURIComponent('Escalation — shipment ' + r.reference)}`}>⬆ Escalate</a>}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {r.activity.length > 0 && (
               <div className="tk-card">
                 <h3>Activity log</h3>
@@ -166,7 +228,11 @@ export default function Track() {
               </div>
             )}
 
-            <div className="tk-foot">Last updated {dtm(r.lastUpdated)}<br />{r.contact}</div>
+            <div className="tk-acts" style={{ justifyContent: 'center' }}>
+              <button className="tk-btn" onClick={() => { const u = `${window.location.origin}/track?no=${encodeURIComponent(r.reference)}`; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => alert('Tracking link copied')).catch(() => window.prompt('Copy this link', u)) }}>🔗 Copy tracking link</button>
+              <button className="tk-btn" onClick={() => window.print()}>🖨 Print</button>
+            </div>
+            <div className="tk-foot" style={{ marginTop: 14 }}>Last updated {dtm(r.lastUpdated)}<br />{r.contact}</div>
           </>
         )}
       </div>

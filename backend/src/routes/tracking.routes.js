@@ -1,8 +1,9 @@
 // backend/src/routes/tracking.routes.js
 // PUBLIC (no login) — customers look up a shipment by Job/Ref no, MAWB, HAWB, BOE or SB no.
 // Exact match first; if nothing, a "starts with" match (so PPI260506 finds PPI260506-RS).
-// Shows shipment facts + milestone dates + activity log. NEVER shows: customer/shipper names,
-// emails, rates, invoices, remarks or staff names.
+// Shows shipment facts + milestone dates + activity log + WHO IS HANDLING the shipment (name, phone, email of
+// the executive and the right team to contact). NEVER shows: customer/shipper names, customer emails,
+// rates, invoices or remarks.
 const express = require('express');
 const router = express.Router();
 const prisma = require('../utils/prisma');
@@ -24,6 +25,8 @@ const pretty = (s) => String(s || '').replace(/_/g, ' ').toLowerCase().replace(/
 const SELECT = {
   id: true, refNo: true, createdAt: true, updatedAt: true, currentStatus: true, shipmentStage: true,
   shipmentType: true, importExport: true,
+  createdByName: true, coHandlerId: true, coHandlerName: true,
+  createdByUser: { select: { name: true, email: true, phone: true } },
   freightForwarding: {
     select: {
       enquiryDate: true, bookingDate: true, pickupDate: true, etd: true, eta: true, preAlertsSentDate: true,
@@ -38,6 +41,43 @@ const SELECT = {
       oocDate: true, gatePassDate: true, deliveryDate: true, sbNo: true, sbDate: true, leoDate: true, handOverDate: true,
     },
   },
+};
+
+// ── who to contact ──
+const COMPANY = {
+  phones: (process.env.TRACK_PHONES || '90361 01201,90353 80075').split(',').map((x) => x.trim()).filter(Boolean),
+  email: process.env.TRACK_EMAIL || 'info@pasfreight.com',
+  customsEmail: process.env.TRACK_CUSTOMS_EMAIL || process.env.TRACK_EMAIL || 'info@pasfreight.com',
+  accountsEmail: process.env.TRACK_ACCOUNTS_EMAIL || process.env.TRACK_EMAIL || 'info@pasfreight.com',
+  escalationEmail: process.env.TRACK_ESCALATION_EMAIL || '',
+};
+const CUSTOMS_STEPS = new Set([
+  'Customs documents ready', 'Bill of Entry filed', 'Delivery Order collected', 'Customs cleared (OOC)', 'Gate pass issued',
+  'Shipping Bill filed', 'Let Export Order (LEO)', 'Handed over',
+]);
+const digits = (p) => String(p || '').replace(/\D/g, '');
+const waNumber = (p) => { const d = digits(p); return d.length === 10 ? '91' + d : d.length >= 11 ? d : null; };
+const person = (u, fallbackName) => {
+  const name = (u && u.name) || fallbackName || null;
+  if (!name) return null;
+  return { name, email: (u && u.email) || null, phone: (u && u.phone) || null, whatsapp: waNumber(u && u.phone) };
+};
+const FRIENDLY = {
+  'Enquiry received': 'We have received your enquiry and are preparing your booking.',
+  'Booking confirmed': 'Your booking is confirmed. We are arranging the cargo movement.',
+  'Cargo picked up': 'Your cargo has been picked up and is on its way.',
+  'Departed': 'Your shipment has departed and is in transit.',
+  'Pre-alert sent': 'The pre-alert has been sent. Documents are being prepared for arrival.',
+  'Arrived at destination': 'Your cargo has arrived. Our customs team is preparing the clearance.',
+  'Customs documents ready': 'Customs documents are ready and being filed.',
+  'Bill of Entry filed': 'The Bill of Entry is filed. Clearance is in progress.',
+  'Delivery Order collected': 'The Delivery Order is collected. Customs clearance is next.',
+  'Customs cleared (OOC)': 'Customs clearance is complete. Delivery is being arranged.',
+  'Gate pass issued': 'The gate pass is issued. Your cargo is ready for delivery.',
+  'Shipping Bill filed': 'The Shipping Bill is filed with customs.',
+  'Let Export Order (LEO)': 'Customs has cleared your export (LEO). Handover is next.',
+  'Handed over': 'Your cargo has been handed over for shipment.',
+  'Delivered': 'Your shipment has been delivered. Thank you for choosing PAS Freight.',
 };
 
 async function find(q) {
@@ -119,9 +159,34 @@ router.get('/:q', async (req, res) => {
       select: { status: true, createdAt: true },
     });
 
+    // ── who is handling now + how to reach them ──
+    const handlingNow = cancelled ? null : delivered ? 'ACCOUNTS' : next ? (CUSTOMS_STEPS.has(next.label) ? 'CUSTOMS' : 'FREIGHT') : 'FREIGHT';
+    let coUser = null;
+    if (s.coHandlerId) coUser = await prisma.user.findUnique({ where: { id: s.coHandlerId }, select: { name: true, email: true, phone: true } }).catch(() => null);
+    const owner = person(s.createdByUser, s.createdByName);
+    const co = person(coUser, s.coHandlerName);
+    const phones = COMPANY.phones.map((p) => ({ display: p, tel: digits(p), whatsapp: waNumber(p) }));
+    const teams = [
+      { key: 'FREIGHT', title: 'Your freight executive', blurb: 'Bookings, flights/vessels, pickup, pre-alerts and arrival updates',
+        people: [owner, co && co.name !== (owner && owner.name) ? co : null].filter(Boolean), email: COMPANY.email },
+      { key: 'CUSTOMS', title: 'Customs clearance team', blurb: 'Bill of Entry / Shipping Bill, duty, clearance and delivery orders', people: [], email: COMPANY.customsEmail },
+      { key: 'ACCOUNTS', title: 'Accounts & billing', blurb: 'Invoices, payments and statements', people: [], email: COMPANY.accountsEmail },
+    ].map((t) => ({ ...t, active: t.key === handlingNow }));
+    const etaMs = ff.eta ? new Date(ff.eta).getTime() : null;
+    const delayed = !cancelled && !delivered && !!next && next.label === 'Arrived at destination' && !!etaMs && etaMs < now - 24 * 3600 * 1000;
+    const message = cancelled
+      ? 'This shipment has been cancelled. Please contact us if you have any questions.'
+      : delayed
+        ? 'Your cargo is taking a little longer than planned. Your executive is following up and will keep you informed.'
+        : (lastDone && FRIENDLY[lastDone.label]) || 'We are working on your shipment.';
+
     res.json({
       status: 'success',
       data: {
+        message,
+        delayed,
+        handlingNow,
+        contacts: { teams, company: { phones, email: COMPANY.email, escalationEmail: COMPANY.escalationEmail || null } },
         reference: s.refNo,
         mode: s.shipmentType || ff.transportMode || null,
         direction: s.importExport || null,
