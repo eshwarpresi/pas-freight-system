@@ -11,15 +11,15 @@ import {
   MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle, Activity
 } from 'lucide-react'
 
-const STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
+const STAGE_OPTIONS = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
 // ✅ NEW — must match VALID_MANUAL_STATUSES in freightForwarding.controller.js exactly
 const STATUS_DROPDOWN_OPTIONS = [
-  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
+  'ENQUIRY', 'RATES_REQUESTED', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ]
 const STAGE_COLORS = {
-  'Enquiry': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900', 'Quoted': 'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900', 'Nomination': 'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900',
+  'Enquiry': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900', 'Rates Requested': 'bg-gradient-to-r from-orange-400 to-amber-300 text-orange-900', 'Quoted': 'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900', 'Nomination': 'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900',
   'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800', 'Pre-alerts': 'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900', 'Checklist': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900',
   'BOE': 'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900', 'OOC': 'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900', 'POD': 'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900',
   'Invoice': 'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900',
@@ -41,7 +41,7 @@ const SECTION_TO_STATUS = {
 }
 
 const FULL_STEPS = [
-  {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},{s:'RATES_ADDED',l:'Rates',d:'Pricing added',i:DollarSign},{s:'NOMINATED',l:'Nominated',d:'Agent assigned',i:User},
+  {s:'ENQUIRY',l:'Enquiry',d:'Initial request',i:ClipboardList},{s:'RATES_REQUESTED',l:'Rates Requested',d:'Agents asked for rates',i:Send},{s:'RATES_ADDED',l:'Rates',d:'Pricing added',i:DollarSign},{s:'NOMINATED',l:'Nominated',d:'Agent assigned',i:User},
   {s:'BOOKED',l:'Booked',d:'Confirmed with carrier',i:Calendar},{s:'PICKUP_DONE',l:'Pickup',d:'Cargo picked up',i:Truck},{s:'SCHEDULED',l:'Scheduled',d:'ETD/ETA set',i:Clock},{s:'DRAFT',l:'Draft',d:'Draft stage reached',i:FileSignature,optional:true},{s:'PRE_ALERTS',l:'Pre-Alerts',d:'Pre-alerts sent',i:Mail},
   {s:'CHECKLIST_APPROVED',l:'Checklist',d:'Customs checklist done',i:ClipboardCheck},{s:'BOE_FILED',l:'BOE',d:'Bill of Entry filed',i:FileText},{s:'DO_COLLECTED',l:'DO',d:'Delivery Order collected',i:FileCheck},
   {s:'OOC_DONE',l:'OOC',d:'Out of Charge',i:CheckCircle2},{s:'GATE_PASS',l:'Gate Pass',d:'Customs gate cleared',i:Truck},{s:'DELIVERED',l:'Delivered',d:'Cargo delivered',i:MapPin},
@@ -253,6 +253,7 @@ function isStageAtOrPastDraft(shipmentStage) {
 function isStepComplete(statusKey, ff, cha, accounts, shipmentStage) {
   switch (statusKey) {
     case 'ENQUIRY': return true
+    case 'RATES_REQUESTED': { if (shipmentStage === 'Cancelled') return false; const i = STAGE_OPTIONS.indexOf(shipmentStage); return i !== -1 && i >= STAGE_OPTIONS.indexOf('Rates Requested') }
     case 'RATES_ADDED': return !!(ff.weight || ff.grossWeight || ff.sellingRate) || isStageAtOrPastQuoted(shipmentStage)
     case 'NOMINATED': return !!ff.nominationDate
     case 'BOOKED': return !!ff.bookingDate
@@ -590,7 +591,7 @@ export default function ShipmentDetail() {
     pw.document.close()
   }
 
-  const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 border-amber-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 border-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 border-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 border-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 border-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 border-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 border-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 border-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white border-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 border-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 border-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 border-gray-300'}; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 border-gray-300' }
+  const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 border-amber-300','RATES_REQUESTED':'bg-gradient-to-r from-orange-400 to-amber-300 text-orange-900 border-orange-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 border-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 border-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 border-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 border-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 border-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 border-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 border-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white border-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 border-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 border-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 border-gray-300'}; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 border-gray-300' }
 
   if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-12 h-12 border-3 border-indigo-200 dark:border-indigo-800 border-t-indigo-600 rounded-full animate-spin" /></div>
   if (!shipment) return <div className="text-center py-16"><div className="w-16 h-16 bg-gradient-to-br from-indigo-400 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Package size={32} className="text-white"/></div><h3 className="text-lg font-semibold text-[var(--text-primary)]">Shipment not found</h3><button onClick={goBack} className="inline-flex items-center gap-1 mt-4 text-indigo-600 dark:text-indigo-400"><ArrowLeft size={14} />Back</button></div>

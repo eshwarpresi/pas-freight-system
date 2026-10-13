@@ -106,17 +106,22 @@ async function resolveSender(shipmentId, hint) {
 // Step orders mirror the frontend's FULL_STEPS/CHA_IMPORT_STEPS/etc
 // exactly (see ShipmentDetail.jsx) — keep these in sync if that ever
 // changes.
-const FULL_STEP_ORDER = ['ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const FULL_STEP_ORDER = ['ENQUIRY', 'RATES_REQUESTED', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const CHA_IMPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO_COLLECTED', 'OOC_DONE', 'GATE_PASS', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const CHA_EXPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'SB_FILED', 'LEO_DONE', 'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const TRANSPORT_STEP_ORDER = ['ENQUIRY', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const DO_RELEASE_STEP_ORDER = ['ENQUIRY', 'DO_COLLECTED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const FF_ONLY_STEP_ORDER = ['ENQUIRY', 'PICKUP_DONE', 'AWB_GENERATED', 'DO_COLLECTED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
-const STAGE_ORDER_FOR_STATUS = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice'];
+const STAGE_ORDER_FOR_STATUS = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice'];
 
 function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
   switch (statusKey) {
     case 'ENQUIRY': return true;
+    case 'RATES_REQUESTED': {
+      // done once the Stage is "Rates Requested" or anything after it (set automatically when the rate-request mail is sent)
+      const i = STAGE_ORDER_FOR_STATUS.indexOf(shipmentStage);
+      return i !== -1 && i >= STAGE_ORDER_FOR_STATUS.indexOf('Rates Requested');
+    }
     case 'RATES_ADDED': {
       const stageIdx = STAGE_ORDER_FOR_STATUS.indexOf(shipmentStage);
       const quotedIdx = STAGE_ORDER_FOR_STATUS.indexOf('Quoted');
@@ -2935,7 +2940,7 @@ const updateStage = async (req, res) => {
 // would just recalculate from the underlying fields and likely undo
 // the manual choice).
 const VALID_MANUAL_STATUSES = [
-  'ENQUIRY', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
+  'ENQUIRY', 'RATES_REQUESTED', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ];
@@ -2960,7 +2965,7 @@ const updateManualStatus = async (req, res) => {
 // filled-in fields), and choosing Cancelled — as a status OR a stage —
 // cancels the shipment, which then stays cancelled until someone picks a
 // different status.
-const VALID_STAGES = ['Enquiry', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled'];
+const VALID_STAGES = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled'];
 const BULK_STATUS_MAX = 500;
 const bulkUpdateStatus = async (req, res) => {
   try {

@@ -7,7 +7,7 @@ const REFRESH_TOKEN = process.env.GMAIL_REFRESH_TOKEN;
 const EMAIL_USER = process.env.EMAIL_USER;
 
 const STATUS_LABELS = {
-  'ENQUIRY': 'Enquiry', 'RATES_ADDED': 'Rates Added', 'NOMINATED': 'Nominated',
+  'ENQUIRY': 'Enquiry', 'RATES_REQUESTED': 'Rates Requested', 'RATES_ADDED': 'Rates Added', 'NOMINATED': 'Nominated',
   'BOOKED': 'Booked', 'SCHEDULED': 'Scheduled', 'AWB_GENERATED': 'AWB Generated',
   'CHECKLIST_APPROVED': 'Checklist Approved', 'BOE_FILED': 'BOE Filed',
   'DO_COLLECTED': 'DO Collected', 'OOC_DONE': 'OOC Done', 'GATE_PASS': 'Gate Pass',

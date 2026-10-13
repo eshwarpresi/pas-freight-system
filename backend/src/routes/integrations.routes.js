@@ -390,10 +390,17 @@ router.post('/shipment/:ref/rate-request', async (req, res) => {
     const lists = Array.isArray(req.body?.lists) ? req.body.lists.map((x) => s(x)).filter(Boolean).slice(0, 12) : [];
     const att = parseInt(req.body?.attachments, 10) || 0;
     const remarks = `Rate request sent to ${count} agent${count === 1 ? '' : 's'}${lists.length ? ' (' + lists.join(', ') + ')' : ''}${att ? ' with ' + att + ' attachment' + (att > 1 ? 's' : '') : ''}`;
+    // Stage moves to "Rates Requested" — only from Enquiry / blank; never pulls back a shipment that is already further along
+    const stageNow = String(sh.shipmentStage || '').trim();
+    const moveStage = !stageNow || stageNow === 'Enquiry';
     await prisma.shipment.update({
       where: { id: sh.id },
-      data: { statusHistory: { create: { status: 'RATE_REQUEST', remarks, changedBy: by } } },
+      data: {
+        ...(moveStage ? { shipmentStage: 'Rates Requested' } : {}),
+        statusHistory: { create: { status: 'RATE_REQUEST', remarks: remarks + (moveStage ? ' — stage set to Rates Requested' : ''), changedBy: by } },
+      },
     });
+    await recompute(sh.id);
     refreshCaches();
     res.json({ status: 'success', data: { refNo: sh.refNo } });
   } catch (err) {
