@@ -377,4 +377,29 @@ router.post('/shipment/:ref/document', async (req, res) => {
   }
 });
 
+// The mailer (bulk email software) tells the DSR: "a rate request for this shipment was sent".
+//   body: { count, by, byEmail, lists: [..], attachments }
+// A history line is added so the whole team can see who asked which agents, and when.
+router.post('/shipment/:ref/rate-request', async (req, res) => {
+  try {
+    if (!guard(req, res)) return;
+    const sh = await findByRef(req.params.ref);
+    if (!sh) return res.status(404).json({ status: 'error', message: 'No shipment with this reference in the DSR' });
+    const count = Math.max(0, parseInt(req.body?.count, 10) || 0);
+    const by = s(req.body?.by) || 'Mailer';
+    const lists = Array.isArray(req.body?.lists) ? req.body.lists.map((x) => s(x)).filter(Boolean).slice(0, 12) : [];
+    const att = parseInt(req.body?.attachments, 10) || 0;
+    const remarks = `Rate request sent to ${count} agent${count === 1 ? '' : 's'}${lists.length ? ' (' + lists.join(', ') + ')' : ''}${att ? ' with ' + att + ' attachment' + (att > 1 ? 's' : '') : ''}`;
+    await prisma.shipment.update({
+      where: { id: sh.id },
+      data: { statusHistory: { create: { status: 'RATE_REQUEST', remarks, changedBy: by } } },
+    });
+    refreshCaches();
+    res.json({ status: 'success', data: { refNo: sh.refNo } });
+  } catch (err) {
+    console.error('Integration rate-request note failed:', err);
+    res.status(500).json({ status: 'error', message: 'Could not update the shipment' });
+  }
+});
+
 module.exports = router;

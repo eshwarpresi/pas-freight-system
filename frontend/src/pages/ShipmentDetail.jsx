@@ -379,6 +379,10 @@ export default function ShipmentDetail() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [showEmailDropdown, setShowEmailDropdown] = useState(false)
   const [showTypeSwitcher, setShowTypeSwitcher] = useState(false)
+  // ✅ NEW — Rate request (wakes the mailer when the page opens so it is ready by the time the button is pressed)
+  const MAILER_URL = (import.meta.env.VITE_MAILER_URL || 'https://pasfreight-mailer.onrender.com').replace(/\/$/, '')
+  const [rateBusy, setRateBusy] = useState(false)
+  useEffect(() => { try { new Image().src = `${MAILER_URL}/api/rate/ping?t=${Date.now()}` } catch {} }, [])
   const [liveEditBy, setLiveEditBy] = useState(null)
 
   // ✅ Back should return to wherever the user actually came from (e.g.
@@ -597,6 +601,23 @@ export default function ShipmentDetail() {
   // then slicing to just the date part gives the correct format.
   const Fmt = d => d ? new Date(d).toISOString().split('T')[0] : null
 
+  // ✅ NEW — Rate request: asks the mailer to prepare the enquiry mail for this shipment, then opens the review screen
+  const openRateRequest = async () => {
+    if (rateBusy) return
+    const win = window.open('', '_blank') // opened right away so the browser does not block it
+    if (win) win.document.write('<p style="font-family:system-ui;padding:24px">Preparing your rate request…</p>')
+    setRateBusy(true)
+    try {
+      const r = await api.post(`/rate-request/${id}/draft`, {}, { timeout: 60000 })
+      const url = r.data?.data?.url
+      if (!url) throw new Error('No link returned')
+      if (win) win.location.href = url; else window.location.href = url
+    } catch (e) {
+      if (win) win.close()
+      addToast(e?.response?.data?.message || 'Could not prepare the rate request. Please try again.', 'error')
+    } finally { setRateBusy(false) }
+  }
+
   const tabs = [
     { k: 'freight', l: 'Freight Forwarding', i: Ship },
     ...(!isTransport && !isDORelease && !isFFOnly ? [{ k: 'cha', l: 'Customs Clearance', i: FileCheck }] : []),
@@ -635,6 +656,11 @@ export default function ShipmentDetail() {
               <p className="text-sm text-[var(--text-secondary)] mt-1">Created {toDDMMYYYY(new Date(shipment.createdAt).toISOString().split('T')[0])}</p>
             </div>
             <div className="flex items-center gap-2">
+              {!isTransport && !isDORelease && !isCHAOnly && (
+                <button onClick={openRateRequest} disabled={rateBusy} title="Prepare the enquiry mail to agents — you review it before it is sent" className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:from-indigo-600 hover:to-blue-700 text-sm font-medium shadow-md disabled:opacity-60">
+                  {rateBusy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Rate request
+                </button>
+              )}
               <div className="relative">
                 <button onClick={() => setShowTypeSwitcher(!showTypeSwitcher)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-slate-500 to-slate-600 text-white rounded-lg hover:from-slate-600 hover:to-slate-700 text-sm font-medium shadow-lg hover-lift"><ArrowUpDown size={16} />Change Type <ChevronDown size={14} /></button>
                 {showTypeSwitcher && (
