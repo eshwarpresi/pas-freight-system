@@ -1,8 +1,8 @@
 // frontend/src/pages/Reminders.jsx
 //
 // Live list of shipments that are due / overdue, with the named handler.
-// Admins (the MD) see every team; everyone else sees only the items their
-// own team is responsible for. Snooze / "waiting on customer" pause a
+// Admins (the MD) see every team; everyone else sees only their own shipments
+// (creator or co-handler) and the items their own team is responsible for. Snooze / "waiting on customer" pause a
 // reminder (and the MD's escalation) for that step.
 
 import { useState, useEffect, useMemo, useRef } from 'react'
@@ -300,7 +300,7 @@ export default function Reminders() {
         </div>
         <h1 className="text-[28px] font-bold bg-gradient-to-r from-rose-600 to-orange-500 bg-clip-text text-transparent tracking-tight flex items-center gap-2"><BellRing size={26} className="text-rose-500" /> Reminders</h1>
         <p className="text-sm text-[var(--text-muted)] mt-1">
-          {isAdmin ? 'Every shipment waiting on a team, with the person to call. ' : 'Shipments waiting on your team. '}
+          {isAdmin ? 'Every shipment waiting on a team, with the person to call. ' : 'Your shipments (created by you or shared with you as co-handler) and the steps your team owes. '}
           Working days only (Sundays excluded). Updating the pending step in the shipment removes it from this list.
         </p>
       </div>

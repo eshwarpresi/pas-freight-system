@@ -8,17 +8,20 @@ const reminders = require('../services/reminders.service');
 const isAdmin = (req) => req.user?.role === 'ADMIN';
 
 // GET /api/reminders — live list of pending reminders.
-// Admin sees everything; everyone else sees only the items their own team
-// (or their own shipments, for Freight) is responsible for.
+// Admin sees everything. Everyone else sees only their own shipments (as creator or co-handler),
+// plus the steps their own team (Customs / Accounts) is responsible for.
 router.get('/', async (req, res) => {
   try {
     const data = await reminders.getOverview(req.query.force === '1');
     let items = data.items;
     if (!isAdmin(req)) {
       const me = await prisma.user.findUnique({ where: { id: req.user.id }, select: { id: true, team: true } });
+      const myName = String(req.user?.name || '').trim().toLowerCase();
       items = items.filter((i) => {
-        if (i.team === 'FREIGHT') return me?.team === 'FREIGHT' || i.createdByName === req.user.name;
-        return me?.team === i.team;
+        const mine = i.createdById === req.user.id || i.coHandlerId === req.user.id
+          || (!i.createdById && myName && String(i.createdByName || '').trim().toLowerCase() === myName);
+        if (i.team === 'FREIGHT') return mine;
+        return mine || me?.team === i.team;
       });
     }
     // Friendly name for the welcome banner

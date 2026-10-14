@@ -233,15 +233,9 @@ function recipientsFor(item, people, rung) {
   const team = item.team;
   let list = [];
   if (team === 'FREIGHT') {
+    // Only the people on the shipment: the creator and the co-handler. No whole-team broadcast.
     const owners = [s.createdById, s.coHandlerId].map((id) => people.byId.get(id)).filter(Boolean);
-    const ownersInTeam = owners.filter((u) => u.team === 'FREIGHT');
-    if (rung === 'LATE1') {
-      list = [...owners, ...people.byTeam.FREIGHT];
-    } else if (ownersInTeam.length) {
-      list = ownersInTeam;
-    } else {
-      list = people.byTeam.FREIGHT.length ? people.byTeam.FREIGHT : owners;
-    }
+    list = owners.length ? owners : people.byTeam.FREIGHT;   // team only as a last resort (nobody on the shipment)
   } else {
     list = people.byTeam[team] || [];
     if (!list.length) list = [s.createdById, s.coHandlerId].map((id) => people.byId.get(id)).filter(Boolean);
@@ -360,6 +354,7 @@ function publicItem(i) {
     team: i.team, step: i.step, label: i.label, missing: i.missing,
     dueDay: i.dueDay, lateDays: i.lateDays, state: i.state, paused: i.paused,
     handler: i.handler, createdByName: i.shipment.createdByName || null,
+    createdById: i.shipment.createdById || null, coHandlerId: i.shipment.coHandlerId || null, coHandlerName: i.shipment.coHandlerName || null,
   };
 }
 
