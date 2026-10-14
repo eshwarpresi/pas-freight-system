@@ -123,7 +123,7 @@ const CHA_IMPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'BOE_FILED', 'DO
 const CHA_EXPORT_STEP_ORDER = ['ENQUIRY', 'CHECKLIST_APPROVED', 'SB_FILED', 'LEO_DONE', 'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const TRANSPORT_STEP_ORDER = ['ENQUIRY', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const DO_RELEASE_STEP_ORDER = ['ENQUIRY', 'DO_COLLECTED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
-const FF_ONLY_STEP_ORDER = ['ENQUIRY', 'PICKUP_DONE', 'AWB_GENERATED', 'DO_COLLECTED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
+const FF_ONLY_STEP_ORDER = ['ENQUIRY', 'RATES_REQUESTED', 'PICKUP_DONE', 'AWB_GENERATED', 'DO_COLLECTED', 'INVOICE_GENERATED', 'INVOICE_SENT'];
 const STAGE_ORDER_FOR_STATUS = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice'];
 
 function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
@@ -193,6 +193,9 @@ async function recomputeCurrentStatus(shipmentId) {
   for (const key of order) {
     if (isStepCompleteBackend(key, ff, cha, accounts, s.shipmentStage)) lastComplete = key;
   }
+  // Weight is filled when the enquiry is created, so "Rates" would look done from day one. While the Stage is still
+  // "Rates Requested" (agents asked, no quote yet) show that instead.
+  if (lastComplete === 'RATES_ADDED' && s.shipmentStage === 'Rates Requested' && !ff.sellingRate) lastComplete = 'RATES_REQUESTED';
   await prisma.shipment.update({ where: { id: shipmentId }, data: { currentStatus: lastComplete } });
   // ✅ NEW — after ANY field is saved (Freight, Customs or Invoice tab), check
   // whether the shipment is now fully complete and archive it on the spot.

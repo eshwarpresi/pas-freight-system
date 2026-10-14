@@ -72,6 +72,7 @@ const DO_RELEASE_STEPS = [
 // ✅ FF ONLY STEPS
 const FF_ONLY_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Created',i:ClipboardList},
+  {s:'RATES_REQUESTED',l:'Rates Requested',d:'Agents asked for rates',i:Send},
   {s:'PICKUP_DONE',l:'Pickup',d:'Cargo picked up',i:Truck},
   {s:'AWB_GENERATED',l:'AWB',d:'AWB Generated',i:Barcode},
   {s:'DO_COLLECTED',l:'DO Collected',d:'DO Released',i:FileCheck},
