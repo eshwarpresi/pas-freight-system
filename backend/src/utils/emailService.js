@@ -88,7 +88,8 @@ async function sendRawEmail({ to, cc, subject, html, sender }) {
   const sMail = okEmail(sender && sender.email) ? String(sender.email).trim() : '';
   const label = sName ? `${sName} - PAS Freight` : 'PAS Freight';
   const fromAddr = (sMail && String(process.env.SEND_AS_EMPLOYEE).toLowerCase() === 'true') ? sMail : EMAIL_USER;
-  const ccList = [cc, sMail].filter(Boolean).join(', ');
+  const loop = (sender && Array.isArray(sender.loop) ? sender.loop : []).filter(okEmail).join(', ');
+  const ccList = [cc, sMail, loop].filter(Boolean).join(', ');
   const ccFinal = Array.from(new Set(ccList.split(',').map(x => x.trim()).filter(Boolean)
     .filter(x => x.toLowerCase() !== String(to).trim().toLowerCase()))).join(', ');
   const headers = [

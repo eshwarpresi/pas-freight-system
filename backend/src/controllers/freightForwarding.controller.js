@@ -83,13 +83,25 @@ function actorName(req) {
 // shipment's latest history entry, then to whoever created the shipment.
 async function resolveSender(shipmentId, hint) {
   try {
-    if (hint && typeof hint === 'object' && hint.email) return { name: hint.name || '', email: hint.email };
+    let who;
+    if (hint && typeof hint === 'object' && hint.email) who = { name: hint.name || '', email: hint.email };
     const byName = async (n) => (n ? prisma.user.findFirst({ where: { name: n }, select: { name: true, email: true } }) : null);
-    if (typeof hint === 'string') { const u = await byName(hint); if (u) return u; }
-    const hist = await prisma.statusHistory.findMany({ where: { shipmentId }, orderBy: { createdAt: 'desc' }, take: 8, select: { changedBy: true } });
-    for (const h of hist) { const u = await byName(h.changedBy); if (u) return u; }
-    const sh = await prisma.shipment.findUnique({ where: { id: shipmentId }, select: { createdByUser: { select: { name: true, email: true } } } });
-    return sh?.createdByUser || undefined;
+    if (!who && typeof hint === 'string') { const u = await byName(hint); if (u) who = u; }
+    if (!who) {
+      const hist = await prisma.statusHistory.findMany({ where: { shipmentId }, orderBy: { createdAt: 'desc' }, take: 8, select: { changedBy: true } });
+      for (const h of hist) { const u = await byName(h.changedBy); if (u) { who = u; break; } }
+    }
+    const sh = await prisma.shipment.findUnique({ where: { id: shipmentId }, select: { coHandlerId: true, createdByUser: { select: { name: true, email: true } } } });
+    if (!who) who = sh?.createdByUser || undefined;
+    if (!who) return undefined;
+    // everyone working on this shipment stays in the loop: the creator and the co-handler
+    const loop = [];
+    if (sh?.createdByUser?.email) loop.push(sh.createdByUser.email);
+    if (sh?.coHandlerId) {
+      const co = await prisma.user.findUnique({ where: { id: sh.coHandlerId }, select: { email: true } });
+      if (co?.email) loop.push(co.email);
+    }
+    return { name: who.name || '', email: who.email, loop };
   } catch (e) { return undefined; }
 }
 
@@ -693,7 +705,7 @@ const createShipment = async (req, res) => {
     // to the employee who created it. Fire-and-forget — a failed email
     // should never block or fail the shipment creation itself.
     if (autoEmailEnabled && notificationEmail) {
-      sendEnquiryReceivedEmail(shipment, req.user?.email, req.user ? { name: req.user.name, email: req.user.email } : undefined).catch(() => {});
+      resolveSender(shipment.id, req.user ? { name: req.user.name, email: req.user.email } : undefined).then((snd) => sendEnquiryReceivedEmail(shipment, req.user?.email, snd)).catch(() => {});
     }
     res.status(201).json({ status: 'success', data: shipment });
   } catch (error) { console.error('Error creating shipment:', error); res.status(500).json({ status: 'error', message: 'Failed to create shipment' }); }

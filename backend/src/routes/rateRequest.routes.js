@@ -16,7 +16,7 @@ router.post('/:id/draft', async (req, res) => {
 
     const sh = await prisma.shipment.findUnique({
       where: { id: req.params.id },
-      include: { freightForwarding: true, statusHistory: { where: { status: 'RATE_REQUEST' }, orderBy: { createdAt: 'desc' }, take: 5 } },
+      include: { freightForwarding: true, createdByUser: { select: { email: true } }, statusHistory: { where: { status: 'RATE_REQUEST' }, orderBy: { createdAt: 'desc' }, take: 5 } },
     });
     if (!sh || sh.isDeleted) return res.status(404).json({ status: 'error', message: 'Shipment not found' });
     const ff = sh.freightForwarding || {};
@@ -24,8 +24,17 @@ router.post('/:id/draft', async (req, res) => {
     const email = me?.email || req.user?.email;
     if (!email) return res.status(400).json({ status: 'error', message: 'Could not tell who you are. Please log in again.' });
 
+    // creator and co-handler stay in the loop (CC), unless it is the sender themselves
+    let coEmail = '';
+    if (sh.coHandlerId) {
+      const co = await prisma.user.findUnique({ where: { id: sh.coHandlerId }, select: { email: true } });
+      coEmail = str(co?.email);
+    }
+    const cc = Array.from(new Set([sh.createdByUser?.email, coEmail].map((x) => str(x).toLowerCase()).filter((x) => x && x !== email.toLowerCase())));
+
     const front = str(process.env.FRONTEND_URL || 'https://pas-freight-system.onrender.com').replace(/\/$/, '');
     const body = {
+      cc,
       employee: { name: me?.name || req.user?.name || '', email, phone: me?.phone || '' },
       shipment: {
         refNo: sh.refNo,
