@@ -8,7 +8,7 @@ import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
   Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle, Activity
+  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle, Activity, RotateCcw
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
@@ -18,6 +18,20 @@ const STATUS_DROPDOWN_OPTIONS = [
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ]
+// FF Only / DO Release only use part of the full stage list
+const FF_ONLY_STAGE_OPTIONS = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Invoice', 'Cancelled']
+const DO_RELEASE_STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Invoice', 'Cancelled']
+const CANCEL_REASONS = ['Price too high', 'Lost to competitor', 'Customer postponed', 'No cargo / customer dropped', 'Agent rate not workable', 'Duplicate enquiry', 'Other']
+// what to do for each step (used by the "Next step" guide button): which tab, and what to fill
+const NEXT_STEP_HELP = {
+  RATES_REQUESTED: { tab: null, text: 'Send the rate request' },
+  PICKUP_DONE: { tab: 'freight', text: 'fill Pickup Date' },
+  AWB_GENERATED: { tab: 'freight', text: 'fill MAWB / HAWB' },
+  DO_COLLECTED: { tab: 'accounts', text: 'fill DO Collection Date' },
+  DELIVERED: { tab: 'freight', text: 'fill Delivery Date' },
+  INVOICE_GENERATED: { tab: 'accounts', text: 'fill Invoice No & Date' },
+  INVOICE_SENT: { tab: 'accounts', text: 'fill Invoice Sending Date' },
+}
 const STAGE_COLORS = {
   'Enquiry': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900', 'Rates Requested': 'bg-gradient-to-r from-orange-400 to-amber-300 text-orange-900', 'Quoted': 'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900', 'Nomination': 'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900',
   'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800', 'Pre-alerts': 'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900', 'Checklist': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900',
@@ -384,6 +398,10 @@ export default function ShipmentDetail() {
   // ✅ NEW — Rate request (wakes the mailer when the page opens so it is ready by the time the button is pressed)
   const MAILER_URL = (import.meta.env.VITE_MAILER_URL || 'https://pasfreight-mailer.onrender.com').replace(/\/$/, '')
   const [rateBusy, setRateBusy] = useState(false)
+  const [cancelAsk, setCancelAsk] = useState(null) // { section, data } waiting for a cancel reason
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelNote, setCancelNote] = useState('')
+  const [reactivating, setReactivating] = useState(false)
   useEffect(() => { try { new Image().src = `${MAILER_URL}/api/rate/ping?t=${Date.now()}` } catch {} }, [])
   const [liveEditBy, setLiveEditBy] = useState(null)
 
@@ -432,6 +450,9 @@ export default function ShipmentDetail() {
   // If the saved status isn't one of this mode's steps (e.g. an older Freight shipment still
   // marked "AWB Generated"), fall back to the furthest step actually completed.
   const cur = curStored !== -1 ? curStored : steps.reduce((last, st, i) => (isStepComplete(st.s, shipment?.freightForwarding || {}, shipment?.cha || {}, shipment?.accounts || {}, shipment?.shipmentStage) ? i : last), 0)
+
+  const stageOpts = isFFOnly ? FF_ONLY_STAGE_OPTIONS : isDORelease ? DO_RELEASE_STAGE_OPTIONS : STAGE_OPTIONS
+  const statusOpts = (isFFOnly || isDORelease) ? [...steps.map(st => st.s), 'CANCELLED'] : STATUS_DROPDOWN_OPTIONS
 
   useEffect(() => {
     if (shipment && !initialTabSet) {
@@ -509,6 +530,33 @@ export default function ShipmentDetail() {
     },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
+
+  // Stage / Status: picking Cancelled first asks WHY (so lost enquiries can be learned from)
+  const saveStageStatus = (section, data) => {
+    const cancelling = data.shipmentStage === 'Cancelled' || data.status === 'CANCELLED'
+    if (cancelling && shipment?.currentStatus !== 'CANCELLED') { setCancelReason(''); setCancelNote(''); setCancelAsk({ section, data }); return }
+    updateMutation.mutate({ section, data })
+  }
+  const confirmCancel = () => {
+    if (!cancelAsk) return
+    const reason = [cancelReason, cancelNote.trim()].filter(Boolean).join(' — ')
+    updateMutation.mutate({ section: cancelAsk.section, data: { ...cancelAsk.data, reason } })
+    setCancelAsk(null)
+  }
+  // Bring a cancelled shipment back: stage -> Enquiry, status -> the furthest step really completed
+  const handleReactivate = async () => {
+    setReactivating(true)
+    try {
+      if (shipment.shipmentStage === 'Cancelled') await api.put(`/freight/shipments/${id}/stage`, { shipmentStage: 'Enquiry' })
+      const ffx = shipment.freightForwarding || {}, chax = shipment.cha || {}, accx = shipment.accounts || {}
+      let best = steps[0].s
+      steps.forEach(st => { if (isStepComplete(st.s, ffx, chax, accx, 'Enquiry')) best = st.s })
+      await api.put(`/freight/shipments/${id}/status`, { status: best })
+      addToast('Shipment reactivated', 'success')
+      queryClient.invalidateQueries({ queryKey: ['shipment', id] }); queryClient.invalidateQueries({ queryKey: ['shipments'] })
+    } catch (e) { addToast(e.response?.data?.message || 'Could not reactivate', 'error') }
+    finally { setReactivating(false) }
+  }
 
   const handleSendTestEmail = async () => {
     const ff = shipment?.freightForwarding || {}
@@ -686,9 +734,9 @@ export default function ShipmentDetail() {
               </div>
             </div>
           </div>
-          {!isDORelease && !isFFOnly && (
+          {(
             <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--border-color)]">
-              {!isTransport && (
+              {!isTransport && !isFFOnly && !isDORelease && (
                 <>
                   <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
                   <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Import/Export:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
@@ -701,7 +749,7 @@ export default function ShipmentDetail() {
                 </>
               )}
               <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Stage:</span>
-                <div className="flex items-center gap-1"><InlineField value={STAGE_OPTIONS.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={STAGE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!STAGE_OPTIONS.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => updateMutation.mutate({ section: 'stage', data: { shipmentStage: v } })} placeholder="Custom..." /></div>
+                <div className="flex items-center gap-1"><InlineField value={stageOpts.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={stageOpts} onSave={v => saveStageStatus('stage', { shipmentStage: v })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!stageOpts.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => saveStageStatus('stage', { shipmentStage: v })} placeholder="Custom..." /></div>
               </div>
               {/* ✅ NEW — Status dropdown, dropdown-only (no free text), for
                   manually overriding the workflow status when needed. The
@@ -711,17 +759,46 @@ export default function ShipmentDetail() {
               <div className="flex items-center gap-2"><Activity size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Status:</span>
                 <InlineField
                   value={STATUS_DROPDOWN_OPTIONS.includes(shipment.currentStatus) ? shipment.currentStatus.replace(/_/g, ' ') : shipment.currentStatus?.replace(/_/g, ' ')}
-                  options={STATUS_DROPDOWN_OPTIONS.map(s => s.replace(/_/g, ' '))}
-                  onSave={v => updateMutation.mutate({ section: 'status', data: { status: v.replace(/ /g, '_') } })}
+                  options={statusOpts.map(s => s.replace(/_/g, ' '))}
+                  onSave={v => saveStageStatus('status', { status: v.replace(/ /g, '_') })}
                   className={shipment.currentStatus === 'CANCELLED' ? 'px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : ''}
                   placeholder="Select"
                 />
               </div>
+              {(isFFOnly || isDORelease) && shipment.currentStatus !== 'CANCELLED' && steps[cur + 1] && (() => {
+                const nx = steps[cur + 1]; const help = NEXT_STEP_HELP[nx.s]
+                return (
+                  <button onClick={() => { if (nx.s === 'RATES_REQUESTED') openRateRequest(); else if (help?.tab) { setActiveTab(isDORelease && help.tab === 'freight' ? 'do-release' : (isDORelease && nx.s === 'DO_COLLECTED' ? 'do-release' : help.tab)); window.scrollTo({ top: 420, behavior: 'smooth' }) } }}
+                    title={`Next step: ${nx.l}`} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 shadow hover:from-indigo-600 hover:to-violet-600">
+                    Next: {nx.l}{help ? ` — ${help.text}` : ''} →
+                  </button>
+                )
+              })()}
               <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
             </div>
           )}
         </div>
       </div>
+
+      {/* Cancel reason — asked whenever someone cancels, so lost enquiries can be learned from */}
+      {cancelAsk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setCancelAsk(null)}>
+          <div className="glass rounded-xl border border-[var(--border-color)] shadow-2xl w-full max-w-md p-5 bg-white dark:bg-slate-800" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-red-600 mb-1">Cancel this shipment?</h3>
+            <p className="text-xs text-[var(--text-secondary)] mb-3">Tell us why — it is saved in the history and remarks. You can reactivate it any time.</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {CANCEL_REASONS.map(r => (
+                <button key={r} onClick={() => setCancelReason(r)} className={`px-3 py-1.5 rounded-full text-xs font-medium border ${cancelReason === r ? 'bg-red-500 text-white border-red-500' : 'border-[var(--border-color)] text-[var(--text-primary)] hover:border-red-300'}`}>{r}</button>
+              ))}
+            </div>
+            <input value={cancelNote} onChange={e => setCancelNote(e.target.value)} placeholder="Add a note (optional)" className="w-full px-3 py-2 border border-[var(--border-color)] rounded-lg text-sm bg-transparent mb-4" />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setCancelAsk(null)} className="px-4 py-2 rounded-lg text-sm border border-[var(--border-color)]">Keep shipment</button>
+              <button onClick={confirmCancel} disabled={!cancelReason && !cancelNote.trim()} className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">Cancel shipment</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ✅ EVERYONE INVOLVED (NEW) — full contributor list for this
           shipment, distinct from the 3 Handled By badges above. */}
@@ -741,8 +818,11 @@ export default function ShipmentDetail() {
           <AlertCircle size={22} className="text-red-500 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">This shipment has been cancelled</p>
-            <p className="text-xs text-red-600 dark:text-red-400/80">Change the Status or Stage dropdown above to a different value to reactivate it.</p>
+            <p className="text-xs text-red-600 dark:text-red-400/80">Click Reactivate (or change the Status / Stage dropdown above) to bring it back.</p>
           </div>
+          <button onClick={handleReactivate} disabled={reactivating} className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow disabled:opacity-60">
+            {reactivating ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Reactivate
+          </button>
         </div>
       )}
       
@@ -803,6 +883,9 @@ export default function ShipmentDetail() {
               <Field label="CHA Name" value={ff.agent} onSave={v => updateMutation.mutate({ section: 'rates', data: { agent: v } })} />
               <Field label="Customer Name" value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} />
             </div>
+          </Section>
+          <Section title="DO Collection" icon={FileCheck}>
+            <Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" />
           </Section>
           <Section title="Notification Settings" icon={Mail}>
             <Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />

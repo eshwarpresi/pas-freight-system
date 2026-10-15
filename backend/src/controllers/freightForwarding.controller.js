@@ -2931,6 +2931,16 @@ const updateImportExport = async (req, res) => {
   try { const { importExport } = req.body; await prisma.shipment.update({ where: { id: req.params.id }, data: { importExport } }); await upsertStatusEntry(req.params.id, 'IMPORT_EXPORT_UPDATED', `Import/Export: ${importExport}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
+// A cancel reason (typed on the shipment page) is added to the remarks so it stays visible; returns the clean reason text.
+async function cancelReasonFor(req, data) {
+  const reason = String((req.body && req.body.reason) || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
+  if (!reason) return '';
+  const cur = await prisma.shipment.findUnique({ where: { id: req.params.id }, select: { remarks: true } });
+  const line = `Cancelled: ${reason}`;
+  data.remarks = cur && cur.remarks ? `${cur.remarks} | ${line}`.slice(0, 1000) : line;
+  return reason;
+}
+
 const updateStage = async (req, res) => {
   try {
     const stage = req.body.shipmentStage;
@@ -2940,8 +2950,10 @@ const updateStage = async (req, res) => {
     // cancellation mechanism, two entry points.
     const data = { shipmentStage: stage };
     if (stage === 'Cancelled') data.currentStatus = 'CANCELLED';
+    // optional cancel reason (asked on the shipment page) goes into the history and remarks
+    const reason = stage === 'Cancelled' ? await cancelReasonFor(req, data) : '';
     await prisma.shipment.update({ where: { id: req.params.id }, data });
-    await upsertStatusEntry(req.params.id, stage === 'Cancelled' ? 'CANCELLED' : 'STAGE_CHANGE', stage === 'Cancelled' ? 'Shipment cancelled' : `Stage: ${stage}`, actorName(req));
+    await upsertStatusEntry(req.params.id, stage === 'Cancelled' ? 'CANCELLED' : 'STAGE_CHANGE', stage === 'Cancelled' ? `Shipment cancelled${reason ? ' — Reason: ' + reason : ''}` : `Stage: ${stage}`, actorName(req));
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
     res.json({ status: 'success', data: s });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
@@ -2965,8 +2977,10 @@ const updateManualStatus = async (req, res) => {
     if (!VALID_MANUAL_STATUSES.includes(status)) {
       return res.status(400).json({ status: 'error', message: 'Invalid status value' });
     }
-    await prisma.shipment.update({ where: { id: req.params.id }, data: { currentStatus: status } });
-    await upsertStatusEntry(req.params.id, status === 'CANCELLED' ? 'CANCELLED' : 'MANUAL_STATUS', status === 'CANCELLED' ? 'Shipment cancelled' : `Status manually set: ${status.replace(/_/g, ' ')}`, actorName(req));
+    const stData = { currentStatus: status };
+    const reason = status === 'CANCELLED' ? await cancelReasonFor(req, stData) : '';
+    await prisma.shipment.update({ where: { id: req.params.id }, data: stData });
+    await upsertStatusEntry(req.params.id, status === 'CANCELLED' ? 'CANCELLED' : 'MANUAL_STATUS', status === 'CANCELLED' ? `Shipment cancelled${reason ? ' — Reason: ' + reason : ''}` : `Status manually set: ${status.replace(/_/g, ' ')}`, actorName(req));
     const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } });
     res.json({ status: 'success', data: s });
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
