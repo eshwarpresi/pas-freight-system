@@ -654,7 +654,7 @@ export default function ShipmentDetail() {
   })
 
   const saveQueue = useRef(Promise.resolve())
-  const saveField = (section, data) => {
+  const saveField = ({ section, data }) => {
     const run = () => updateMutation.mutateAsync({ section, data, quiet: true })
     const result = saveQueue.current.then(run)
     saveQueue.current = result.catch(() => {})
