@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
@@ -102,80 +102,179 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
   return <div onClick={() => setEditing(true)} className={`cursor-pointer group flex items-center gap-1 ${className}`}><span className={value ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
 }
 
-// ─── PARTY FIELD (NEW) ───
-// Same searchable-dropdown-plus-manual-entry idea as CreateShipment.jsx's
-// PartyAutocomplete, adapted to this page's click-to-edit pattern (shows
-// as plain text until clicked, like Field/InlineField above). A newly
-// typed name that isn't in the master list yet is added to it
-// automatically on save, same as at creation time.
-function PartyField({ label, value, onSave, type }) {
-  const [editing, setEditing] = useState(false)
-  const [val, setVal] = useState(value || '')
+const asText = (v) => (v === null || v === undefined ? '' : String(v))
+
+const maskDate = (raw) => {
+  const d = raw.replace(/\D/g, '').slice(0, 8)
+  if (d.length <= 2) return d
+  if (d.length <= 4) return `${d.slice(0, 2)}-${d.slice(2)}`
+  return `${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`
+}
+
+const toISODate = (text) => {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(text)
+  if (!m) return null
+  const day = Number(m[1]), month = Number(m[2]), year = Number(m[3])
+  const check = new Date(Date.UTC(year, month - 1, day))
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null
+  if (year < 1990 || year > 2100) return null
+  return `${m[3]}-${m[2]}-${m[1]}`
+}
+
+const flowFields = () => Array.from(document.querySelectorAll('[data-flow]')).filter(el => !el.disabled && el.offsetParent !== null)
+
+function moveFlow(from, step) {
+  const list = flowFields()
+  const at = list.indexOf(from)
+  if (at < 0) return
+  const next = list[at + step]
+  if (next) {
+    next.focus()
+    next.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    return
+  }
+  window.dispatchEvent(new CustomEvent('flow-edge', { detail: step }))
+}
+
+function SaveMark({ state, className = '' }) {
+  return (
+    <span className={`absolute top-1/2 -translate-y-1/2 pointer-events-none ${className}`}>
+      {state === 'saving' && <Loader2 size={14} className="animate-spin text-indigo-400" />}
+      {state === 'saved' && <Check size={14} className="text-emerald-500" />}
+      {state === 'error' && <AlertCircle size={14} className="text-red-500" />}
+    </span>
+  )
+}
+
+function useSavedFade(state, setState) {
+  useEffect(() => {
+    if (state !== 'saved') return
+    const timer = setTimeout(() => setState('idle'), 1500)
+    return () => clearTimeout(timer)
+  }, [state, setState])
+}
+
+const fieldTone = (state) => state === 'error'
+  ? 'border-red-400 focus:ring-red-400'
+  : state === 'saved'
+    ? 'border-emerald-400 focus:ring-emerald-400'
+    : 'border-[var(--border-color)] focus:ring-indigo-500'
+
+function PartyField({ value, onSave, type }) {
+  const [val, setVal] = useState(asText(value))
   const [options, setOptions] = useState([])
   const [open, setOpen] = useState(false)
+  const [active, setActive] = useState(-1)
+  const [state, setState] = useState('idle')
   const inputRef = useRef(null)
-  const wrapRef = useRef(null)
+  const valRef = useRef(asText(value))
+  const savedRef = useRef(asText(value))
+  const loadedRef = useRef(false)
+  const loadingRef = useRef(false)
 
-  useEffect(() => { setVal(value || '') }, [value])
-  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
+  useSavedFade(state, setState)
+
   useEffect(() => {
-    if (!editing) return
+    savedRef.current = asText(value)
+    if (document.activeElement !== inputRef.current) {
+      valRef.current = asText(value)
+      setVal(asText(value))
+    }
+  }, [value])
+
+  const update = (next) => { valRef.current = next; setVal(next) }
+
+  const loadOptions = () => {
+    if (loadedRef.current || loadingRef.current) return
+    loadingRef.current = true
     api.get('/freight/party-names', { params: { type } })
-      .then(res => setOptions((res.data?.data || []).map(p => p.name)))
+      .then(res => { setOptions((res.data?.data || []).map(p => p.name)); loadedRef.current = true })
       .catch(() => {})
-  }, [editing, type])
-  useEffect(() => {
-    const onClickOutside = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) { setOpen(false) } }
-    document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
-  }, [])
+      .finally(() => { loadingRef.current = false })
+  }
 
-  const commit = async (finalVal) => {
-    setEditing(false); setOpen(false)
-    if (finalVal !== (value || '')) onSave(finalVal)
-    const trimmed = (finalVal || '').trim()
-    if (trimmed && !options.some(o => o.toLowerCase() === trimmed.toLowerCase())) {
-      try { await api.post('/freight/party-names', { type, name: trimmed }) } catch {}
+  const commit = async (text) => {
+    const next = (text !== undefined ? text : valRef.current).trim()
+    setOpen(false)
+    setActive(-1)
+    if (next === savedRef.current) return
+    const previous = savedRef.current
+    savedRef.current = next
+    setState('saving')
+    try {
+      await onSave(next)
+      setState('saved')
+    } catch {
+      savedRef.current = previous
+      setState('error')
+      return
+    }
+    if (next && loadedRef.current && !options.some(o => o.toLowerCase() === next.toLowerCase())) {
+      try { await api.post('/freight/party-names', { type, name: next }) } catch {}
     }
   }
 
-  const filtered = val ? options.filter(o => o.toLowerCase().includes(val.toLowerCase())).slice(0, 20) : options.slice(0, 20)
+  const term = val.trim().toLowerCase()
+  const filtered = (term ? options.filter(o => o.toLowerCase().includes(term)) : options).slice(0, 20)
 
-  if (editing) {
-    return (
-      <div className="relative" ref={wrapRef}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={val}
-          onChange={(e) => { setVal(e.target.value); setOpen(true) }}
-          onBlur={() => setTimeout(() => commit(val), 150)}
-          onKeyDown={(e) => { if (e.key === 'Enter') commit(val); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }}
-          className="border border-indigo-300 dark:border-indigo-600 rounded px-2 py-1 text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 w-full"
-        />
-        {open && filtered.length > 0 && (
-          <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl">
-            {filtered.map((name) => (
-              <button key={name} type="button" onMouseDown={(e) => { e.preventDefault(); commit(name) }} className="w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 border-b border-gray-50 dark:border-slate-700 last:border-0">
-                {name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    )
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setOpen(true)
+      setActive(i => Math.min(i + 1, filtered.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActive(i => Math.max(i - 1, -1))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const picked = open && active >= 0 && filtered[active] ? filtered[active] : valRef.current
+      update(picked)
+      commit(picked)
+      moveFlow(e.currentTarget, e.shiftKey ? -1 : 1)
+    } else if (e.key === 'Escape') {
+      update(savedRef.current)
+      setOpen(false)
+      setActive(-1)
+      setState('idle')
+    }
   }
+
   return (
-    <div onClick={() => setEditing(true)} className="cursor-pointer group flex items-center gap-1">
-      <span className={value ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}>{value || '—'}</span>
-      <Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" />
+    <div className="relative">
+      <input
+        ref={inputRef}
+        data-flow=""
+        type="text"
+        autoComplete="off"
+        value={val}
+        onFocus={(e) => { loadOptions(); e.target.select() }}
+        onChange={(e) => { update(e.target.value); setOpen(true); setActive(-1); if (state !== 'saving') setState('idle') }}
+        onBlur={() => commit()}
+        onKeyDown={onKeyDown}
+        className={`w-full px-3 py-2 pr-9 border rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 outline-none focus:ring-2 transition-colors ${fieldTone(state)}`}
+      />
+      <SaveMark state={state} className="right-3" />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl">
+          {filtered.map((name, i) => (
+            <button
+              key={name}
+              type="button"
+              tabIndex={-1}
+              onMouseDown={(e) => { e.preventDefault(); update(name); commit(name) }}
+              className={`w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 border-b border-gray-50 dark:border-slate-700 last:border-0 ${i === active ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function ComboField({ label, value, options, onSave, placeholder = 'Custom...' }) {
-  const isInOptions = options.includes(value || '')
-  return (<div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label><div className="flex gap-2"><div className="flex-1"><InlineField value={isInOptions ? value : ''} options={options} onSave={onSave} placeholder="Select" /></div><div className="flex-1"><InlineField value={!isInOptions ? value : ''} onSave={onSave} placeholder={placeholder} /></div></div></div>)
+function ComboField({ label, value, options, onSave, placeholder = 'Select or type' }) {
+  return <Field label={label} value={value} options={options} onSave={onSave} placeholder={placeholder} />
 }
 
 // ─── HANDLED BY BADGES ───
@@ -500,6 +599,31 @@ export default function ShipmentDetail() {
     try { localStorage.setItem(`pas_last_tab_${id}`, activeTab) } catch {}
   }, [activeTab, initialTabSet, id])
 
+  const focusAfterSwitch = useRef(null)
+  const flowTabs = isDORelease ? ['do-release', 'accounts'] : (isTransport || isFFOnly) ? ['freight', 'accounts'] : ['freight', 'cha', 'accounts']
+  const flowKey = flowTabs.join('|')
+
+  useEffect(() => {
+    const onEdge = (e) => {
+      const at = flowTabs.indexOf(activeTab)
+      const next = at < 0 ? null : flowTabs[at + e.detail]
+      if (!next) return
+      focusAfterSwitch.current = e.detail > 0 ? 'first' : 'last'
+      setActiveTab(next)
+    }
+    window.addEventListener('flow-edge', onEdge)
+    return () => window.removeEventListener('flow-edge', onEdge)
+  }, [activeTab, flowKey])
+
+  useEffect(() => {
+    const where = focusAfterSwitch.current
+    if (!where) return
+    focusAfterSwitch.current = null
+    const fields = flowFields()
+    const target = where === 'first' ? fields[0] : fields[fields.length - 1]
+    if (target) target.focus()
+  }, [activeTab])
+
   const updateMutation = useMutation({
     mutationFn: async ({ section, data }) => {
       const eps = {
@@ -509,7 +633,7 @@ export default function ShipmentDetail() {
     },
     onSuccess: (response, variables) => {
       const updatedShipment = response?.data?.data
-      addToast('Saved!', 'success')
+      if (!variables.quiet) addToast('Saved!', 'success')
       if (updatedShipment) { queryClient.setQueryData(['shipment', id], updatedShipment) }
       else { queryClient.invalidateQueries({ queryKey: ['shipment', id] }) }
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
@@ -528,6 +652,14 @@ export default function ShipmentDetail() {
     },
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
+
+  const saveQueue = useRef(Promise.resolve())
+  const saveField = (section, data) => {
+    const run = () => updateMutation.mutateAsync({ section, data, quiet: true })
+    const result = saveQueue.current.then(run)
+    saveQueue.current = result.catch(() => {})
+    return result
+  }
 
   const saveStageStatus = (section, data) => {
     const cancelling = data.status === 'CANCELLED'
@@ -834,50 +966,50 @@ export default function ShipmentDetail() {
           {/* ✅ Consignee/Shipper editable here, using the same searchable
               master list as the Create Shipment page. */}
           <Section title="Parties Involved" icon={User}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Consignee Name</label><PartyField value={ff.consigneeName} type="CONSIGNEE" onSave={v => updateMutation.mutate({ section: 'consignee', data: { consigneeName: v } })} /></div>
-            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Shipper Name</label><PartyField value={ff.shipperName} type="SHIPPER" onSave={v => updateMutation.mutate({ section: 'shipper', data: { shipperName: v } })} /></div>
+            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Consignee Name</label><PartyField value={ff.consigneeName} type="CONSIGNEE" onSave={v => saveField({ section: 'consignee', data: { consigneeName: v } })} /></div>
+            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Shipper Name</label><PartyField value={ff.shipperName} type="SHIPPER" onSave={v => saveField({ section: 'shipper', data: { shipperName: v } })} /></div>
           </div></Section>
-          <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
+          <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => saveField({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
           {/* ✅ REMOVED for standard Freight — Route Details is now set at
               creation instead (see Create Shipment page). FF Only / CHA
               Only never had it on their create forms, so they keep it
               editable here, unchanged. */}
-          {!isStandardFreight && <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => updateMutation.mutate({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => updateMutation.mutate({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>}
+          {!isStandardFreight && <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => saveField({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => saveField({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => saveField({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => saveField({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>}
           {/* ✅ CBM removed from here for standard Freight (now set at
               creation) — Gross/Chargeable Weight stay editable for
               everyone, since those genuinely can change after creation. */}
-          <Section title="Weight Details" icon={Scale}><div className={`grid grid-cols-1 ${isStandardFreight ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-3`}><Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => updateMutation.mutate({ section: 'rates', data: { grossWeight: v } })} type="number" /><Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" />{!isStandardFreight && <Field label="CBM" value={ff.cbm} onSave={v => updateMutation.mutate({ section: 'cbm', data: { cbm: v } })} type="number" />}</div></Section>
+          <Section title="Weight Details" icon={Scale}><div className={`grid grid-cols-1 ${isStandardFreight ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-3`}><Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => saveField({ section: 'rates', data: { grossWeight: v } })} type="number" /><Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => saveField({ section: 'rates', data: { weight: v } })} type="number" />{!isStandardFreight && <Field label="CBM" value={ff.cbm} onSave={v => saveField({ section: 'cbm', data: { cbm: v } })} type="number" />}</div></Section>
           {/* ✅ REMOVED for standard Freight — Commodity Name is now set
               at creation instead. */}
-          <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => updateMutation.mutate({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
-          <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => updateMutation.mutate({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
+          <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => saveField({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
+          <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => saveField({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
           {/* ✅ NEW — Pickup Date, between Booking and Schedule */}
-          <Section title="Pickup" icon={Truck}><Field label="Pickup Date" value={Fmt(ff.pickupDate)} onSave={v => updateMutation.mutate({ section: 'pickup', data: { pickupDate: v } })} type="date" /></Section>
-          <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => updateMutation.mutate({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
-          <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => updateMutation.mutate({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section>
+          <Section title="Pickup" icon={Truck}><Field label="Pickup Date" value={Fmt(ff.pickupDate)} onSave={v => saveField({ section: 'pickup', data: { pickupDate: v } })} type="date" /></Section>
+          <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => saveField({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => saveField({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
+          <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => saveField({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => saveField({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => saveField({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section>
           {/* ✅ RE-ADDED — Pre-Alerts + DO Collection, back on the Freight
               tab (standard Freight type only). Stays off the Create page
               per the separate instruction — this field genuinely tends
               to happen after creation, so it needs to live somewhere
               editable post-creation, and this is that place. */}
-          {isStandardFreight && <Section title="Pre-Alerts & DO Collection" icon={ClipboardList}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Pre-Alerts Sent On" value={Fmt(ff.preAlertsSentDate)} onSave={v => updateMutation.mutate({ section: 'rates', data: { preAlertsSentDate: v } })} type="date" /><Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></div></Section>}
+          {isStandardFreight && <Section title="Pre-Alerts & DO Collection" icon={ClipboardList}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Pre-Alerts Sent On" value={Fmt(ff.preAlertsSentDate)} onSave={v => saveField({ section: 'rates', data: { preAlertsSentDate: v } })} type="date" /><Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => saveField({ section: 'do', data: { doCollectionDate: v } })} type="date" /></div></Section>}
           </div>}
 
         {/* DO RELEASE TAB */}
         {isDORelease && activeTab==='do-release'&&<div className="space-y-4">
           <Section title="DO Release Details" icon={ClipboardList}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="MAWB No" value={ff.mawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { mawb: v } })} />
-              <Field label="HAWB No" value={ff.hawb} onSave={v => updateMutation.mutate({ section: 'awb', data: { hawb: v } })} />
-              <Field label="CHA Name" value={ff.agent} onSave={v => updateMutation.mutate({ section: 'rates', data: { agent: v } })} />
-              <Field label="Customer Name" value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} />
+              <Field label="MAWB No" value={ff.mawb} onSave={v => saveField({ section: 'awb', data: { mawb: v } })} />
+              <Field label="HAWB No" value={ff.hawb} onSave={v => saveField({ section: 'awb', data: { hawb: v } })} />
+              <Field label="CHA Name" value={ff.agent} onSave={v => saveField({ section: 'rates', data: { agent: v } })} />
+              <Field label="Customer Name" value={ff.customerName} onSave={v => saveField({ section: 'rates', data: { customerName: v } })} />
             </div>
           </Section>
           <Section title="DO Collection" icon={FileCheck}>
-            <Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" />
+            <Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => saveField({ section: 'do', data: { doCollectionDate: v } })} type="date" />
           </Section>
           <Section title="Notification Settings" icon={Mail}>
-            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
+            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => saveField({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
           </Section>
         </div>}
 
@@ -885,50 +1017,50 @@ export default function ShipmentDetail() {
         {isTransport && activeTab==='freight'&&<div className="space-y-4">
           <Section title="Transport Details" icon={Truck}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <ComboField label="Transport Mode" value={ff.transportMode} options={TRANSPORT_MODE_OPTIONS} onSave={v => updateMutation.mutate({ section: 'rates', data: { transportMode: v } })} placeholder="Custom mode..." />
-              <ComboField label="Vehicle Type" value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Custom type..." />
-              <Field label="No of Containers" value={ff.noOfContainers} onSave={v => updateMutation.mutate({ section: 'rates', data: { noOfContainers: v } })} type="number" />
-              <ComboField label="Package Type" value={ff.packageType} options={PACKAGE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { packageType: v } })} placeholder="Custom package..." />
-              <Field label="Weight (kg)" value={ff.weight} onSave={v => updateMutation.mutate({ section: 'rates', data: { weight: v } })} type="number" />
-              <Field label="Customer Name" value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} />
+              <ComboField label="Transport Mode" value={ff.transportMode} options={TRANSPORT_MODE_OPTIONS} onSave={v => saveField({ section: 'rates', data: { transportMode: v } })} placeholder="Custom mode..." />
+              <ComboField label="Vehicle Type" value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => saveField({ section: 'rates', data: { vehicleType: v } })} placeholder="Custom type..." />
+              <Field label="No of Containers" value={ff.noOfContainers} onSave={v => saveField({ section: 'rates', data: { noOfContainers: v } })} type="number" />
+              <ComboField label="Package Type" value={ff.packageType} options={PACKAGE_TYPES} onSave={v => saveField({ section: 'rates', data: { packageType: v } })} placeholder="Custom package..." />
+              <Field label="Weight (kg)" value={ff.weight} onSave={v => saveField({ section: 'rates', data: { weight: v } })} type="number" />
+              <Field label="Customer Name" value={ff.customerName} onSave={v => saveField({ section: 'rates', data: { customerName: v } })} />
             </div>
           </Section>
           <Section title="Route & Delivery" icon={MapPinned}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Field label="From" value={ff.fromLocation} onSave={v => updateMutation.mutate({ section: 'fromlocation', data: { fromLocation: v } })} />
-              <Field label="To" value={ff.toLocation} onSave={v => updateMutation.mutate({ section: 'tolocation', data: { toLocation: v } })} />
-              <Field label="Delivery Date" value={Fmt(ff.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'rates', data: { deliveryDate: v } })} type="date" />
+              <Field label="From" value={ff.fromLocation} onSave={v => saveField({ section: 'fromlocation', data: { fromLocation: v } })} />
+              <Field label="To" value={ff.toLocation} onSave={v => saveField({ section: 'tolocation', data: { toLocation: v } })} />
+              <Field label="Delivery Date" value={Fmt(ff.deliveryDate)} onSave={v => saveField({ section: 'rates', data: { deliveryDate: v } })} type="date" />
             </div>
           </Section>
           <Section title="Notification Settings" icon={Mail}>
-            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => updateMutation.mutate({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
+            <Field label="Notification Email" value={ff.notificationEmail} onSave={v => saveField({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
           </Section>
         </div>}
         
         {/* CUSTOMS TAB */}
         {activeTab==='cha'&&!isTransport&&!isDORelease&&!isFFOnly&&<div className="space-y-4">
-          <Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => updateMutation.mutate({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => updateMutation.mutate({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
+          <Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => saveField({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => saveField({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => saveField({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
           {!isCHAExport && (<>
-            <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => updateMutation.mutate({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
+            <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => saveField({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => saveField({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
             {/* ✅ MOVED — for the standard Freight type, DO Collection now
                 lives on the Freight tab instead (see below). CHA Only
                 keeps it here, unchanged. */}
-            {!isStandardFreight && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
-            <Section title="OOC" icon={CheckCircle2}><Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => updateMutation.mutate({ section: 'ooc', data: { oocDate: v } })} type="date" /></Section>
-            <Section title="Gate Pass" icon={Truck}><Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => updateMutation.mutate({ section: 'gatepass', data: { gatePassDate: v } })} type="date" /></Section>
-            <Section title="POD (Delivery)" icon={MapPin}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => updateMutation.mutate({ section: 'pod', data: { deliveryDate: v } })} type="date" /><Field label="Tracking No" value={cha.trackingNumber} onSave={v => updateMutation.mutate({ section: 'pod', data: { trackingNumber: v } })} /></div></Section>
+            {!isStandardFreight && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => saveField({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
+            <Section title="OOC" icon={CheckCircle2}><Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => saveField({ section: 'ooc', data: { oocDate: v } })} type="date" /></Section>
+            <Section title="Gate Pass" icon={Truck}><Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => saveField({ section: 'gatepass', data: { gatePassDate: v } })} type="date" /></Section>
+            <Section title="POD (Delivery)" icon={MapPin}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Delivery Date" value={Fmt(cha.deliveryDate)} onSave={v => saveField({ section: 'pod', data: { deliveryDate: v } })} type="date" /><Field label="Tracking No" value={cha.trackingNumber} onSave={v => saveField({ section: 'pod', data: { trackingNumber: v } })} /></div></Section>
           </>)}
           {isCHAExport && (<>
-            <Section title="Shipping Bill" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="SB No" value={cha.sbNo} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbNo: v } })} /><Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => updateMutation.mutate({ section: 'shippingbill', data: { sbDate: v } })} type="date" /></div></Section>
-            <Section title="LEO" icon={CheckCircle2}><Field label="LEO Date" value={Fmt(cha.leoDate)} onSave={v => updateMutation.mutate({ section: 'leo', data: { leoDate: v } })} type="date" /></Section>
-            <Section title="Hand Over" icon={Truck}><Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => updateMutation.mutate({ section: 'handover', data: { handOverDate: v } })} type="date" /></Section>
+            <Section title="Shipping Bill" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="SB No" value={cha.sbNo} onSave={v => saveField({ section: 'shippingbill', data: { sbNo: v } })} /><Field label="SB Date" value={Fmt(cha.sbDate)} onSave={v => saveField({ section: 'shippingbill', data: { sbDate: v } })} type="date" /></div></Section>
+            <Section title="LEO" icon={CheckCircle2}><Field label="LEO Date" value={Fmt(cha.leoDate)} onSave={v => saveField({ section: 'leo', data: { leoDate: v } })} type="date" /></Section>
+            <Section title="Hand Over" icon={Truck}><Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => saveField({ section: 'handover', data: { handOverDate: v } })} type="date" /></Section>
           </>)}
         </div>}
         
         {/* ACCOUNTS TAB */}
         {activeTab==='accounts'&&<div className="space-y-4">
-          {isFFOnly && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => updateMutation.mutate({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
-          <Section title="Invoice" icon={Banknote}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => updateMutation.mutate({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => updateMutation.mutate({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}
+          {isFFOnly && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => saveField({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
+          <Section title="Invoice" icon={Banknote}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => saveField({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => saveField({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => saveField({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}
         
         {/* HISTORY TAB */}
         {activeTab==='history'&&<div><h3 className="text-base font-semibold mb-4 text-indigo-700 dark:text-indigo-300">Status Timeline</h3>{shipment.statusHistory?.length>0?<div className="relative pl-6 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-6">{[...shipment.statusHistory].reverse().map((h,i)=><div key={i} className="relative"><div className="absolute -left-[25px] w-3 h-3 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 border-2 border-white dark:border-slate-800 ring-2 ring-indigo-200 dark:ring-indigo-800 shadow-sm"/><div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50 rounded-lg p-3 ml-2 border border-indigo-100 dark:border-indigo-900"><p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{h.status.replace(/_/g,' ')}</p>{h.remarks&&<p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{h.remarks}</p>}<p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{new Date(h.createdAt).toLocaleString()}</p></div></div>)}</div>:<div className="text-center py-8 text-gray-500 dark:text-gray-400"><Clock size={32} className="mx-auto text-gray-300 dark:text-gray-600 mb-2"/><p className="text-sm">No status changes recorded yet.</p></div>}</div>}
@@ -954,15 +1086,98 @@ function toDDMMYYYY(isoDate) {
   return `${d}-${m}-${y}`
 }
 
-function Field({ label, value, onSave, type = 'text', placeholder = 'Not set' }) {
-  const [editing, setEditing] = useState(false); const [val, setVal] = useState(value || ''); const inputRef = useRef(null)
-  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
-  useEffect(() => { setVal(value || '') }, [value])
-  const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
-  const displayValue = type === 'date' ? toDDMMYYYY(value) : value
-  return <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label>{editing ? (
-    <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="w-full px-3 py-2 border border-indigo-300 dark:border-indigo-600 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100" step={type === 'number' ? '0.01' : undefined} />
-  ) : (
-    <div onClick={() => setEditing(true)} className="w-full px-3 py-2 border border-[var(--border-color)] rounded-lg text-sm cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/20 transition-colors flex items-center justify-between group"><span className={value ? 'font-medium text-gray-800 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500 italic'}>{displayValue || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
-  )}</div>
+function Field({ label, value, onSave, type = 'text', placeholder = 'Not set', options = null }) {
+  const isDate = type === 'date'
+  const shown = (v) => (isDate ? (toDDMMYYYY(asText(v)) || '') : asText(v))
+  const [val, setVal] = useState(shown(value))
+  const [state, setState] = useState('idle')
+  const inputRef = useRef(null)
+  const pickerRef = useRef(null)
+  const savedRef = useRef(asText(value))
+  const listId = useId()
+
+  useSavedFade(state, setState)
+
+  useEffect(() => {
+    savedRef.current = asText(value)
+    if (document.activeElement !== inputRef.current) setVal(shown(value))
+  }, [value])
+
+  const commit = (text) => {
+    const raw = (text !== undefined ? text : (inputRef.current ? inputRef.current.value : val)).trim()
+    let next = raw
+    if (isDate && raw !== '') {
+      const iso = toISODate(raw)
+      if (!iso) { setState('error'); return false }
+      next = iso
+    }
+    if (next === savedRef.current) {
+      if (state === 'error') setState('idle')
+      return
+    }
+    const previous = savedRef.current
+    savedRef.current = next
+    setState('saving')
+    Promise.resolve(onSave(next)).then(
+      () => setState('saved'),
+      () => { savedRef.current = previous; setState('error') }
+    )
+  }
+
+  const openPicker = () => {
+    const picker = pickerRef.current
+    if (!picker) return
+    try { picker.showPicker() } catch { picker.click() }
+  }
+
+  return (
+    <div>
+      <label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label>
+      <div className="relative">
+        <input
+          ref={inputRef}
+          data-flow=""
+          type={isDate ? 'text' : type}
+          inputMode={isDate ? 'numeric' : undefined}
+          autoComplete="off"
+          list={options ? listId : undefined}
+          value={val}
+          placeholder={isDate ? 'dd-mm-yyyy' : placeholder}
+          step={type === 'number' ? '0.01' : undefined}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => { setVal(isDate ? maskDate(e.target.value) : e.target.value); if (state !== 'saving') setState('idle') }}
+          onBlur={() => commit()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              if (commit() === false) return
+              moveFlow(e.currentTarget, e.shiftKey ? -1 : 1)
+            } else if (e.key === 'Escape') {
+              setVal(shown(savedRef.current))
+              setState('idle')
+            }
+          }}
+          className={`w-full px-3 py-2 ${isDate ? 'pr-16' : 'pr-9'} border rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 outline-none focus:ring-2 transition-colors ${fieldTone(state)}`}
+        />
+        <SaveMark state={state} className={isDate ? 'right-9' : 'right-3'} />
+        {isDate && (
+          <>
+            <button type="button" tabIndex={-1} onClick={openPicker} title="Pick from calendar" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-500">
+              <Calendar size={14} />
+            </button>
+            <input
+              ref={pickerRef}
+              type="date"
+              tabIndex={-1}
+              aria-hidden="true"
+              value={toISODate(val) || ''}
+              onChange={(e) => { if (!e.target.value) return; const text = toDDMMYYYY(e.target.value); setVal(text); commit(text) }}
+              className="absolute right-2 bottom-0 w-px h-px opacity-0 pointer-events-none"
+            />
+          </>
+        )}
+        {options && <datalist id={listId}>{options.map(o => <option key={o} value={o} />)}</datalist>}
+      </div>
+    </div>
+  )
 }
