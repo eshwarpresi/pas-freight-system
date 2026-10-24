@@ -1275,7 +1275,9 @@ const getAllShipments = async (req, res) => {
       const stageWhere = getPipelineStageWhere(pipelineStage, isArchived === 'true');
       if (stageWhere) {
         delete where.isArchived; // the stage's own definition controls this instead (e.g. "done" spans both)
-        Object.assign(where, stageWhere);
+        const { AND: stageAnd, ...stageRest } = stageWhere;
+        Object.assign(where, stageRest);
+        if (stageAnd) where.AND = [...(where.AND || []), ...stageAnd];
       }
     }
     if (shipmentType) {
@@ -2532,12 +2534,16 @@ function getNotCancelledFilter() {
 // Chargeable Weight, Nomination Date, Booking Date, Pickup Date, ETD,
 // ETA, MAWB, HAWB, AWB Date, Pre-Alerts Sent, and DO Collection Date
 // (which lives on the CHA relation, not FreightForwarding).
+const TEXT_FILLED = { not: null, notIn: [''] };
+
 function freightIncompleteFilter() {
   return {
     OR: [
       { freightForwarding: null },
       { freightForwarding: { consigneeName: null } },
+      { freightForwarding: { consigneeName: '' } },
       { freightForwarding: { shipperName: null } },
+      { freightForwarding: { shipperName: '' } },
       { freightForwarding: { grossWeight: null } },
       { freightForwarding: { weight: null } },
       { freightForwarding: { nominationDate: null } },
@@ -2546,7 +2552,9 @@ function freightIncompleteFilter() {
       { freightForwarding: { etd: null } },
       { freightForwarding: { eta: null } },
       { freightForwarding: { mawb: null } },
+      { freightForwarding: { mawb: '' } },
       { freightForwarding: { hawb: null } },
+      { freightForwarding: { hawb: '' } },
       { freightForwarding: { awbDate: null } },
       { freightForwarding: { preAlertsSentDate: null } },
       { cha: null },
@@ -2557,11 +2565,11 @@ function freightIncompleteFilter() {
 function freightCompleteFilter() {
   return {
     freightForwarding: {
-      consigneeName: { not: null }, shipperName: { not: null },
+      consigneeName: TEXT_FILLED, shipperName: TEXT_FILLED,
       grossWeight: { not: null }, weight: { not: null },
       nominationDate: { not: null }, bookingDate: { not: null }, pickupDate: { not: null },
       etd: { not: null }, eta: { not: null },
-      mawb: { not: null }, hawb: { not: null }, awbDate: { not: null },
+      mawb: TEXT_FILLED, hawb: TEXT_FILLED, awbDate: { not: null },
       preAlertsSentDate: { not: null }
     },
     cha: { doCollectionDate: { not: null } }
@@ -2579,17 +2587,17 @@ function customsIncompleteFilter() {
       {
         OR: [{ importExport: null }, { importExport: { not: 'Export' } }], // blank I/E counts as Import, same as everywhere else
         cha: { OR: [
-          { jobNo: null }, { checklistDate: null }, { checklistApprovalDate: null },
-          { boeNo: null }, { boeDate: null }, { oocDate: null }, { gatePassDate: null },
-          { deliveryDate: null }, { trackingNumber: null }
+          { jobNo: null }, { jobNo: '' }, { checklistDate: null }, { checklistApprovalDate: null },
+          { boeNo: null }, { boeNo: '' }, { boeDate: null }, { oocDate: null }, { gatePassDate: null },
+          { deliveryDate: null }, { trackingNumber: null }, { trackingNumber: '' }
         ] }
       },
       {
         importExport: 'Export',
         cha: { OR: [
-          { jobNo: null }, { checklistDate: null }, { checklistApprovalDate: null },
-          { sbNo: null }, { sbDate: null }, { leoDate: null }, { handOverDate: null },
-          { trackingNumber: null }
+          { jobNo: null }, { jobNo: '' }, { checklistDate: null }, { checklistApprovalDate: null },
+          { sbNo: null }, { sbNo: '' }, { sbDate: null }, { leoDate: null }, { handOverDate: null },
+          { trackingNumber: null }, { trackingNumber: '' }
         ] }
       }
     ]
@@ -2601,17 +2609,17 @@ function customsCompleteFilter() {
       {
         OR: [{ importExport: null }, { importExport: { not: 'Export' } }], // blank I/E counts as Import, same as everywhere else
         cha: {
-          jobNo: { not: null }, checklistDate: { not: null }, checklistApprovalDate: { not: null },
-          boeNo: { not: null }, boeDate: { not: null }, oocDate: { not: null }, gatePassDate: { not: null },
-          deliveryDate: { not: null }, trackingNumber: { not: null }
+          jobNo: TEXT_FILLED, checklistDate: { not: null }, checklistApprovalDate: { not: null },
+          boeNo: TEXT_FILLED, boeDate: { not: null }, oocDate: { not: null }, gatePassDate: { not: null },
+          deliveryDate: { not: null }, trackingNumber: TEXT_FILLED
         }
       },
       {
         importExport: 'Export',
         cha: {
-          jobNo: { not: null }, checklistDate: { not: null }, checklistApprovalDate: { not: null },
-          sbNo: { not: null }, sbDate: { not: null }, leoDate: { not: null }, handOverDate: { not: null },
-          trackingNumber: { not: null }
+          jobNo: TEXT_FILLED, checklistDate: { not: null }, checklistApprovalDate: { not: null },
+          sbNo: TEXT_FILLED, sbDate: { not: null }, leoDate: { not: null }, handOverDate: { not: null },
+          trackingNumber: TEXT_FILLED
         }
       }
     ]
@@ -2621,10 +2629,10 @@ function customsCompleteFilter() {
 // Invoice No + Date, matching the full Invoice section (No, Date,
 // Sending) that should all be filled before archiving.
 function invoiceIncompleteFilter() {
-  return { OR: [{ accounts: null }, { accounts: { invoiceNumber: null } }, { accounts: { invoiceDate: null } }, { accounts: { sendingDate: null } }] };
+  return { OR: [{ accounts: null }, { accounts: { invoiceNumber: null } }, { accounts: { invoiceNumber: '' } }, { accounts: { invoiceDate: null } }, { accounts: { sendingDate: null } }] };
 }
 function invoiceCompleteFilter() {
-  return { accounts: { invoiceNumber: { not: null }, invoiceDate: { not: null }, sendingDate: { not: null } } };
+  return { accounts: { invoiceNumber: TEXT_FILLED, invoiceDate: { not: null }, sendingDate: { not: null } } };
 }
 
 const PIPELINE_CARD_SELECT = {
@@ -2656,6 +2664,7 @@ function getPipelineStageWhere(stage, isArchivedFlag = false) {
   if (stage === 'customs') {
     return {
       ...baseActive,
+      AND: [getNotCancelledFilter()],
       OR: [
         { AND: [{ OR: [{ shipmentType: null }, { shipmentType: { notIn: [...SIMPLE_PIPELINE_TYPES, 'CHA Only'] } }] }, freightCompleteFilter(), customsIncompleteFilter()] },
         { AND: [{ shipmentType: 'CHA Only' }, customsIncompleteFilter()] }
@@ -2670,7 +2679,7 @@ function getPipelineStageWhere(stage, isArchivedFlag = false) {
     // 'simple' stage below exists for them specifically.
     return {
       ...baseActive,
-      AND: [{ OR: [{ shipmentType: null }, { shipmentType: { notIn: SIMPLE_PIPELINE_TYPES } }] }, customsCompleteFilter(), invoiceIncompleteFilter()]
+      AND: [getNotCancelledFilter(), { OR: [{ shipmentType: null }, { shipmentType: { notIn: SIMPLE_PIPELINE_TYPES } }] }, customsCompleteFilter(), invoiceIncompleteFilter()]
     };
   }
   if (stage === 'simple') {
@@ -2872,11 +2881,11 @@ const updateRefNo = async (req, res) => {
 };
 
 const updateConsignee = async (req, res) => {
-  try { const val = req.body.consigneeName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { consigneeName: val } } } }); await upsertStatusEntry(req.params.id, 'CONSIGNEE_UPDATED', `Consignee: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.consigneeName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { consigneeName: val } } } }); await upsertStatusEntry(req.params.id, 'CONSIGNEE_UPDATED', `Consignee: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); await recomputeCurrentStatus(req.params.id); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateShipper = async (req, res) => {
-  try { const val = req.body.shipperName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { shipperName: val } } } }); await upsertStatusEntry(req.params.id, 'SHIPPER_UPDATED', `Shipper: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const val = req.body.shipperName; await prisma.shipment.update({ where: { id: req.params.id }, data: { freightForwarding: { update: { shipperName: val } } } }); await upsertStatusEntry(req.params.id, 'SHIPPER_UPDATED', `Shipper: ${val}`, actorName(req)); await checkAndStampFreightComplete(req.params.id, req); await recomputeCurrentStatus(req.params.id); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 const updateAgent = async (req, res) => {
@@ -2888,7 +2897,7 @@ const updateShipmentType = async (req, res) => {
 };
 
 const updateImportExport = async (req, res) => {
-  try { const { importExport } = req.body; await prisma.shipment.update({ where: { id: req.params.id }, data: { importExport } }); await upsertStatusEntry(req.params.id, 'IMPORT_EXPORT_UPDATED', `Import/Export: ${importExport}`, actorName(req)); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
+  try { const { importExport } = req.body; await prisma.shipment.update({ where: { id: req.params.id }, data: { importExport } }); await upsertStatusEntry(req.params.id, 'IMPORT_EXPORT_UPDATED', `Import/Export: ${importExport}`, actorName(req)); await recomputeCurrentStatus(req.params.id); const s = await prisma.shipment.findUnique({ where: { id: req.params.id }, include: { freightForwarding: true, cha: true, accounts: true, statusHistory: { orderBy: { createdAt: 'desc' }, take: 50 } } }); res.json({ status: 'success', data: s }); } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
 // A cancel reason (typed on the shipment page) is added to the remarks so it stays visible; returns the clean reason text.
