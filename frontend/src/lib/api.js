@@ -1,8 +1,5 @@
 import axios from 'axios';
 
-// Uses the same VITE_API_URL your socket connection (in App.jsx) already
-// reads. Set VITE_API_URL in frontend/.env for local development;
-// falls back to the live Render API if it's not set (e.g. in production).
 const API_BASE = import.meta.env.VITE_API_URL || 'https://pas-freight-api.onrender.com';
 
 const api = axios.create({
@@ -13,18 +10,11 @@ const api = axios.create({
   timeout: 15000,
 });
 
-// ─── NETWORK SPEED TRACKING (NEW) ───
-// Measures how long your REAL API calls actually take (not a synthetic
-// ping to some other server) — the most honest signal of whether this
-// person's connection to your actual backend is slow right now. Keeps a
-// small rolling window of the last few request durations; once the
-// average crosses SLOW_THRESHOLD_MS, the connection is flagged "slow".
-// Also tracks the browser's own online/offline state directly.
-//
-// Any component can subscribe via onNetworkStatusChange() to show a
-// banner — see MainLayout.jsx for where this is actually displayed.
-const SLOW_THRESHOLD_MS = 3000;
-const ROLLING_WINDOW = 5;
+const SLOW_THRESHOLD_MS = 6000;
+const ROLLING_WINDOW = 6;
+const MIN_SAMPLES = 4;
+const SLOW_SHARE = 0.6;
+const LONG_RUNNING = /export|download|upload|pdf|excel|backup/i;
 
 const networkState = {
   isSlow: false,
@@ -38,13 +28,16 @@ function notifyListeners() {
   listeners.forEach((cb) => cb({ isSlow: networkState.isSlow, isOffline: networkState.isOffline }));
 }
 
-// Subscribe to network status changes. Calls `callback` immediately with
-// the current state, then again every time isSlow/isOffline changes.
-// Returns an unsubscribe function.
 export function onNetworkStatusChange(callback) {
   listeners.add(callback);
   callback({ isSlow: networkState.isSlow, isOffline: networkState.isOffline });
   return () => listeners.delete(callback);
+}
+
+function isLongRunning(config) {
+  if (!config) return false;
+  if (config.responseType === 'blob' || config.skipSpeedCheck) return true;
+  return LONG_RUNNING.test(config.url || '');
 }
 
 function recordDuration(ms) {
@@ -52,12 +45,10 @@ function recordDuration(ms) {
   if (networkState.recentDurations.length > ROLLING_WINDOW) {
     networkState.recentDurations.shift();
   }
-  // Require at least 3 samples before judging — avoids one single slow
-  // request (e.g. a genuinely heavy report) falsely flagging the whole
-  // connection as slow.
-  const avg = networkState.recentDurations.reduce((a, b) => a + b, 0) / networkState.recentDurations.length;
+  const samples = networkState.recentDurations;
+  const slowCount = samples.filter((d) => d > SLOW_THRESHOLD_MS).length;
   const wasSlow = networkState.isSlow;
-  networkState.isSlow = networkState.recentDurations.length >= 3 && avg > SLOW_THRESHOLD_MS;
+  networkState.isSlow = samples.length >= MIN_SAMPLES && slowCount / samples.length >= SLOW_SHARE;
   if (wasSlow !== networkState.isSlow) notifyListeners();
 }
 
@@ -77,24 +68,23 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
-  config.metadata = { startTime: Date.now() }; // ✅ NEW — for latency tracking
+  config.metadata = { startTime: Date.now() };
   return config;
 });
 
 api.interceptors.response.use(
   (response) => {
-    // ✅ NEW — record how long this successful request actually took
-    if (response.config?.metadata?.startTime) {
-      recordDuration(Date.now() - response.config.metadata.startTime);
+    const cfg = response.config;
+    if (cfg?.metadata?.startTime && !isLongRunning(cfg)) {
+      recordDuration(Date.now() - cfg.metadata.startTime);
     }
     return response;
   },
   (error) => {
-    // ✅ NEW — a slow/timed-out request still tells us about connection
-    // quality, so record it too (skip 401s — those fail instantly and
-    // aren't a network-speed signal).
-    if (error.config?.metadata?.startTime && error.response?.status !== 401) {
-      recordDuration(Date.now() - error.config.metadata.startTime);
+    const cfg = error.config;
+    const skip = axios.isCancel(error) || error.response?.status === 401 || isLongRunning(cfg);
+    if (cfg?.metadata?.startTime && !skip) {
+      recordDuration(Date.now() - cfg.metadata.startTime);
     }
     if (error.response?.status === 401) {
       localStorage.removeItem('pas_token');

@@ -17,7 +17,7 @@ const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail, se
 // seconds stale right after a change — an acceptable tradeoff for
 // summary numbers on a dashboard, not something that needs to be exact
 // to the second.
-const STATS_CACHE_TTL_MS = 8000;
+const STATS_CACHE_TTL_MS = 20000;
 const statsCache = new Map(); // key -> { data, expiresAt }
 
 // Lets the server tell every open browser "shipments changed" when IT changes them
@@ -29,19 +29,36 @@ function broadcastShipmentChange(refNo) {
 }
 function clearStatsCache() { statsCache.clear(); }
 
-function getStatsCacheKey(query) {
-  return JSON.stringify(query);
+async function buildSearchFilter(search) {
+  const term = String(search || '').trim();
+  if (!term) return {};
+  const ci = { contains: term, mode: 'insensitive' };
+  const CAP = 5000;
+  const [a, b, c, d] = await Promise.all([
+    prisma.shipment.findMany({ where: { OR: [{ refNo: ci }, { createdByName: ci }] }, select: { id: true }, take: CAP }),
+    prisma.freightForwarding.findMany({ where: { OR: [{ consigneeName: ci }, { shipperName: ci }, { hawb: ci }, { mawb: ci }, { customerName: ci }] }, select: { shipmentId: true }, take: CAP }),
+    prisma.cHA.findMany({ where: { OR: [{ boeNo: ci }, { sbNo: ci }] }, select: { shipmentId: true }, take: CAP }),
+    prisma.accounts.findMany({ where: { invoiceNumber: ci }, select: { shipmentId: true }, take: CAP })
+  ]);
+  const ids = new Set();
+  a.forEach(r => ids.add(r.id));
+  [b, c, d].forEach(list => list.forEach(r => { if (r.shipmentId) ids.add(r.shipmentId); }));
+  return { id: { in: Array.from(ids) } };
 }
 
-function getCachedStats(query) {
-  const key = getStatsCacheKey(query);
+function getStatsCacheKey(query, userId) {
+  return JSON.stringify(query) + (query && query.mine === 'true' ? '|u:' + (userId || '') : '');
+}
+
+function getCachedStats(query, userId) {
+  const key = getStatsCacheKey(query, userId);
   const entry = statsCache.get(key);
   if (entry && entry.expiresAt > Date.now()) return entry.data;
   return null;
 }
 
-function setCachedStats(query, data) {
-  const key = getStatsCacheKey(query);
+function setCachedStats(query, data, userId) {
+  const key = getStatsCacheKey(query, userId);
   statsCache.set(key, { data, expiresAt: Date.now() + STATS_CACHE_TTL_MS });
   // keep the cache from growing unbounded across many different filter
   // combinations over a long-running process
@@ -868,18 +885,7 @@ const getBinShipments = async (req, res) => {
     const where = { isDeleted: true };
     
     if (search) {
-      where.OR = [
-        { refNo: { contains: search, mode: 'insensitive' } },
-        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
-        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
-        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
-        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
-        { createdByName: { contains: search, mode: 'insensitive' } }
-      ];
+      where.AND = [...(where.AND || []), await buildSearchFilter(search)];
     }
 
     const [shipments, total] = await Promise.all([
@@ -1041,18 +1047,7 @@ const exportShipments = async (req, res) => {
     else if (userId) activeWhere.createdById = userId;
     if (status) activeWhere.currentStatus = status;
     if (search) {
-      activeWhere.OR = [
-        { refNo: { contains: search, mode: 'insensitive' } },
-        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
-        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
-        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
-        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
-        { createdByName: { contains: search, mode: 'insensitive' } }
-      ];
+      activeWhere.AND = [...(activeWhere.AND || []), await buildSearchFilter(search)];
     }
     
     const archivedWhere = { isArchived: true, isDeleted: false };
@@ -1063,18 +1058,7 @@ const exportShipments = async (req, res) => {
     else if (userId) archivedWhere.createdById = userId;
     if (status) archivedWhere.currentStatus = status;
     if (search) {
-      archivedWhere.OR = [
-        { refNo: { contains: search, mode: 'insensitive' } },
-        { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
-        { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
-        { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
-        { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
-        { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
-        { createdByName: { contains: search, mode: 'insensitive' } }
-      ];
+      archivedWhere.AND = [...(archivedWhere.AND || []), await buildSearchFilter(search)];
     }
 
     const BATCH_SIZE = 5000;
@@ -1324,18 +1308,7 @@ const getAllShipments = async (req, res) => {
     // ✅ SEARCH FIX (was missing Shipper Name + employee name) — now also
     // matches Shipper Name and the shipment's createdByName, so searching
     // by an employee's name or a shipper's name actually returns results.
-    if (search) where.OR = [
-      { refNo: { contains: search, mode: 'insensitive' } },
-      { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
-      { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
-      { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
-      { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
-      { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
-      { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
-      { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
-      { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
-      { createdByName: { contains: search, mode: 'insensitive' } }
-    ];
+    if (search) where.AND = [...(where.AND || []), await buildSearchFilter(search)];
     if (mine === 'true' && req.user?.id) {
       where.AND = [...(where.AND || []), { OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] }];
     } else if (userId) {
@@ -1481,7 +1454,7 @@ const getShipmentStats = async (req, res) => {
   try {
     // ✅ NEW — serve from cache if another request with the exact same
     // filters answered this within the last few seconds.
-    const cached = getCachedStats(req.query);
+    const cached = getCachedStats(req.query, req.user?.id);
     if (cached) {
       return res.json({ status: 'success', data: cached });
     }
@@ -1524,20 +1497,7 @@ const getShipmentStats = async (req, res) => {
       scopeConditions.push({ OR: [{ createdById: employeeId }, { coHandlerId: employeeId }] });
     }
     if (search) {
-      scopeConditions.push({
-        OR: [
-          { refNo: { contains: search, mode: 'insensitive' } },
-          { freightForwarding: { consigneeName: { contains: search, mode: 'insensitive' } } },
-          { freightForwarding: { shipperName: { contains: search, mode: 'insensitive' } } },
-          { freightForwarding: { hawb: { contains: search, mode: 'insensitive' } } },
-          { freightForwarding: { mawb: { contains: search, mode: 'insensitive' } } },
-          { cha: { boeNo: { contains: search, mode: 'insensitive' } } },
-          { cha: { sbNo: { contains: search, mode: 'insensitive' } } },
-          { accounts: { invoiceNumber: { contains: search, mode: 'insensitive' } } },
-          { freightForwarding: { customerName: { contains: search, mode: 'insensitive' } } },
-          { createdByName: { contains: search, mode: 'insensitive' } }
-        ]
-      });
+      scopeConditions.push(await buildSearchFilter(search));
     }
     if (mine === 'true' && req.user?.id) {
       scopeConditions.push({ OR: [{ createdById: req.user.id }, { coHandlerId: req.user.id }] });
@@ -1654,7 +1614,7 @@ const getShipmentStats = async (req, res) => {
       pipelineSimple,
       cancelled
     };
-    setCachedStats(req.query, statsPayload); // ✅ NEW
+    setCachedStats(req.query, statsPayload, req.user?.id);
     res.json({ status: 'success', data: statsPayload });
   } catch (error) {
     console.error('Error getting shipment stats:', error);
