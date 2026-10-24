@@ -1234,7 +1234,7 @@ const getAllShipments = async (req, res) => {
       where.currentStatus = { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] };
     }
     // ✅ NEW — "Cancelled" card click. A shipment stuck at pure ENQUIRY
-    // for more than 7 days.
+    // for more than 4 days.
     if (cancelledOnly === 'true' && !status) {
       delete where.isArchived;
       Object.assign(where, getCancelledWhere(isArchived === 'true'));
@@ -2476,11 +2476,11 @@ const PIPELINE_COLUMN_LIMIT = 20;
 
 // ─── CANCELLED / STALE ENQUIRY (NEW) ───
 // A shipment that's sat at pure ENQUIRY (nothing at all filled in yet —
-// no rates, no nomination, no anything) for more than 7 days is treated
+// no rates, no nomination, no anything) for more than 4 days is treated
 // as effectively cancelled/abandoned. Threshold is deliberately "more
-// than 7 days", not "6 days" and not "on day 7" — a shipment created
-// today is day 0; it only qualifies once a full 7 days have elapsed.
-const CANCELLED_THRESHOLD_DAYS = 7;
+// than 4 days", not "3 days" and not "on day 4" — a shipment created
+// today is day 0; it only qualifies once a full 4 days have elapsed.
+const CANCELLED_THRESHOLD_DAYS = 4;
 
 function getCancelledThresholdDate() {
   return new Date(Date.now() - CANCELLED_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
@@ -2490,7 +2490,7 @@ function getCancelledThresholdDate() {
 // ✅ UPDATED — now also recognizes an EXPLICIT manual cancellation
 // (currentStatus === 'CANCELLED', set by an employee picking "Cancelled"
 // from the Status or Stage dropdown), in addition to the existing
-// automatic "stuck at Enquiry for 7+ days" detection. Either path lands
+// automatic "stuck at Enquiry for 4+ days" detection. Either path lands
 // a shipment here.
 // ✅ FIXED — now takes the actual tab you're viewing (isArchivedFlag)
 // instead of always hardcoding "active only" regardless of which tab is
@@ -2931,6 +2931,11 @@ const VALID_MANUAL_STATUSES = [
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ];
+const STATUS_TO_STAGE = {
+  ENQUIRY: 'Enquiry', RATES_REQUESTED: 'Rates Requested', RATES_ADDED: 'Quoted', NOMINATED: 'Nomination',
+  DRAFT: 'Draft', PRE_ALERTS: 'Pre-alerts', CHECKLIST_APPROVED: 'Checklist', BOE_FILED: 'BOE',
+  OOC_DONE: 'OOC', INVOICE_GENERATED: 'Invoice', INVOICE_SENT: 'Invoice'
+};
 const updateManualStatus = async (req, res) => {
   try {
     const status = req.body.status;
@@ -2938,6 +2943,15 @@ const updateManualStatus = async (req, res) => {
       return res.status(400).json({ status: 'error', message: 'Invalid status value' });
     }
     const stData = { currentStatus: status };
+    if (status !== 'CANCELLED') {
+      const mapped = STATUS_TO_STAGE[status];
+      if (mapped) {
+        stData.shipmentStage = mapped;
+      } else {
+        const cur = await prisma.shipment.findUnique({ where: { id: req.params.id }, select: { shipmentStage: true } });
+        if (cur && cur.shipmentStage === 'Cancelled') stData.shipmentStage = 'Enquiry';
+      }
+    }
     const reason = status === 'CANCELLED' ? await cancelReasonFor(req, stData) : '';
     await prisma.shipment.update({ where: { id: req.params.id }, data: stData });
     await upsertStatusEntry(req.params.id, status === 'CANCELLED' ? 'CANCELLED' : 'MANUAL_STATUS', status === 'CANCELLED' ? `Shipment cancelled${reason ? ' — Reason: ' + reason : ''}` : `Status manually set: ${status.replace(/_/g, ' ')}`, actorName(req));

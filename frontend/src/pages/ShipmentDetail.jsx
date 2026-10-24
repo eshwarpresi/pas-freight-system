@@ -7,7 +7,7 @@ import { useSocket } from '../App'
 import { 
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
   ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
-  Weight, DollarSign, Anchor, Copy, Check, Printer, Flag, MessageSquare, Pencil,
+  Weight, DollarSign, Anchor, Copy, Check, Printer, MessageSquare, Pencil,
   MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle, Activity, RotateCcw
 } from 'lucide-react'
 
@@ -18,9 +18,6 @@ const STATUS_DROPDOWN_OPTIONS = [
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ]
-// FF Only / DO Release only use part of the full stage list
-const FF_ONLY_STAGE_OPTIONS = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Invoice', 'Cancelled']
-const DO_RELEASE_STAGE_OPTIONS = ['Enquiry', 'Quoted', 'Invoice', 'Cancelled']
 const CANCEL_REASONS = ['Price too high', 'Lost to competitor', 'Customer postponed', 'No cargo / customer dropped', 'Agent rate not workable', 'Duplicate enquiry', 'Other']
 // what to do for each step (used by the "Next step" guide button): which tab, and what to fill
 const NEXT_STEP_HELP = {
@@ -451,7 +448,6 @@ export default function ShipmentDetail() {
   // marked "AWB Generated"), fall back to the furthest step actually completed.
   const cur = curStored !== -1 ? curStored : steps.reduce((last, st, i) => (isStepComplete(st.s, shipment?.freightForwarding || {}, shipment?.cha || {}, shipment?.accounts || {}, shipment?.shipmentStage) ? i : last), 0)
 
-  const stageOpts = isFFOnly ? FF_ONLY_STAGE_OPTIONS : isDORelease ? DO_RELEASE_STAGE_OPTIONS : STAGE_OPTIONS
   const statusOpts = (isFFOnly || isDORelease) ? [...steps.map(st => st.s), 'CANCELLED'] : STATUS_DROPDOWN_OPTIONS
 
   useEffect(() => {
@@ -517,6 +513,8 @@ export default function ShipmentDetail() {
       if (updatedShipment) { queryClient.setQueryData(['shipment', id], updatedShipment) }
       else { queryClient.invalidateQueries({ queryKey: ['shipment', id] }) }
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
       // ✅ NEW — "continue where I left off": remember which section this
       // save touched, so reopening this shipment scrolls straight back to
       // it with a brief highlight instead of landing at the top.
@@ -531,9 +529,8 @@ export default function ShipmentDetail() {
     onError: (e) => addToast(e.response?.data?.message || 'Failed', 'error')
   })
 
-  // Stage / Status: picking Cancelled first asks WHY (so lost enquiries can be learned from)
   const saveStageStatus = (section, data) => {
-    const cancelling = data.shipmentStage === 'Cancelled' || data.status === 'CANCELLED'
+    const cancelling = data.status === 'CANCELLED'
     if (cancelling && shipment?.currentStatus !== 'CANCELLED') { setCancelReason(''); setCancelNote(''); setCancelAsk({ section, data }); return }
     updateMutation.mutate({ section, data })
   }
@@ -748,14 +745,6 @@ export default function ShipmentDetail() {
                   <div className="flex items-center gap-2"><User size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Customer:</span><InlineField value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} placeholder="Set customer" /></div>
                 </>
               )}
-              <div className="flex items-center gap-2"><Flag size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Stage:</span>
-                <div className="flex items-center gap-1"><InlineField value={stageOpts.includes(shipment.shipmentStage) ? shipment.shipmentStage : ''} options={stageOpts} onSave={v => saveStageStatus('stage', { shipmentStage: v })} className={shipment.shipmentStage && STAGE_COLORS[shipment.shipmentStage] ? `px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[shipment.shipmentStage]}` : ''} placeholder="Select" /><InlineField value={!stageOpts.includes(shipment.shipmentStage || '') ? shipment.shipmentStage : ''} onSave={v => saveStageStatus('stage', { shipmentStage: v })} placeholder="Custom..." /></div>
-              </div>
-              {/* ✅ NEW — Status dropdown, dropdown-only (no free text), for
-                  manually overriding the workflow status when needed. The
-                  one case that matters most: picking "Cancelled" here
-                  cancels the shipment outright, the same as picking
-                  Cancelled from Stage above — either one works. */}
               <div className="flex items-center gap-2"><Activity size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Status:</span>
                 <InlineField
                   value={STATUS_DROPDOWN_OPTIONS.includes(shipment.currentStatus) ? shipment.currentStatus.replace(/_/g, ' ') : shipment.currentStatus?.replace(/_/g, ' ')}
@@ -808,7 +797,7 @@ export default function ShipmentDetail() {
       <CompletenessPanel shipment={shipment} />
 
       {/* ✅ NEW — clear visual banner when a shipment has been manually
-          cancelled (via the Status or Stage dropdown above), so this is
+          cancelled (via the Status dropdown above), so this is
           obvious at a glance rather than something you'd only notice by
           reading the Status dropdown's value. The workflow stepper below
           still renders normally underneath — cancelling doesn't erase
@@ -818,7 +807,7 @@ export default function ShipmentDetail() {
           <AlertCircle size={22} className="text-red-500 shrink-0" />
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-400">This shipment has been cancelled</p>
-            <p className="text-xs text-red-600 dark:text-red-400/80">Click Reactivate (or change the Status / Stage dropdown above) to bring it back.</p>
+            <p className="text-xs text-red-600 dark:text-red-400/80">Click Reactivate (or change the Status above) to bring it back.</p>
           </div>
           <button onClick={handleReactivate} disabled={reactivating} className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow disabled:opacity-60">
             {reactivating ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Reactivate

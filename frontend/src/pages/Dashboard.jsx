@@ -12,7 +12,6 @@ const BULK_STATUS_VALUES = [
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ]
-const BULK_STAGE_VALUES = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
 const prettyStatus = (v) => v.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 function fmtDDMMYYYY(dateInput) {
@@ -626,7 +625,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setSelected([])
   }
 
-  // ─── CANCELLED CARD (NEW) ─── Stuck at pure Enquiry for 7+ days
+  // ─── CANCELLED CARD (NEW) ─── Stuck at pure Enquiry for 4+ days
   const showCancelled = () => {
     setCancelledOnly(true)
     setPendingCustomsOnly(false)
@@ -1012,7 +1011,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       { label: 'Pending Customs', value: analytics.pipelineCustoms, icon: FileCheck, gradient: 'from-emerald-500 to-teal-600', desc: 'Freight done, waiting on Customs', onClick: showPendingCustoms, active: pendingCustomsOnly },
       { label: 'Pending Invoice', value: analytics.pipelineInvoice, icon: Banknote, gradient: 'from-amber-500 to-orange-600', desc: 'Customs done, waiting on Invoice', onClick: showPendingInvoice, active: pendingInvoiceOnly },
       { label: 'FF Only / Transport / DO', value: analytics.pipelineSimple, icon: Box, gradient: 'from-violet-500 to-purple-600', desc: 'In progress, not yet invoiced', onClick: showSimpleTypesInProgress, active: simpleTypesOnly },
-      { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck at Enquiry 7+ days', onClick: showCancelled, active: cancelledOnly },
+      { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck at Enquiry 4+ days', onClick: showCancelled, active: cancelledOnly },
     ] : []),
     { label: "Today's Shipments", value: todayCount || 0, icon: Calendar, gradient: 'from-rose-500 to-pink-600', desc: 'Created today', onClick: showTodayShipments, active: todayOnly },
     { label: 'This Month Shipments', value: analytics.monthlyShipments, icon: TrendingUp, gradient: 'from-cyan-500 to-sky-600', desc: 'Created this calendar month', onClick: showThisMonthShipments, active: thisMonthOnly },
@@ -1272,15 +1271,6 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                   }}>
                   <option value="">{bulkStatusMutation.isPending ? 'Updating…' : 'Change status…'}</option>
                   {BULK_STATUS_VALUES.map((v) => <option key={v} value={v}>{prettyStatus(v)}</option>)}
-                </select>
-                <select value="" disabled={bulkStatusMutation.isPending} className="px-3 py-1.5 border border-indigo-300/60 dark:border-indigo-700/60 rounded-lg text-xs font-semibold bg-[var(--bg-primary)] text-[var(--text-primary)] cursor-pointer disabled:opacity-50" title="Set the stage of every selected shipment"
-                  onChange={(e) => {
-                    const v = e.target.value
-                    if (!v) return
-                    if (window.confirm(`Change the stage of ${selected.length} shipment(s) to "${v}"?${v === 'Cancelled' ? '\n\nThis also cancels them.' : ''}`)) bulkStatusMutation.mutate({ ids: selected, stage: v })
-                  }}>
-                  <option value="">Change stage…</option>
-                  {BULK_STAGE_VALUES.map((v) => <option key={v} value={v}>{v}</option>)}
                 </select>
                 <button onClick={handleExportForClient} disabled={exportingClient} className="px-3.5 py-1.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-lg disabled:opacity-50 whitespace-nowrap">
                   {exportingClient ? <RefreshCw size={13} className="animate-spin"/> : <Download size={13}/>} Export for Client
