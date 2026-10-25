@@ -1,66 +1,215 @@
-import { useState, useEffect, useRef } from 'react'
-import AdminWelcomeBanner from '../components/AdminWelcomeBanner'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { 
-  LayoutDashboard, Package, Menu, X, 
-  Box, Command,
-  LogOut, User, ChevronDown, ChevronLeft, ChevronRight, Moon, Sun, Bell, CheckCheck,
-  Ship, FileCheck, Truck, ClipboardList, FileText,
-  BarChart3, FileUp, Receipt, Hash, Mail, FileSpreadsheet, ExternalLink,
-  Layers, Users, Shield, BarChart2, TrendingUp, BellRing
+import {
+  LayoutDashboard, Menu, X, LogOut, ChevronDown, ChevronLeft, ChevronRight, Moon, Sun, Bell, CheckCheck,
+  Ship, FileCheck, Truck, ClipboardList, FileText, BarChart3, FileUp, Receipt, Hash, Mail,
+  FileSpreadsheet, ExternalLink, Layers, Users, Shield, BarChart2, TrendingUp, BellRing, Plus,
+  RefreshCw, WifiOff, CheckCircle2, Upload, Banknote
 } from 'lucide-react'
+import AdminWelcomeBanner from '../components/AdminWelcomeBanner'
 import api, { onNetworkStatusChange } from '../lib/api'
 import { useSocket } from '../App'
 import { useToast } from '../components/Toast'
-import LogisticsBackground from '../components/LogisticsBackground'
+
+const GROUPS_KEY = 'pas_nav_groups'
+const COLLAPSED_KEY = 'pas_sidebar_collapsed'
+const DARK_KEY = 'pas_dark_mode'
+const DEFAULT_GROUPS = { overview: true, team: true, modules: true, actions: true, refs: false, insights: false, tools: false }
+
+const TOOL_LINKS = [
+  { url: 'https://pasfreight-mailer.onrender.com', icon: Mail, label: 'Bulk Emailing' },
+  { url: 'https://pas-freight-quotation.vercel.app/', icon: FileSpreadsheet, label: 'Quotation Generator' },
+  { url: 'https://can-fc-pasfreightservices.vercel.app/', icon: FileCheck, label: 'CAN & FC Certificates' },
+]
+
+function readStored(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : raw
+  } catch {
+    return fallback
+  }
+}
+
+function writeStored(key, value) {
+  try { localStorage.setItem(key, value) } catch { /* private mode or full storage: the setting just won't persist */ }
+}
+
+function readGroups() {
+  try {
+    return { ...DEFAULT_GROUPS, ...JSON.parse(readStored(GROUPS_KEY, '{}')) }
+  } catch {
+    return DEFAULT_GROUPS
+  }
+}
+
+// Admins see every shipment on the home page, everyone else sees their own.
+// The menu is the same for both apart from this first group.
+function buildGroups(isAdmin) {
+  const overview = isAdmin
+    ? [
+        { path: '/', icon: LayoutDashboard, label: 'All Shipments' },
+        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+      ]
+    : [
+        { path: '/', icon: LayoutDashboard, label: 'My Shipments' },
+        { path: '/overview', icon: Layers, label: 'Overview' },
+        { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+      ]
+
+  return [
+    { id: 'overview', label: 'Overview', items: overview },
+    {
+      id: 'team', label: 'Team', items: [
+        { path: '/team', icon: Users, label: 'Team' },
+        { path: '/daily-report', icon: BarChart2, label: 'Daily Report' },
+        { path: '/team-performance', icon: TrendingUp, label: 'Team Performance' },
+        { path: '/reminders', icon: BellRing, label: 'Reminders' },
+      ],
+    },
+    {
+      id: 'modules', label: 'Modules', items: [
+        { path: '/ff-only', icon: FileText, label: 'FF Only' },
+        { path: '/freight', icon: Ship, label: 'Freight' },
+        { path: '/cha', icon: FileCheck, label: 'CHA' },
+        { path: '/transport', icon: Truck, label: 'Transport' },
+        { path: '/do-release', icon: ClipboardList, label: 'DO Release' },
+      ],
+    },
+    {
+      id: 'refs', label: 'Reference Groups', items: [
+        { path: '/rl', icon: Hash, code: 'RL', label: 'RL (RLI / RLE)' },
+        { path: '/pp', icon: Hash, code: 'PP', label: 'PP (PPI / PPE)' },
+        { path: '/sp', icon: Hash, code: 'SP', label: 'SP (SPI / SPE)' },
+        { path: '/jd', icon: Hash, code: 'JD', label: 'JD (JDI / JDE)' },
+      ],
+    },
+    {
+      id: 'insights', label: 'Insights', items: [
+        { path: '/reference-codes', icon: Hash, label: 'Reference Codes' },
+        { path: '/employee-stats', icon: Users, label: 'Employee Stats' },
+      ],
+    },
+    {
+      id: 'actions', label: 'Actions', items: [
+        { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner' },
+        { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan' },
+      ],
+    },
+    { id: 'tools', label: 'Tools', external: true, items: TOOL_LINKS },
+  ]
+}
+
+function pathMatches(pathname, path) {
+  if (path === '/') return pathname === '/'
+  return pathname === path || pathname.startsWith(`${path}/`)
+}
+
+// Icon and tint for each kind of notification the server sends.
+const NOTIF_STYLES = {
+  AWB: { icon: FileText, tone: 'bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' },
+  BOE: { icon: FileCheck, tone: 'bg-teal-50 text-teal-600 dark:bg-teal-500/15 dark:text-teal-300' },
+  INVOICE: { icon: Banknote, tone: 'bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300' },
+  DELIVERED: { icon: CheckCircle2, tone: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300' },
+  STATUS: { icon: RefreshCw, tone: 'bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300' },
+  SB: { icon: Upload, tone: 'bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300' },
+}
+const NOTIF_DEFAULT = { icon: Bell, tone: 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300' }
+
+function timeAgo(date) {
+  const seconds = Math.floor((new Date() - new Date(date)) / 1000)
+  if (seconds < 60) return 'just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
+
+// The logo image, with a plain text fallback so the menu never shows a broken picture.
+function Logo({ alt = '', className = '', textClass = '' }) {
+  const [failed, setFailed] = useState(false)
+  if (failed) {
+    return (
+      <span className="text-lg font-extrabold tracking-tight text-[var(--brand-indigo)] leading-none whitespace-nowrap">
+        PAS<span className={`text-[var(--accent)] ${textClass}`}> Freight</span>
+      </span>
+    )
+  }
+  return <img src="/pas-logo.png" alt={alt} onError={() => setFailed(true)} className={className} />
+}
 
 export default function MainLayout({ user }) {
   const location = useLocation()
   const navigate = useNavigate()
   const socket = useSocket()
   const { addToast } = useToast()
+  const pathname = location.pathname
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
+  const [darkMode, setDarkMode] = useState(() => readStored(DARK_KEY, 'false') === 'true')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStored(COLLAPSED_KEY, 'false') === 'true')
+  const [openGroups, setOpenGroups] = useState(readGroups)
+  const [keyboardUp, setKeyboardUp] = useState(false)
   const notifRef = useRef(null)
-  const [darkMode, setDarkMode] = useState(() => {
-    return localStorage.getItem('pas_dark_mode') === 'true'
-  })
-
-  // ✅ SIDEBAR COLLAPSE — desktop-only collapse to an icon-only rail,
-  // freeing up width for the dashboard table. Persisted so it stays how
-  // the person left it across reloads. Mobile keeps its existing
-  // hamburger/overlay behavior untouched — this only affects lg+ screens.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    return localStorage.getItem('pas_sidebar_collapsed') === 'true'
-  })
-  useEffect(() => {
-    localStorage.setItem('pas_sidebar_collapsed', sidebarCollapsed)
-  }, [sidebarCollapsed])
+  const userRef = useRef(null)
 
   const isAdmin = user?.role === 'ADMIN'
+  const groups = useMemo(() => buildGroups(isAdmin), [isAdmin])
 
-  // ─── SLOW NETWORK / OFFLINE BANNER (NEW) ───
-  // Subscribes to the live network-speed tracking in lib/api.js. Shows a
-  // small, non-blocking banner rather than interrupting anything — the
-  // person keeps working, they just know to expect things to take
-  // longer, or that they're fully offline right now.
+  const displayName = user?.name || user?.email?.split('@')[0] || 'User'
+  const userInitial = displayName.charAt(0).toUpperCase()
+
+  useEffect(() => { writeStored(COLLAPSED_KEY, sidebarCollapsed) }, [sidebarCollapsed])
+  useEffect(() => { writeStored(GROUPS_KEY, JSON.stringify(openGroups)) }, [openGroups])
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode)
+    writeStored(DARK_KEY, darkMode)
+  }, [darkMode])
+
+  // The side menu on a phone covers the page, so the page behind it should not scroll.
+  useEffect(() => {
+    document.body.style.overflow = sidebarOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [sidebarOpen])
+
+  // While someone is typing on a phone the keyboard takes half the screen, so the
+  // bottom menu steps aside instead of sitting on top of the field being filled in.
+  useEffect(() => {
+    let timer = null
+    const isField = (el) => el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)
+    const onFocusIn = (e) => {
+      clearTimeout(timer)
+      if (isField(e.target)) setKeyboardUp(true)
+    }
+    const onFocusOut = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => setKeyboardUp(false), 150)
+    }
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
+    return () => {
+      clearTimeout(timer)
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
+    }
+  }, [])
+
+  // Slow network / offline banner. It subscribes to the live speed tracking in
+  // lib/api.js and never blocks anything: people keep working, they just know
+  // to expect things to take longer.
   const [networkStatus, setNetworkStatus] = useState({ isSlow: false, isOffline: false })
   useEffect(() => {
     const unsubscribe = onNetworkStatusChange(setNetworkStatus)
     return unsubscribe
   }, [])
 
-  // ─── NEW VERSION AVAILABLE BANNER (NEW) ───
-  // Whenever you deploy, Vite generates a fresh index.html referencing
-  // new hashed JS/CSS files — but anyone with the app already open in
-  // their browser keeps running the OLD JS in memory until they actually
-  // reload the page. This quietly fetches the live index.html every 5
-  // minutes and compares it to the one this session originally loaded;
-  // if they differ, a deploy has happened, and everyone still on the old
-  // version sees a banner prompting them to refresh — no need to tell
-  // people manually anymore.
+  // New version banner. After a deploy, anyone who already has the app open
+  // keeps running the old JavaScript until they reload. Every 5 minutes this
+  // fetches the live index.html and compares it with the one this session
+  // started with. If they differ, a deploy has happened.
   const [updateAvailable, setUpdateAvailable] = useState(false)
   useEffect(() => {
     let initialHtml = null
@@ -69,25 +218,20 @@ export default function MainLayout({ user }) {
         const res = await fetch(`/index.html?_=${Date.now()}`, { cache: 'no-store' })
         const html = await res.text()
         if (initialHtml === null) {
-          initialHtml = html // first check just records the baseline, this session's own version
+          initialHtml = html
         } else if (html !== initialHtml) {
           setUpdateAvailable(true)
         }
-      } catch (e) {} // a failed check (e.g. offline) just tries again next interval
+      } catch (e) { /* offline or a failed check: try again at the next interval */ }
     }
     checkForUpdate()
-    const interval = setInterval(checkForUpdate, 5 * 60 * 1000) // every 5 minutes
+    const interval = setInterval(checkForUpdate, 5 * 60 * 1000)
     return () => clearInterval(interval)
   }, [])
 
-  // ✅ Notification sound (FIXED)
-  // A single AudioContext, created once and reused, instead of a new one
-  // per notification — browsers require it to be "unlocked" by a real
-  // user interaction (click/tap) before it can play sound, and creating
-  // a fresh one every time silently fails until that happens. We create
-  // it lazily on first use and resume it if the browser suspended it.
-  // Sound is a pleasant two-note chime (soft "ding-dong") instead of one
-  // flat beep.
+  // Notification sound. Browsers only let an AudioContext play after a real tap
+  // or click, and a new context per notification would stay silent, so one
+  // context is created on first use, reused, and resumed if the browser paused it.
   const audioCtxRef = useRef(null)
   const getAudioCtx = () => {
     if (!audioCtxRef.current) {
@@ -111,10 +255,11 @@ export default function MainLayout({ user }) {
     }
   }, [])
 
+  // A soft two-note chime.
   const playSound = () => {
     try {
       const ctx = getAudioCtx()
-      if (ctx.state === 'suspended') { ctx.resume().catch(() => {}) }
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {})
 
       const playTone = (freq, startTime, duration, volume) => {
         const osc = ctx.createOscillator()
@@ -132,41 +277,48 @@ export default function MainLayout({ user }) {
       const now = ctx.currentTime
       playTone(880, now, 0.18, 0.15)
       playTone(1108.73, now + 0.12, 0.25, 0.13)
-    } catch (e) {}
+    } catch (e) { /* no audio support: the toast still appears */ }
   }
 
-  useEffect(() => { fetchNotifications() }, [])
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await api.get('/notifications?limit=20')
+      setNotifications(res.data.data || [])
+    } catch (e) { /* the bell just stays empty until the next load */ }
+  }, [])
+
+  useEffect(() => { fetchNotifications() }, [fetchNotifications])
 
   useEffect(() => {
     if (!socket) return
     const handleNewNotification = (data) => {
       setNotifications(prev => [{ ...data, id: Date.now().toString(), isRead: false, createdAt: new Date().toISOString() }, ...prev])
-      playSound(); addToast(data.message, 'info')
+      playSound()
+      addToast(data.message, 'info')
     }
     socket.on('notification:new', handleNewNotification)
     return () => socket.off('notification:new', handleNewNotification)
   }, [socket, addToast])
 
+  // Close the bell and the user menu on an outside tap or the Escape key.
   useEffect(() => {
-    const handler = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false) }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
+    const onPointerDown = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false)
+      if (userRef.current && !userRef.current.contains(e.target)) setUserMenuOpen(false)
+    }
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return
+      setNotifOpen(false)
+      setUserMenuOpen(false)
+      setSidebarOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
   }, [])
-
-  useEffect(() => {
-    const handler = () => setUserMenuOpen(false)
-    if (userMenuOpen) { document.addEventListener('click', handler); return () => document.removeEventListener('click', handler) }
-  }, [userMenuOpen])
-
-  useEffect(() => {
-    if (darkMode) document.documentElement.classList.add('dark')
-    else document.documentElement.classList.remove('dark')
-    localStorage.setItem('pas_dark_mode', darkMode)
-  }, [darkMode])
-
-  const fetchNotifications = async () => {
-    try { const res = await api.get('/notifications?limit=20'); setNotifications(res.data.data || []) } catch (e) {}
-  }
 
   const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
   const markAsRead = (notifId, shipmentId) => {
@@ -174,294 +326,328 @@ export default function MainLayout({ user }) {
     setNotifOpen(false)
     if (shipmentId) navigate(`/shipment/${shipmentId}`)
   }
-
   const unreadCount = notifications.filter(n => !n.isRead).length
 
-  const navItems = isAdmin
-    ? [
-        { path: '/', icon: LayoutDashboard, label: 'All Shipments', shortcut: 'A' },
-        { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
-      ]
-    : [
-        { path: '/', icon: LayoutDashboard, label: 'My Shipments', shortcut: 'A' },
-        { path: '/overview', icon: Layers, label: 'Overview', shortcut: 'O' },
-        { path: '/analytics', icon: BarChart3, label: 'Analytics', shortcut: 'R' },
-      ]
-
-  // ✅ NO LONGER ADMIN-GATED — Team, Daily Report, and Team Performance
-  // are now visible to everyone in the sidebar, not just Admins. The
-  // backend endpoints behind these pages (getTeamOverview, getDailyReport,
-  // getEmployeePerformance, getMonthlyReport, updateEmployeeTeam) were
-  // also opened up to any logged-in user to match — otherwise the links
-  // would show but clicking them would fail with a 403.
-  const teamItems = [
-    { path: '/team', icon: Users, label: 'Team', color: 'text-indigo-500' },
-    { path: '/daily-report', icon: BarChart2, label: 'Daily Report', color: 'text-emerald-500' },
-    { path: '/team-performance', icon: TrendingUp, label: 'Team Performance', color: 'text-rose-500' },
-    { path: '/reminders', icon: BellRing, label: 'Reminders', color: 'text-orange-500' },
-  ]
-
-  const dashboardLinks = [
-    { path: '/ff-only', icon: FileText, label: 'FF Only', color: 'text-purple-500' },
-    { path: '/freight', icon: Ship, label: 'Freight', color: 'text-indigo-500' },
-    { path: '/cha', icon: FileCheck, label: 'CHA', color: 'text-emerald-500' },
-    { path: '/transport', icon: Truck, label: 'Transport', color: 'text-sky-500' },
-    { path: '/do-release', icon: ClipboardList, label: 'DO Release', color: 'text-teal-500' },
-  ]
-
-  const insightLinks = [
-    { path: '/reference-codes', icon: Hash, label: 'Reference Codes', color: 'text-fuchsia-500' },
-    { path: '/employee-stats', icon: Users, label: 'Employee Stats', color: 'text-cyan-500' },
-  ]
-
-  const referenceGroupLinks = [
-    { path: '/rl', icon: Hash, label: 'RL (RLI / RLE)', color: 'text-rose-500' },
-    { path: '/pp', icon: Hash, label: 'PP (PPI / PPE)', color: 'text-amber-500' },
-    { path: '/sp', icon: Hash, label: 'SP (SPI / SPE)', color: 'text-lime-500' },
-    { path: '/jd', icon: Hash, label: 'JD (JDI / JDE)', color: 'text-violet-500' },
-  ]
-
-  const actionLinks = [
-    { path: '/create', icon: Package, label: 'New Shipment', color: 'text-amber-500' },
-    { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner', color: 'text-indigo-500' },
-    { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan', color: 'text-orange-500' },
-  ]
-
-  const toolLinks = [
-    { url: 'https://pasfreight-mailer.onrender.com', icon: Mail, label: 'Bulk Emailing', color: 'text-sky-500' },
-    { url: 'https://pas-freight-quotation.vercel.app/', icon: FileSpreadsheet, label: 'Quotation Generator', color: 'text-amber-500' },
-    { url: 'https://can-fc-pasfreightservices.vercel.app/', icon: FileCheck, label: 'CAN & FC Certificates', color: 'text-emerald-500' },
-  ]
-
   const handleLogout = async () => {
-    try { await api.post('/auth/logout') } catch (e) {}
-    try { Object.keys(sessionStorage).filter((k) => k.startsWith('pas_welcome_')).forEach((k) => sessionStorage.removeItem(k)) } catch (e) {} // so the Welcome banner shows again at next login
+    try { await api.post('/auth/logout') } catch (e) { /* sign out locally even if the server call fails */ }
+    // So the Welcome banner shows again at the next login.
+    try { Object.keys(sessionStorage).filter((k) => k.startsWith('pas_welcome_')).forEach((k) => sessionStorage.removeItem(k)) } catch (e) { /* ignore */ }
     localStorage.removeItem('pas_token')
     delete api.defaults.headers.common['Authorization']
     navigate('/login')
   }
 
-  const displayName = user?.name || user?.email?.split('@')[0] || 'User'
-  const userInitial = displayName.charAt(0).toUpperCase()
+  const toggleGroup = (id) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }))
+  const closeSidebar = () => setSidebarOpen(false)
 
-  const getNotifIcon = (type) => {
-    switch (type) {
-      case 'AWB': return '📋'; case 'BOE': return '📄'; case 'INVOICE': return '💰'
-      case 'DELIVERED': return '✅'; case 'STATUS': return '🔄'; case 'SB': return '📤'
-      default: return '🔔'
+  // Breadcrumb for the top bar: where the person is, in two steps.
+  const crumbs = useMemo(() => {
+    if (pathname.startsWith('/shipment/')) {
+      return [{ label: isAdmin ? 'All Shipments' : 'My Shipments', to: '/' }, { label: 'Shipment details' }]
     }
-  }
+    if (pathname === '/create') return [{ label: 'Actions' }, { label: 'New Shipment' }]
+    for (const group of groups) {
+      if (group.external) continue
+      const item = group.items.find((it) => pathMatches(pathname, it.path))
+      if (item) return [{ label: group.label }, { label: item.label }]
+    }
+    return [{ label: 'PAS Freight' }]
+  }, [pathname, groups, isAdmin])
+  const pageLabel = crumbs[crumbs.length - 1].label
 
-  const timeAgo = (date) => {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000)
-    if (seconds < 60) return 'just now'
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-    return `${Math.floor(seconds / 86400)}d ago`
-  }
+  const rail = sidebarCollapsed
+  const hideInRail = rail ? 'lg:hidden' : ''
 
-  // ✅ Sidebar width now depends on collapsed state (desktop only — the
-  // mobile overlay behavior via `sidebarOpen`/translate-x is unchanged).
-  const sidebarWidthClass = sidebarCollapsed ? 'lg:w-[76px]' : 'lg:w-[260px]'
-  const mainMarginClass = sidebarCollapsed ? 'lg:ml-[76px]' : 'lg:ml-[260px]'
-
-  // Renders one nav link, collapsing to icon-only (with a tooltip via
-  // `title`) when the sidebar is collapsed on desktop.
-  const renderNavLink = (item, extraClass = '') => {
+  const renderItem = (item, external) => {
     const Icon = item.icon
-    const isActive = location.pathname === item.path || (item.path === '/team' && location.pathname.startsWith('/team/'))
+    const active = !external && pathMatches(pathname, item.path)
+    const base = `relative flex items-center gap-3 min-h-[44px] lg:min-h-[38px] px-3 rounded-lg text-[15px] lg:text-sm ${rail ? 'lg:justify-center lg:px-0' : ''}`
+    const tone = active
+      ? 'bg-[var(--nav-active-bg)] text-[var(--brand-indigo)] font-semibold'
+      : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] font-medium'
+    const inner = (
+      <>
+        {active && <span className="absolute left-0 inset-y-2 w-[3px] rounded-r bg-[var(--accent)]" />}
+        {item.code
+          ? <span className="w-[22px] h-[18px] flex-shrink-0 rounded text-[10px] font-bold flex items-center justify-center bg-[var(--bg-tertiary)] border border-[var(--border-color)]">{item.code}</span>
+          : <Icon size={18} className="flex-shrink-0" strokeWidth={active ? 2.25 : 2} />}
+        <span className={`flex-1 truncate ${hideInRail}`}>{item.label}</span>
+        {external && <ExternalLink size={13} className={`text-[var(--text-muted)] ${hideInRail}`} />}
+      </>
+    )
+    if (external) {
+      return (
+        <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer" title={rail ? item.label : undefined} className={`${base} ${tone}`}>
+          {inner}
+        </a>
+      )
+    }
     return (
-      <Link key={item.path} to={item.path} onClick={() => setSidebarOpen(false)} title={sidebarCollapsed ? item.label : undefined}
-        className={`group flex items-center ${sidebarCollapsed ? 'lg:justify-center' : 'justify-between'} px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-          isActive ? 'bg-[var(--brand-indigo-light)] text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
-        } ${extraClass}`}>
-        <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:gap-0' : ''}`}>
-          <Icon size={17} className={item.color} />
-          <span className={sidebarCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
-        </div>
-        {isActive && <span className={`w-1.5 h-1.5 rounded-full bg-[var(--brand-indigo)] ${sidebarCollapsed ? 'lg:hidden' : ''}`} />}
+      <Link key={item.path} to={item.path} onClick={closeSidebar} title={rail ? item.label : undefined}
+        aria-current={active ? 'page' : undefined} className={`${base} ${tone}`}>
+        {inner}
       </Link>
     )
   }
 
-  return (
-    <div className="min-h-screen bg-[var(--bg-secondary)]">
-      <LogisticsBackground />
+  const bottomTabs = [
+    { path: '/', icon: LayoutDashboard, label: 'Home' },
+    { path: '/reminders', icon: BellRing, label: 'Reminders' },
+    { path: '/create', icon: Plus, label: 'New shipment', primary: true },
+    { path: '/team', icon: Users, label: 'Team' },
+  ]
 
-      {/* ✅ NEW VERSION / SLOW NETWORK / OFFLINE BANNERS — stacked in one
-          fixed container at the top of the viewport, above everything,
-          visible no matter which page is open. New-version takes the top
-          slot since it's the most actionable. */}
-      {(updateAvailable || networkStatus.isOffline || networkStatus.isSlow) && (
-        <div className="fixed top-0 left-0 right-0 z-[60] flex flex-col">
-          {updateAvailable && (
-            <div className="px-4 py-1.5 text-center text-xs font-medium text-white bg-indigo-600 flex items-center justify-center gap-2">
-              <span>🔄 A new version of PAS Freight is available</span>
-              <button onClick={() => window.location.reload()} className="px-2.5 py-0.5 bg-white text-indigo-700 rounded-full font-semibold hover:bg-indigo-50 transition-colors">
-                Refresh now
+  const bell = (
+    <div className="relative" ref={notifRef}>
+      <button
+        onClick={() => setNotifOpen(v => !v)}
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        aria-expanded={notifOpen}
+        className="relative w-11 h-11 lg:w-10 lg:h-10 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]"
+      >
+        <Bell size={19} />
+        {unreadCount > 0 && (
+          <span className="absolute top-1 right-1 min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-[var(--bg-primary)]">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
+      </button>
+      {notifOpen && (
+        <div role="dialog" aria-label="Notifications"
+          className="fixed lg:absolute inset-x-3 lg:inset-x-auto top-[60px] lg:top-full lg:right-0 lg:mt-2 lg:w-[380px] bg-[var(--bg-primary)] rounded-xl shadow-xl border border-[var(--border-color)] z-50 overflow-hidden animate-scale-in">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">Notifications</h3>
+            {unreadCount > 0 && (
+              <button onClick={markAllRead} className="text-xs text-[var(--brand-indigo)] flex items-center gap-1 font-semibold hover:underline">
+                <CheckCheck size={14} /> Mark all read
               </button>
-            </div>
-          )}
-          {(networkStatus.isOffline || networkStatus.isSlow) && (
-            <div className={`px-4 py-1.5 text-center text-xs font-medium text-white ${networkStatus.isOffline ? 'bg-red-600' : 'bg-amber-500'}`}>
-              {networkStatus.isOffline
-                ? "⚠️ You're offline — changes won't save until your connection is back"
-                : 'Loading is a little slower than usual right now. Your work is safe, no need to refresh.'}
-            </div>
-          )}
-        </div>
-      )}
-
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 lg:hidden transition-all" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      <aside className={`fixed top-0 left-0 h-full w-[260px] ${sidebarWidthClass} border-r z-50 transform transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] lg:translate-x-0 bg-[var(--bg-primary)] border-[var(--border-color)] flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex-shrink-0 h-16 flex items-center justify-between px-5 border-b border-[var(--border-color)]">
-          <Link to="/" className={`flex items-center gap-2.5 ${sidebarCollapsed ? 'lg:justify-center lg:w-full' : ''}`}>
-            <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center flex-shrink-0"><Box size={16} className="text-white" /></div>
-            <div className={`leading-tight ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
-              <h1 className="text-sm font-bold text-[var(--text-primary)] tracking-tight">PAS Freight</h1>
-              <p className="text-[10px] text-[var(--text-muted)] font-medium">Services Pvt Ltd</p>
-            </div>
-          </Link>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"><X size={16} className="text-[var(--text-secondary)]" /></button>
-        </div>
-
-        {/* ✅ COLLAPSE TOGGLE — desktop only. Floats on the sidebar's
-            right edge so it's reachable whether the rail is expanded or
-            collapsed. */}
-        <button
-          onClick={() => setSidebarCollapsed(v => !v)}
-          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-md items-center justify-center text-[var(--text-secondary)] hover:text-indigo-600 hover:border-indigo-300 transition-colors z-10"
-          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
-        
-        <div className={`flex-shrink-0 px-4 py-3 border-b border-[var(--border-color)] ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
-          <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}>
-            <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md flex-shrink-0">{userInitial}</div>
-            <div className={`flex-1 min-w-0 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
-              <p className="text-xs font-semibold text-[var(--text-primary)] truncate flex items-center gap-1.5">
-                {displayName}
-                {isAdmin && <Shield size={11} className="text-indigo-500 flex-shrink-0" title="Admin" />}
-              </p>
-              <p className="text-[10px] text-[var(--text-muted)] truncate">{user?.email || ''}</p>
-            </div>
+            )}
+          </div>
+          <div className="max-h-[min(420px,70vh)] overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className="px-4 py-10 text-center">
+                <Bell size={26} className="text-[var(--text-muted)] mx-auto mb-2" />
+                <p className="text-sm text-[var(--text-muted)]">No notifications yet</p>
+              </div>
+            ) : (
+              notifications.slice(0, 20).map((n) => {
+                const style = NOTIF_STYLES[n.type] || NOTIF_DEFAULT
+                const NIcon = style.icon
+                return (
+                  <button key={n.id} onClick={() => markAsRead(n.id, n.shipmentId)}
+                    className={`w-full text-left px-4 py-3 border-b border-[var(--border-color)] last:border-b-0 hover:bg-[var(--hover-bg)] flex gap-3 ${!n.isRead ? 'bg-[var(--nav-active-bg)]/60' : ''}`}>
+                    <span className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${style.tone}`}><NIcon size={16} /></span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{n.title}</p>
+                        {!n.isRead && <span className="w-2 h-2 rounded-full bg-[var(--accent)] flex-shrink-0" />}
+                      </div>
+                      <p className="text-[13px] text-[var(--text-secondary)] mt-0.5 line-clamp-2">{n.message}</p>
+                      <p className="text-xs text-[var(--text-muted)] mt-1">{timeAgo(n.createdAt)}</p>
+                    </div>
+                  </button>
+                )
+              })
+            )}
           </div>
         </div>
+      )}
+    </div>
+  )
 
-        <nav className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-0.5 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
-          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Overview</p>
-          {navItems.map((item) => renderNavLink(item))}
+  return (
+    <div className="min-h-screen bg-[var(--bg-secondary)]">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[80] focus:px-3 focus:py-2 focus:rounded-lg focus:bg-[var(--bg-primary)] focus:text-[var(--text-primary)] focus:shadow-lg">
+        Skip to content
+      </a>
 
-          {/* ✅ Team / Daily Report / Team Performance — now shown to
-              everyone, not just Admins. */}
-          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Team</p>
-          {teamItems.map((item) => renderNavLink(item))}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={closeSidebar} aria-hidden="true" />
+      )}
 
-          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Modules</p>
-          {dashboardLinks.map((item) => renderNavLink(item))}
+      <aside
+        aria-label="Main menu"
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-[290px] max-w-[86vw] ${rail ? 'lg:w-[76px]' : 'lg:w-[260px]'} bg-[var(--bg-primary)] border-r border-[var(--border-color)] transition-transform duration-200 lg:transition-none lg:translate-x-0 ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
+      >
+        <div className={`flex-shrink-0 h-16 flex items-center justify-between px-4 border-b border-[var(--border-color)] ${rail ? 'lg:justify-center lg:px-2' : ''}`}>
+          <Link to="/" onClick={closeSidebar} aria-label="PAS Freight Services, home" className="flex items-center rounded-md dark:bg-white dark:px-1.5 dark:py-0.5">
+            <Logo alt="PAS Freight Services" className={`h-11 w-auto ${rail ? 'lg:h-9' : ''}`} textClass={hideInRail} />
+          </Link>
+          <button onClick={closeSidebar} aria-label="Close menu" className="lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]">
+            <X size={20} />
+          </button>
+        </div>
 
-          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Reference Groups</p>
-          {referenceGroupLinks.map((item) => renderNavLink(item))}
+        <button
+          onClick={() => setSidebarCollapsed(v => !v)}
+          aria-label={rail ? 'Expand menu' : 'Collapse menu'}
+          title={rail ? 'Expand menu' : 'Collapse menu'}
+          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm items-center justify-center text-[var(--text-secondary)] hover:text-[var(--brand-indigo)] z-10"
+        >
+          {rail ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
 
-          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Insights</p>
-          {insightLinks.map((item) => renderNavLink(item))}
+        <div className={`flex-shrink-0 p-3 ${rail ? 'lg:px-2' : ''}`}>
+          <Link to="/create" onClick={closeSidebar} title={rail ? 'New Shipment' : undefined}
+            className={`flex items-center justify-center gap-2 h-11 lg:h-10 rounded-lg bg-[var(--accent)] text-white text-sm font-semibold hover:bg-[var(--accent-hover)] shadow-sm ${rail ? 'lg:px-0' : ''}`}>
+            <Plus size={18} strokeWidth={2.5} />
+            <span className={hideInRail}>New Shipment</span>
+          </Link>
+        </div>
 
-          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Actions</p>
-          {actionLinks.map((item) => renderNavLink(item))}
-
-          <p className={`px-3 py-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-widest mt-4 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Tools</p>
-          {toolLinks.map((item) => {
-            const Icon = item.icon
+        <nav className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-3 ${rail ? 'lg:px-2' : ''}`}>
+          {groups.map((group, index) => {
+            const hasActive = !group.external && group.items.some((it) => pathMatches(pathname, it.path))
+            const expanded = openGroups[group.id] || hasActive
             return (
-              <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer" title={sidebarCollapsed ? item.label : undefined}
-                className={`group flex items-center ${sidebarCollapsed ? 'lg:justify-center' : 'justify-between'} gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]`}>
-                <div className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:gap-0' : ''}`}><Icon size={17} className={item.color} /><span className={sidebarCollapsed ? 'lg:hidden' : ''}>{item.label}</span></div>
-                <ExternalLink size={13} className={`text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity ${sidebarCollapsed ? 'lg:hidden' : ''}`} />
-              </a>
+              <div key={group.id} className={index > 0 ? 'mt-1' : ''}>
+                {rail && index > 0 && <div className="hidden lg:block h-px bg-[var(--border-color)] my-2" />}
+                <button
+                  onClick={() => toggleGroup(group.id)}
+                  aria-expanded={expanded}
+                  className={`w-full flex items-center justify-between px-3 h-9 rounded-md text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)] ${hideInRail}`}
+                >
+                  <span>{group.label}</span>
+                  <ChevronDown size={14} className={`transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`} />
+                </button>
+                <div className={`space-y-0.5 ${expanded ? '' : `hidden ${rail ? 'lg:block' : ''}`}`}>
+                  {group.items.map((item) => renderItem(item, group.external))}
+                </div>
+              </div>
             )
           })}
         </nav>
 
-        <div className="flex-shrink-0 p-4 border-t border-[var(--border-color)]">
-          <div className={`flex items-center gap-2 px-1 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}><span className={`text-[10px] text-[var(--text-muted)] font-medium ${sidebarCollapsed ? 'lg:hidden' : ''}`}>© 2026 PAS Freight</span></div>
+        <div className="flex-shrink-0 border-t border-[var(--border-color)] p-3">
+          <div className={`flex items-center gap-3 px-1 ${rail ? 'lg:justify-center lg:px-0' : ''}`}>
+            <div className="w-9 h-9 rounded-full bg-indigo-600 dark:bg-indigo-500 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{userInitial}</div>
+            <div className={`flex-1 min-w-0 ${hideInRail}`}>
+              <p className="text-sm font-semibold text-[var(--text-primary)] truncate flex items-center gap-1.5">
+                {displayName}
+                {isAdmin && <Shield size={12} className="text-[var(--accent)] flex-shrink-0" aria-label="Admin" />}
+              </p>
+              <p className="text-xs text-[var(--text-muted)] truncate">{user?.email || ''}</p>
+            </div>
+          </div>
+          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2">
+            <button onClick={() => setDarkMode(v => !v)} className="btn btn-secondary min-h-[44px]">
+              {darkMode ? <Sun size={16} /> : <Moon size={16} />} {darkMode ? 'Light' : 'Dark'}
+            </button>
+            <button onClick={handleLogout} className="btn btn-danger min-h-[44px]"><LogOut size={16} /> Sign out</button>
+          </div>
         </div>
       </aside>
 
-      <div className={`relative z-10 ${mainMarginClass}`}>
-        <header className="hidden lg:flex sticky top-0 z-30 bg-[var(--glass-bg-strong)] backdrop-blur-lg border-b border-[var(--border-color)] px-6 py-3 items-center justify-end gap-3">
-          <div className="relative" ref={notifRef}>
-            <button onClick={(e) => { e.stopPropagation(); setNotifOpen(!notifOpen) }} className="relative p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors">
-              <Bell size={18} className="text-[var(--text-secondary)]" />
-              {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-4.5 h-4.5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-md">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-            </button>
-            {notifOpen && (
-              <div className="absolute right-0 mt-1 w-80 bg-[var(--bg-primary)] rounded-xl shadow-xl border border-[var(--border-color)] z-50 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-color)]">
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Notifications</h3>
-                  {unreadCount > 0 && <button onClick={markAllRead} className="text-[11px] text-indigo-500 hover:text-indigo-600 flex items-center gap-1 font-medium"><CheckCheck size={13} /> Mark all read</button>}
-                </div>
-                <div className="max-h-[350px] overflow-y-auto">
-                  {notifications.length === 0 ? (
-                    <div className="px-4 py-8 text-center"><Bell size={28} className="text-gray-300 mx-auto mb-2" /><p className="text-xs text-[var(--text-muted)]">No notifications yet</p></div>
-                  ) : (
-                    notifications.slice(0, 20).map((n) => (
-                      <button key={n.id} onClick={() => markAsRead(n.id, n.shipmentId)} className={`w-full text-left px-4 py-3 border-b border-[var(--border-color)] hover:bg-[var(--bg-secondary)] transition-colors flex gap-3 ${!n.isRead ? 'bg-indigo-50/30 dark:bg-indigo-900/10' : ''}`}>
-                        <span className="text-lg mt-0.5">{getNotifIcon(n.type)}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2"><p className="text-sm font-medium text-[var(--text-primary)] truncate">{n.title}</p>{!n.isRead && <span className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />}</div>
-                          <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{n.message}</p>
-                          <p className="text-[10px] text-[var(--text-muted)] mt-1">{timeAgo(n.createdAt)}</p>
-                        </div>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-          <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors" title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
-            {darkMode ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-[var(--text-secondary)]" />}
-          </button>
-          <div className="relative" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors">
-              <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-md">{userInitial}</div>
-              <span className="text-sm font-medium text-[var(--text-primary)]">{displayName}</span>
-              <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-            </button>
-            {userMenuOpen && (
-              <div className="absolute right-0 mt-1 w-56 bg-[var(--bg-primary)] rounded-xl shadow-xl border border-[var(--border-color)] py-2 z-50 animate-in">
-                <div className="px-4 py-2 border-b border-[var(--border-color)]"><p className="text-sm font-semibold text-[var(--text-primary)]">{displayName}</p><p className="text-xs text-[var(--text-muted)]">{user?.email}</p></div>
-                <div className="py-1">
-                  <button className="w-full text-left px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] flex items-center gap-2"><User size={14} /> Profile</button>
-                  <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"><LogOut size={14} /> Sign Out</button>
-                </div>
-              </div>
-            )}
-          </div>
-        </header>
-
-        <header className="lg:hidden sticky top-0 z-30 bg-[var(--glass-bg-strong)] backdrop-blur-lg border-b border-[var(--border-color)] px-4 py-3 flex items-center justify-between">
-          <button onClick={() => setSidebarOpen(true)} className="p-2 hover:bg-[var(--bg-secondary)] rounded-lg transition-colors"><Menu size={20} className="text-[var(--text-secondary)]" /></button>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <button onClick={(e) => { e.stopPropagation(); setNotifOpen(!notifOpen) }} className="relative p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors">
-                <Bell size={18} className="text-[var(--text-secondary)]" />
-                {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+      <div className={rail ? 'lg:ml-[76px]' : 'lg:ml-[260px]'}>
+        <div className="sticky top-0 z-30">
+          {updateAvailable && (
+            <div role="status" className="px-4 py-2 text-center text-sm font-medium text-white bg-indigo-600 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-2"><RefreshCw size={14} /> A new version of PAS Freight is available</span>
+              <button onClick={() => window.location.reload()} className="px-3 py-0.5 bg-[var(--accent)] text-white rounded-full text-xs font-semibold hover:bg-[var(--accent-hover)]">
+                Refresh now
               </button>
             </div>
-            <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors">{darkMode ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-[var(--text-secondary)]" />}</button>
-            <div className="w-6 h-6 bg-gray-900 rounded-md flex items-center justify-center"><Box size={12} className="text-white" /></div>
-            <h1 className="text-sm font-bold text-[var(--text-primary)]">PAS Freight</h1>
-          </div>
-          <button onClick={handleLogout} className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"><LogOut size={18} className="text-red-500" /></button>
-        </header>
+          )}
+          {networkStatus.isOffline && (
+            <div role="alert" className="px-4 py-2 text-center text-sm font-medium text-white bg-red-600 flex items-center justify-center gap-2">
+              <WifiOff size={14} /> You're offline. Changes won't save until your connection is back
+            </div>
+          )}
+          {!networkStatus.isOffline && networkStatus.isSlow && (
+            <div role="status" className="px-4 py-2 text-center text-sm font-medium bg-amber-50 text-amber-900 border-b border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30">
+              Loading is a little slower than usual right now. Your work is safe, no need to refresh.
+            </div>
+          )}
 
-        <main className="p-4 sm:p-6 lg:p-8 w-full">{isAdmin && <AdminWelcomeBanner user={user} />}<Outlet /></main>
+          <header className="h-14 lg:h-16 flex items-center justify-between gap-3 px-3 lg:px-8 bg-[var(--bg-primary)] border-b border-[var(--border-color)]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Link to="/" className="lg:hidden flex-shrink-0 rounded-md dark:bg-white dark:px-1 dark:py-0.5" aria-label="Home">
+                <Logo className="h-9 w-auto" />
+              </Link>
+              <span className="lg:hidden text-[15px] font-semibold text-[var(--text-primary)] truncate">{pageLabel}</span>
+              <nav aria-label="Breadcrumb" className="hidden lg:flex items-center gap-2 text-sm min-w-0">
+                {crumbs.map((crumb, i) => {
+                  const last = i === crumbs.length - 1
+                  return (
+                    <span key={i} className="flex items-center gap-2 min-w-0">
+                      {i > 0 && <ChevronRight size={14} className="text-[var(--text-muted)] flex-shrink-0" />}
+                      {crumb.to && !last
+                        ? <Link to={crumb.to} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] truncate">{crumb.label}</Link>
+                        : <span className={`truncate ${last ? 'font-semibold text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`} aria-current={last ? 'page' : undefined}>{crumb.label}</span>}
+                    </span>
+                  )
+                })}
+              </nav>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {bell}
+              <button onClick={() => setDarkMode(v => !v)} aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                className="hidden lg:flex w-10 h-10 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]">
+                {darkMode ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
+              </button>
+              <div className="relative hidden lg:block ml-1" ref={userRef}>
+                <button onClick={() => setUserMenuOpen(v => !v)} aria-expanded={userMenuOpen} aria-haspopup="menu"
+                  className="flex items-center gap-2.5 pl-1.5 pr-2.5 h-10 rounded-lg hover:bg-[var(--hover-bg)]">
+                  <span className="w-8 h-8 rounded-full bg-indigo-600 dark:bg-indigo-500 text-white flex items-center justify-center text-xs font-bold">{userInitial}</span>
+                  <span className="text-sm font-medium text-[var(--text-primary)] max-w-[160px] truncate">{displayName}</span>
+                  <ChevronDown size={14} className="text-[var(--text-secondary)]" />
+                </button>
+                {userMenuOpen && (
+                  <div role="menu" className="absolute right-0 mt-2 w-60 bg-[var(--bg-primary)] rounded-xl shadow-xl border border-[var(--border-color)] py-1 z-50 animate-scale-in">
+                    <div className="px-4 py-3 border-b border-[var(--border-color)]">
+                      <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{displayName}</p>
+                      <p className="text-xs text-[var(--text-muted)] truncate">{user?.email}</p>
+                      <p className="text-xs mt-1.5 inline-flex items-center gap-1 font-semibold text-[var(--text-secondary)]">
+                        {isAdmin && <Shield size={11} className="text-[var(--accent)]" />} {isAdmin ? 'Administrator' : 'Team member'}
+                      </p>
+                    </div>
+                    <button role="menuitem" onClick={handleLogout} className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 flex items-center gap-2">
+                      <LogOut size={15} /> Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </header>
+        </div>
+
+        <main id="main" className="px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8 w-full">
+          {isAdmin && <AdminWelcomeBanner user={user} />}
+          <Outlet />
+        </main>
       </div>
+
+      <nav
+        aria-label="Quick menu"
+        className={`lg:hidden fixed bottom-0 inset-x-0 z-30 bg-[var(--bg-primary)] border-t border-[var(--border-color)] pb-[env(safe-area-inset-bottom)] ${keyboardUp ? 'hidden' : 'flex'} items-stretch`}
+      >
+        {bottomTabs.map((tab) => {
+          const Icon = tab.icon
+          const active = !tab.primary && pathMatches(pathname, tab.path)
+          if (tab.primary) {
+            return (
+              <Link key={tab.path} to={tab.path} aria-label={tab.label} className="flex-1 flex items-center justify-center">
+                <span className="w-12 h-12 -mt-5 rounded-full bg-[var(--accent)] text-white flex items-center justify-center shadow-lg shadow-orange-500/30 ring-4 ring-[var(--bg-primary)]">
+                  <Icon size={24} strokeWidth={2.5} />
+                </span>
+              </Link>
+            )
+          }
+          return (
+            <Link key={tab.path} to={tab.path} aria-current={active ? 'page' : undefined}
+              className={`flex-1 min-h-[58px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold ${active ? 'text-[var(--brand-indigo)]' : 'text-[var(--text-secondary)]'}`}>
+              <Icon size={22} strokeWidth={active ? 2.5 : 2} />
+              {tab.label}
+            </Link>
+          )
+        })}
+        <button onClick={() => setSidebarOpen(true)} aria-label="Open full menu"
+          className="flex-1 min-h-[58px] flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold text-[var(--text-secondary)]">
+          <Menu size={22} />
+          Menu
+        </button>
+      </nav>
     </div>
   )
 }

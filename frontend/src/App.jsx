@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useMemo, createContext, useContext, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useMemo, createContext, useContext } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import Layout from './layouts/MainLayout'
@@ -15,23 +15,23 @@ const Analytics = lazy(() => import('./pages/Analytics'))
 const ChecklistScanner = lazy(() => import('./pages/ChecklistScanner'))
 const DeliveryChallan = lazy(() => import('./pages/DeliveryChallan'))
 const ReferenceCodes = lazy(() => import('./pages/ReferenceCodes'))
-const EmployeeStats = lazy(() => import('./pages/EmployeeStats')) // ✅ NEW
-const TeamOverview = lazy(() => import('./pages/TeamOverview')) // ✅ NEW — Admin only
-const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard')) // ✅ NEW — Admin only
-const DailyReport = lazy(() => import('./pages/DailyReport')) // ✅ NEW — Admin only
-const Reminders = lazy(() => import('./pages/Reminders')) // ✅ NEW — smart reminders
-const TeamPerformance = lazy(() => import('./pages/TeamPerformance')) // ✅ NEW — Admin only
+const EmployeeStats = lazy(() => import('./pages/EmployeeStats'))
+const TeamOverview = lazy(() => import('./pages/TeamOverview'))
+const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard'))
+const DailyReport = lazy(() => import('./pages/DailyReport'))
+const Reminders = lazy(() => import('./pages/Reminders'))
+const TeamPerformance = lazy(() => import('./pages/TeamPerformance'))
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
 const CreateShipment = lazy(() => import('./pages/CreateShipment'))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
-const Track = lazy(() => import('./pages/Track')) // ✅ NEW — PUBLIC shipment tracking
+const Track = lazy(() => import('./pages/Track'))
 
 function PageLoader() {
   return (
     <div className="flex items-center justify-center h-96">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-12 h-12 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin shadow-lg" />
-        <p className="text-sm text-indigo-500 font-medium">Loading...</p>
+      <div className="flex flex-col items-center gap-3" role="status">
+        <div className="w-10 h-10 border-[3px] border-indigo-100 border-t-indigo-600 dark:border-indigo-900 dark:border-t-indigo-300 rounded-full animate-spin" />
+        <p className="text-sm text-[var(--text-muted)] font-medium">Loading...</p>
       </div>
     </div>
   )
@@ -43,103 +43,22 @@ function ProtectedRoute({ children }) {
   return children
 }
 
-// ✅ NEW — guards /team and /team/:userId. Anyone who isn't ADMIN is
-// bounced back to their own "My Shipments" page rather than seeing an
-// error screen — a non-admin landing here is almost always just an old
-// bookmark or a typed URL, not a real access attempt worth alarming them
-// over.
-function AdminRoute({ user, children }) {
-  if (user?.role !== 'ADMIN') return <Navigate to="/" replace />
-  return children
-}
-
 const SocketContext = createContext(null)
 export const useSocket = () => useContext(SocketContext)
 
-function ParticleEffects() {
-  const canvasRef = useRef(null)
-  const [effect, setEffect] = useState('rain')
-
-  useEffect(() => {
-    const effects = ['rain', 'snow', 'stars']
-    let i = 0
-    const interval = setInterval(() => { i = (i + 1) % effects.length; setEffect(effects[i]) }, 30000)
-    return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    let animationId
-    let particles = []
-
-    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight }
-    resize()
-    window.addEventListener('resize', resize)
-
-    const createParticles = () => {
-      particles = []
-      const count = effect === 'stars' ? 150 : effect === 'snow' ? 80 : 100
-      for (let i = 0; i < count; i++) {
-        particles.push({
-          x: Math.random() * canvas.width, y: Math.random() * canvas.height,
-          speed: effect === 'snow' ? 0.3 + Math.random() * 1.5 : effect === 'stars' ? 0 : 2 + Math.random() * 4,
-          size: effect === 'stars' ? 0.5 + Math.random() * 1.5 : effect === 'snow' ? 2 + Math.random() * 4 : 0.5 + Math.random() * 1.5,
-          opacity: effect === 'stars' ? 0.3 + Math.random() * 0.7 : 0.1 + Math.random() * 0.3,
-          wind: effect === 'snow' ? -0.5 + Math.random() * 1 : 0, angle: Math.random() * Math.PI * 2,
-          twinkleSpeed: 0.01 + Math.random() * 0.03, length: effect === 'rain' ? 10 + Math.random() * 15 : 0
-        })
-      }
-    }
-    createParticles()
-
-    const animate = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      particles.forEach(p => {
-        ctx.beginPath()
-        if (effect === 'rain') {
-          ctx.strokeStyle = `rgba(174, 194, 224, ${p.opacity})`; ctx.lineWidth = p.size
-          ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.wind, p.y + p.length); ctx.stroke()
-          p.y += p.speed * 3; p.x += p.wind * 0.5
-          if (p.y > canvas.height) { p.y = -10; p.x = Math.random() * canvas.width }
-        } else if (effect === 'snow') {
-          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity})`; ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill()
-          p.y += p.speed; p.x += p.wind + Math.sin(p.y * 0.01) * 0.5
-          if (p.y > canvas.height + 10) { p.y = -10; p.x = Math.random() * canvas.width }
-          if (p.x > canvas.width + 10) p.x = -10; if (p.x < -10) p.x = canvas.width + 10
-        } else if (effect === 'stars') {
-          const twinkle = 0.5 + Math.sin(p.angle) * 0.5
-          ctx.fillStyle = `rgba(255, 255, 255, ${p.opacity * twinkle})`; ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill()
-          ctx.beginPath(); ctx.fillStyle = `rgba(168, 185, 255, ${p.opacity * twinkle * 0.3})`
-          ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2); ctx.fill()
-          p.angle += p.twinkleSpeed
-        }
-      })
-      animationId = requestAnimationFrame(animate)
-    }
-    animate()
-    return () => { cancelAnimationFrame(animationId); window.removeEventListener('resize', resize) }
-  }, [effect])
-
-  return <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" style={{ opacity: 1 }} />
-}
-
-// ✅ LIVE UPDATES WITHOUT THE STORM
-// Every field saved on a shipment makes the server tell EVERY other user's
-// browser "something changed", and each browser used to refetch all its
+// Live updates without a request storm.
+// Every field saved on a shipment makes the server tell every other user's
+// browser that something changed, and each browser used to refetch all its
 // data at once through several separate listeners. With a dozen people
-// editing all day, one save became dozens of requests at the same moment
-// (and ShipmentDetail sends two events per status change). That stampede
-// is what kept the server drowning.
+// editing all day, one save turned into dozens of requests at the same moment
+// (and ShipmentDetail sends two events per status change).
 //
-// This wraps the socket so the four shipment events are delivered through
-// ONE shared throttle: the first event goes through instantly (so changes
-// still feel live), anything arriving in the next few seconds is merged into
-// a single refresh at the end of the window. Every existing page keeps
-// calling socket.on / socket.off exactly as before — they just receive the
-// events at a sane rate. Everything else (emit, connected, other events)
-// passes straight through untouched.
+// This wraps the socket so the four shipment events go through one shared
+// throttle: the first event is delivered instantly, so changes still feel
+// live, and anything arriving in the next few seconds is merged into a single
+// refresh at the end of the window. Pages keep calling socket.on / socket.off
+// exactly as before. Everything else (emit, connected, other events) passes
+// straight through untouched.
 const SHIPMENT_EVENTS = ['shipment:new', 'shipment:update', 'shipment:statusUpdate', 'shipment:archiveUpdate']
 const LIVE_REFRESH_WINDOW_MS = 8000
 
@@ -232,17 +151,12 @@ function App() {
   useEffect(() => {
     if (user) {
       const SOCKET_URL = import.meta.env.VITE_API_URL || 'https://pas-freight-api.onrender.com'
-      // ✅ FIX — the old config (reconnectionDelay: 1000, no max) let
-      // Socket.IO retry too fast, too many times, hammering the server
-      // with reconnection attempts — which can look like abuse to
-      // Render's rate limiter (the 429s you were seeing) and make an
-      // already-strained backend worse instead of giving it room to
-      // recover. This backs off properly (1s → 2s → 4s ... capped at
-      // 30s, with random jitter). It keeps trying for as long as the page is
-      // open — about 2 attempts a minute once capped, which is harmless —
-      // because giving up after a few tries meant every open tab silently
-      // lost live updates after one long restart and stayed that way until
-      // someone reloaded the page.
+      // Reconnects back off from 1s up to 30s with random jitter, so a server
+      // restart is not hit by every open tab at once (that looked like abuse
+      // to Render's rate limiter and produced the 429s). It keeps trying for
+      // as long as the page is open: about two attempts a minute once capped,
+      // which is harmless, and giving up would leave a tab without live
+      // updates until someone reloaded it.
       const newSocket = io(SOCKET_URL, {
         transports: ['websocket', 'polling'],
         reconnection: true,
@@ -252,33 +166,26 @@ function App() {
         reconnectionAttempts: Infinity,
         timeout: 20000,
       })
-      newSocket.on('connect', () => { console.log('🔌 Socket connected:', newSocket.id); newSocket.emit('user:join', { name: user.name || user.email, email: user.email }) })
-      newSocket.on('connect_error', (err) => { console.log('Socket connection error:', err.message) })
-      // After any gap (restart, network drop, laptop asleep) live events were missed, so
-      // refresh everything once the moment the connection is back. First connect is skipped.
+      newSocket.on('connect', () => { newSocket.emit('user:join', { name: user.name || user.email, email: user.email }) })
+      // After any gap (restart, network drop, laptop asleep) live events were
+      // missed, so refresh everything once the connection is back. The first
+      // connect is skipped.
       let hasConnectedBefore = false
       newSocket.on('connect', () => {
         if (hasConnectedBefore) queryClient.invalidateQueries(undefined, { cancelRefetch: false })
         hasConnectedBefore = true
-      })
-      newSocket.on('reconnect_failed', () => {
-        // Stopped retrying after reconnectionAttempts is exhausted —
-        // live updates just won't arrive until the person reloads the
-        // page, rather than the socket hammering the server forever.
-        console.log('Socket gave up reconnecting — live updates paused until page reload')
       })
       setSocket(newSocket)
       return () => { newSocket.disconnect() }
     }
   }, [user])
 
-  // ✅ LIVE EVERYWHERE — one central listener so pages without their own
-  // socket handling (Analytics, Reports, Team pages...) still refresh when
-  // anyone changes a shipment. Events arrive throttled (see above). This runs
-  // 300ms after the page-level handlers have already started their own
-  // refetches, and cancelRefetch:false means it only refreshes what ISN'T
-  // already loading — before, it cancelled and re-requested those, so the
-  // server did every lookup two or three times over.
+  // One central listener, so pages without their own socket handling
+  // (Analytics, Reports, Team pages...) still refresh when anyone changes a
+  // shipment. Events arrive throttled (see above). This runs 300ms after the
+  // page-level handlers have started their own refetches, and
+  // cancelRefetch: false means it only refreshes what is not already loading,
+  // so the server does not repeat every lookup two or three times.
   useEffect(() => {
     if (!liveSocket) return
     let timer = null
@@ -298,28 +205,22 @@ function App() {
   return (
     <SocketContext.Provider value={liveSocket}>
       <Router>
-        <ParticleEffects />
-        <div className="relative z-10">
-          <Suspense fallback={<PageLoader />}>
+        <Suspense fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage setUser={setUser} />} />
               <Route path="/track" element={<Track />} />
               <Route path="/" element={<ProtectedRoute><Layout user={user} /></ProtectedRoute>}>
-                {/* ✅ Admins see everything by default (like before). Everyone
-                    else lands on their own shipments only. The full
-                    company-wide view stays available at /overview for
-                    non-admins who want to switch to it. */}
+                {/* Admins see every shipment on the home page. Everyone else lands
+                    on their own shipments, and can still switch to the
+                    company-wide view at /overview. */}
                 <Route index element={user?.role === 'ADMIN' ? <Dashboard defaultType="" /> : <Dashboard mineOnly defaultType="" />} />
                 <Route path="overview" element={<Dashboard defaultType="" />} />
 
-                {/* ✅ Team pages — now open to everyone, not admin-only */}
                 <Route path="team" element={<TeamOverview />} />
                 <Route path="team/:userId" element={<EmployeeDashboard />} />
 
-                {/* ✅ Daily Report — now open to everyone */}
                 <Route path="daily-report" element={<DailyReport />} />
 
-                {/* ✅ Team Performance — now open to everyone */}
                 <Route path="team-performance" element={<TeamPerformance />} />
                 <Route path="reminders" element={<Reminders />} />
 
@@ -334,7 +235,7 @@ function App() {
                 <Route path="reference-codes" element={<ReferenceCodes />} />
                 <Route path="employee-stats" element={<EmployeeStats />} />
 
-                {/* ✅ NEW — Reference code group dashboards (RL/PP/SP/JD) */}
+                {/* Reference code group dashboards */}
                 <Route path="rl" element={<Dashboard referenceGroup="RL" />} />
                 <Route path="pp" element={<Dashboard referenceGroup="PP" />} />
                 <Route path="sp" element={<Dashboard referenceGroup="SP" />} />
@@ -345,8 +246,7 @@ function App() {
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </Suspense>
-        </div>
+        </Suspense>
       </Router>
     </SocketContext.Provider>
   )
