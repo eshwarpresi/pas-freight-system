@@ -19,13 +19,13 @@ function keyOk(req) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-const hits = new Map(); // 60 calls / 10 min per IP
+const hits = new Map(); // 600 calls / 10 min per IP (whole office shares one IP)
 function limited(ip) {
   const now = Date.now();
   const arr = (hits.get(ip) || []).filter((t) => now - t < 600000);
   arr.push(now); hits.set(ip, arr);
   if (hits.size > 2000) hits.clear();
-  return arr.length > 60;
+  return arr.length > 600;
 }
 
 const s = (v) => (v === undefined || v === null || String(v).trim() === '' ? null : String(v).trim());
