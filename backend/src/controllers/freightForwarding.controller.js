@@ -221,6 +221,36 @@ async function recomputeCurrentStatus(shipmentId) {
   if (!s.isArchived && s.accounts && !s.accounts.completedAt && isArchiveEligible(s)) {
     await archiveIfComplete(shipmentId);
   }
+  // The reverse: a shipment that archived itself when the invoice was sent goes back to
+  // Active the moment its invoice details are cleared again (e.g. entered by mistake).
+  if (s.isArchived && s.accounts && s.accounts.completedAt && !invoiceDetailsPresent(s.accounts)) {
+    await reopenAfterInvoiceCleared(shipmentId, s.refNo);
+  }
+}
+
+// Invoice number, invoice date and invoice sending date - the three things that make a shipment "invoiced".
+function invoiceDetailsPresent(accounts) {
+  return !!(accounts && accounts.invoiceNumber && accounts.invoiceDate && accounts.sendingDate);
+}
+
+// Moves an auto-archived shipment back to Active. completedAt is cleared too, so the shipment
+// archives itself again (once) when the invoice details are filled in again. The Invoice Ready
+// email is already limited to one per shipment ever (sendInvoiceReadyOnce), so nothing is re-sent.
+async function reopenAfterInvoiceCleared(shipmentId, refNo) {
+  try {
+    await prisma.shipment.update({
+      where: { id: shipmentId },
+      data: {
+        isArchived: false,
+        accounts: { update: { completedAt: null } },
+        statusHistory: { create: { status: 'RESTORED', remarks: 'Invoice details cleared - moved back to Active Shipments' } }
+      }
+    });
+    statsCache.clear();
+    broadcastShipmentChange(refNo);
+  } catch (err) {
+    console.error('reopenAfterInvoiceCleared failed:', err.message);
+  }
 }
 
 // ─── MILESTONE EMAILS, BY SHIPMENT MODE ───
