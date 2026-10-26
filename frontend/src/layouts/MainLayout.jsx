@@ -489,7 +489,7 @@ export default function MainLayout({ user }) {
 
         <div className={`flex-shrink-0 p-3 ${rail ? 'lg:px-2' : ''}`}>
           <Link to="/create" onClick={closeSidebar} title={rail ? 'New Shipment' : undefined}
-            className={`flex items-center justify-center gap-2 h-11 lg:h-10 rounded-lg bg-[var(--accent)] text-white text-sm font-semibold hover:bg-[var(--accent-hover)] shadow-sm ${rail ? 'lg:px-0' : ''}`}>
+            className={`flex items-center justify-center gap-2 h-11 lg:h-10 rounded-lg bg-[var(--accent)] text-[var(--on-accent)] text-sm font-semibold hover:bg-[var(--accent-hover)] shadow-sm ${rail ? 'lg:px-0' : ''}`}>
             <Plus size={18} strokeWidth={2.5} />
             <span className={hideInRail}>New Shipment</span>
           </Link>
@@ -543,7 +543,7 @@ export default function MainLayout({ user }) {
           {updateAvailable && (
             <div role="status" className="px-4 py-2 text-center text-sm font-medium text-white bg-indigo-600 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
               <span className="inline-flex items-center gap-2"><RefreshCw size={14} /> A new version of PAS Freight is available</span>
-              <button onClick={() => window.location.reload()} className="px-3 py-0.5 bg-[var(--accent)] text-white rounded-full text-xs font-semibold hover:bg-[var(--accent-hover)]">
+              <button onClick={() => window.location.reload()} className="px-3 py-0.5 bg-[var(--accent)] text-[var(--on-accent)] rounded-full text-xs font-semibold hover:bg-[var(--accent-hover)]">
                 Refresh now
               </button>
             </div>
@@ -628,7 +628,7 @@ export default function MainLayout({ user }) {
           if (tab.primary) {
             return (
               <Link key={tab.path} to={tab.path} aria-label={tab.label} className="flex-1 flex items-center justify-center">
-                <span className="w-12 h-12 -mt-5 rounded-full bg-[var(--accent)] text-white flex items-center justify-center shadow-lg shadow-orange-500/30 ring-4 ring-[var(--bg-primary)]">
+                <span className="w-12 h-12 -mt-5 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shadow-lg shadow-orange-500/30 ring-4 ring-[var(--bg-primary)]">
                   <Icon size={24} strokeWidth={2.5} />
                 </span>
               </Link>

@@ -4,15 +4,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import { useToast } from '../components/Toast'
 import { useSocket } from '../App'
-import { 
+import {
   ArrowLeft, Package, Ship, FileCheck, Receipt, CheckCircle2, Clock, Truck, Plane, FileText,
-  ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, Hash,
-  Weight, DollarSign, Anchor, Copy, Check, Printer, MessageSquare, Pencil,
-  MapPinned, Navigation, FileSignature, Luggage, ArrowUpDown, Info, Scale, Mail, Loader2, ChevronDown, Box, Zap, Building2, Users2, AlertCircle, Activity, RotateCcw
+  ClipboardCheck, ClipboardList, Banknote, Send, MapPin, Barcode, Calendar, User, DollarSign,
+  Anchor, Check, Printer, Pencil, MapPinned, FileSignature, ArrowUpDown, Scale, Mail, Loader2,
+  ChevronDown, Box, Zap, Users2, AlertCircle, RotateCcw
 } from 'lucide-react'
 
 const STAGE_OPTIONS = ['Enquiry', 'Rates Requested', 'Quoted', 'Nomination', 'Draft', 'Pre-alerts', 'Checklist', 'BOE', 'OOC', 'POD', 'Invoice', 'Cancelled']
-// ✅ NEW — must match VALID_MANUAL_STATUSES in freightForwarding.controller.js exactly
+// Must match VALID_MANUAL_STATUSES in freightForwarding.controller.js exactly
 const STATUS_DROPDOWN_OPTIONS = [
   'ENQUIRY', 'RATES_REQUESTED', 'RATES_ADDED', 'NOMINATED', 'BOOKED', 'PICKUP_DONE', 'SCHEDULED', 'DRAFT', 'PRE_ALERTS', 'AWB_GENERATED',
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
@@ -28,12 +28,6 @@ const NEXT_STEP_HELP = {
   DELIVERED: { tab: 'freight', text: 'fill Delivery Date' },
   INVOICE_GENERATED: { tab: 'accounts', text: 'fill Invoice No & Date' },
   INVOICE_SENT: { tab: 'accounts', text: 'fill Invoice Sending Date' },
-}
-const STAGE_COLORS = {
-  'Enquiry': 'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900', 'Rates Requested': 'bg-gradient-to-r from-orange-400 to-amber-300 text-orange-900', 'Quoted': 'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900', 'Nomination': 'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900',
-  'Draft': 'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800', 'Pre-alerts': 'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900', 'Checklist': 'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900',
-  'BOE': 'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900', 'OOC': 'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900', 'POD': 'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900',
-  'Invoice': 'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900',
 }
 const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
 const TRANSPORT_MODE_OPTIONS = ['Air', 'Sea', 'Courier']
@@ -80,7 +74,7 @@ const DO_RELEASE_STEPS = [
   {s:'DO_COLLECTED',l:'DO Collected',d:'DO Released',i:FileCheck},
   {s:'INVOICE_GENERATED',l:'Invoice',d:'Invoice created',i:Banknote},{s:'INVOICE_SENT',l:'Sent',d:'Invoice sent',i:Send}
 ]
-// ✅ FF ONLY STEPS
+// Steps for FF Only shipments
 const FF_ONLY_STEPS = [
   {s:'ENQUIRY',l:'Enquiry',d:'Created',i:ClipboardList},
   {s:'RATES_REQUESTED',l:'Rates Requested',d:'Agents asked for rates',i:Send},
@@ -95,11 +89,23 @@ function InlineField({ value, onSave, type = 'text', placeholder = '—', classN
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus() }, [editing])
   useEffect(() => { setVal(value || '') }, [value])
   const save = () => { setEditing(false); if (val !== (value || '')) onSave(val) }
+  const editClass = 'h-10 w-full px-2.5 border border-[var(--input-focus)] rounded-lg text-sm bg-[var(--input-bg)] text-[var(--text-primary)]'
   if (editing) {
-    if (options) return <select ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} className="border border-indigo-300 dark:border-indigo-600 rounded px-2 py-1 text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 w-full"><option value="">Select...</option>{options.map(o => <option key={o} value={o}>{o}</option>)}</select>
-    return <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className="border border-indigo-300 dark:border-indigo-600 rounded px-2 py-1 text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 w-full" step={type === 'number' ? '0.01' : undefined} />
+    if (options) return <select ref={inputRef} value={val} onChange={e => setVal(e.target.value)} onBlur={save} className={editClass}><option value="">Select...</option>{options.map(o => <option key={o} value={o}>{o}</option>)}</select>
+    return <input ref={inputRef} type={type} value={val} onChange={e => setVal(e.target.value)} onBlur={save} onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { setVal(value || ''); setEditing(false) } }} className={editClass} step={type === 'number' ? '0.01' : undefined} />
   }
-  return <div onClick={() => setEditing(true)} className={`cursor-pointer group flex items-center gap-1 ${className}`}><span className={value ? 'text-gray-800 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500 italic'}>{value || placeholder}</span><Pencil size={10} className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 opacity-0 group-hover:opacity-100" /></div>
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => setEditing(true)}
+      onKeyDown={e => { if (e.key === 'Enter') setEditing(true) }}
+      className={`cursor-pointer group flex items-center gap-1.5 min-h-[28px] rounded-md ${className}`}
+    >
+      <span className={value ? 'text-sm font-medium text-[var(--text-primary)]' : 'text-sm text-[var(--text-muted)] italic'}>{value || placeholder}</span>
+      <Pencil size={12} className="text-[var(--text-muted)] group-hover:text-[var(--text-primary)] flex-shrink-0" />
+    </div>
+  )
 }
 
 const asText = (v) => (v === null || v === undefined ? '' : String(v))
@@ -139,8 +145,8 @@ function moveFlow(from, step) {
 function SaveMark({ state, className = '' }) {
   return (
     <span className={`absolute top-1/2 -translate-y-1/2 pointer-events-none ${className}`}>
-      {state === 'saving' && <Loader2 size={14} className="animate-spin text-indigo-400" />}
-      {state === 'saved' && <Check size={14} className="text-emerald-500" />}
+      {state === 'saving' && <Loader2 size={14} className="animate-spin text-[var(--text-secondary)]" />}
+      {state === 'saved' && <Check size={14} className="text-[var(--route)]" />}
       {state === 'error' && <AlertCircle size={14} className="text-red-500" />}
     </span>
   )
@@ -155,12 +161,20 @@ function useSavedFade(state, setState) {
 }
 
 const fieldTone = (state) => state === 'error'
-  ? 'border-red-400 focus:ring-red-400'
+  ? 'border-red-500 focus:border-red-500 focus:ring-4 focus:ring-red-500/20'
   : state === 'saved'
-    ? 'border-emerald-400 focus:ring-emerald-400'
-    : 'border-[var(--border-color)] focus:ring-indigo-500'
+    ? 'border-[var(--route)] focus:border-[var(--input-focus)]'
+    : 'border-[var(--input-border)] focus:border-[var(--input-focus)]'
 
-function PartyField({ value, onSave, type }) {
+const labelClass = 'block text-[13px] font-semibold text-[var(--text-secondary)] mb-1.5'
+const inputBase = 'w-full h-11 sm:h-[42px] px-3 border rounded-lg text-sm bg-[var(--input-bg)] text-[var(--text-primary)] outline-none'
+
+function FieldNote({ state, note }) {
+  if (state !== 'error' || !note) return null
+  return <p role="alert" className="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{note}</p>
+}
+
+function PartyField({ label, value, onSave, type }) {
   const [val, setVal] = useState(asText(value))
   const [options, setOptions] = useState([])
   const [open, setOpen] = useState(false)
@@ -171,6 +185,7 @@ function PartyField({ value, onSave, type }) {
   const savedRef = useRef(asText(value))
   const loadedRef = useRef(false)
   const loadingRef = useRef(false)
+  const inputId = useId()
 
   useSavedFade(state, setState)
 
@@ -240,35 +255,40 @@ function PartyField({ value, onSave, type }) {
   }
 
   return (
-    <div className="relative">
-      <input
-        ref={inputRef}
-        data-flow=""
-        type="text"
-        autoComplete="off"
-        value={val}
-        onFocus={(e) => { loadOptions(); e.target.select() }}
-        onChange={(e) => { update(e.target.value); setOpen(true); setActive(-1); if (state !== 'saving') setState('idle') }}
-        onBlur={() => commit()}
-        onKeyDown={onKeyDown}
-        className={`w-full px-3 py-2 pr-9 border rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 outline-none focus:ring-2 transition-colors ${fieldTone(state)}`}
-      />
-      <SaveMark state={state} className="right-3" />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl">
-          {filtered.map((name, i) => (
-            <button
-              key={name}
-              type="button"
-              tabIndex={-1}
-              onMouseDown={(e) => { e.preventDefault(); update(name); commit(name) }}
-              className={`w-full text-left px-3 py-1.5 text-xs text-gray-700 dark:text-gray-200 border-b border-gray-50 dark:border-slate-700 last:border-0 ${i === active ? 'bg-indigo-100 dark:bg-indigo-900/50' : 'hover:bg-indigo-50 dark:hover:bg-indigo-900/30'}`}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      )}
+    <div>
+      <label htmlFor={inputId} className={labelClass}>{label}</label>
+      <div className="relative">
+        <input
+          id={inputId}
+          ref={inputRef}
+          data-flow=""
+          type="text"
+          autoComplete="off"
+          value={val}
+          onFocus={(e) => { loadOptions(); e.target.select() }}
+          onChange={(e) => { update(e.target.value); setOpen(true); setActive(-1); if (state !== 'saving') setState('idle') }}
+          onBlur={() => commit()}
+          onKeyDown={onKeyDown}
+          className={`${inputBase} pr-9 ${fieldTone(state)}`}
+        />
+        <SaveMark state={state} className="right-3" />
+        {open && filtered.length > 0 && (
+          <div className="absolute z-20 mt-1 w-full max-h-52 overflow-y-auto bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg shadow-xl">
+            {filtered.map((name, i) => (
+              <button
+                key={name}
+                type="button"
+                tabIndex={-1}
+                onMouseDown={(e) => { e.preventDefault(); update(name); commit(name) }}
+                className={`w-full text-left px-3 min-h-[40px] text-sm text-[var(--text-primary)] border-b border-[var(--border-color)] last:border-0 ${i === active ? 'bg-[var(--nav-active-bg)]' : 'hover:bg-[var(--hover-bg)]'}`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <FieldNote state={state} note="Could not save. Check your connection and try again." />
     </div>
   )
 }
@@ -277,26 +297,25 @@ function ComboField({ label, value, options, onSave, placeholder = 'Select or ty
   return <Field label={label} value={value} options={options} onSave={onSave} placeholder={placeholder} />
 }
 
-// ─── HANDLED BY BADGES ───
-// Shows which team member first touched this shipment on each of the 3
-// workflow teams — Freight (creator), Customs, Accounts. A blank ("—")
-// badge means nobody on that team has acted on this shipment yet, which
-// is the point: it's visible at a glance without opening a report.
-function HandledByBadge({ label, name, colorClass }) {
+// Which team members have worked on each of the three teams for this shipment.
+// A "—" means nobody on that team has acted on it yet, which is visible at a
+// glance without opening a report.
+const TEAM_DOT = { Freight: 'bg-[var(--route)]', Customs: 'bg-[var(--route)]', Accounts: 'bg-[var(--route)]' }
+
+function HandledByBadge({ label, name }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium ${colorClass}`}>
-      {label}: {name || '—'}
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-color)]">
+      <span className={`w-2 h-2 rounded-full ${TEAM_DOT[label] || 'bg-gray-400'}`} />
+      <span className="font-semibold">{label}</span>
+      <span className="text-[var(--text-primary)]">{name || '—'}</span>
     </span>
   )
 }
 
-// ─── EVERYONE INVOLVED (NEW) ───
-// Unlike the 3 Handled By badges above (which only show who was FIRST on
-// each team), this shows EVERY person who has ever logged an action on
-// this specific shipment — including handoffs (e.g. Rajeswari started
-// Customs work, Priya finished it — both show up here, Handled By would
-// only ever show Rajeswari). Sourced from `contributors`, computed
-// backend-side from the shipment's full status history.
+// Everyone who has logged an action on this shipment, including handoffs
+// (one person starts Customs, another finishes it). The three badges above
+// only show who was first on each team. Comes from `contributors`, worked out
+// by the backend from the shipment's full status history.
 function EveryoneInvolved({ contributors }) {
   if (!contributors || contributors.length === 0) return null
   const timeAgo = (date) => {
@@ -307,47 +326,40 @@ function EveryoneInvolved({ contributors }) {
     return `${Math.floor(seconds / 86400)}d ago`
   }
   return (
-    <div className="glass rounded-xl border border-[var(--border-color)] p-4 shadow-sm">
+    <section className="card p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Users2 size={15} className="text-violet-500" />
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Everyone Involved</h3>
-        <span className="text-[11px] text-[var(--text-muted)]">({contributors.length} {contributors.length === 1 ? 'person' : 'people'})</span>
+        <Users2 size={16} className="text-[var(--text-secondary)]" />
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Everyone involved</h3>
+        <span className="text-xs text-[var(--text-muted)]">({contributors.length} {contributors.length === 1 ? 'person' : 'people'})</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {contributors.map((c) => (
-          <div key={c.name} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-900">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
+          <div key={c.name} className="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-color)]">
+            <div className="w-7 h-7 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] flex items-center justify-center text-[var(--text-primary)] text-xs font-bold flex-shrink-0">
               {c.name.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold text-[var(--text-primary)] leading-tight">{c.name}</p>
-              <p className="text-[10px] text-[var(--text-muted)] leading-tight">{c.actionCount} {c.actionCount === 1 ? 'action' : 'actions'} · last {timeAgo(c.lastAction)}</p>
+              <p className="text-[11px] text-[var(--text-secondary)] leading-tight">{c.actionCount} {c.actionCount === 1 ? 'action' : 'actions'} · last {timeAgo(c.lastAction)}</p>
             </div>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
-// ─── STEP COMPLETION CHECK (NEW) ───
-// Fixes a real bug: the workflow stepper used to mark every step "done"
-// just because it sat before the shipment's currentStatus in the list —
-// but currentStatus can jump straight to INVOICE_GENERATED if someone
-// fills in only the invoice, skipping Rates/Nominated/Booked/Scheduled/
-// AWB/Checklist/BOE/etc entirely. That made every skipped step show as
-// falsely "completed" (green). This checks each step's ACTUAL underlying
-// field data instead, so a skipped step shows as genuinely missing (red)
-// regardless of what currentStatus says.
-// ✅ NEW — manually setting the Stage dropdown to "Quoted" (or any later
-// stage — Nomination, Checklist, BOE, etc.) also satisfies the Rates
-// step, even with no numeric rate/weight typed in yet. Reaching "Quoted"
-// implies rates were worked out with the customer, whether or not that
-// number ever got typed into this system — the stepper shouldn't show
-// red for something that's genuinely done just because it wasn't logged
-// as a number.
+// Step completion check. The workflow stepper must not mark a step done just
+// because it sits before the shipment's current status: the status can jump
+// straight to INVOICE_GENERATED when someone fills in only the invoice. So each
+// step is checked against its own field data, and a skipped step shows as
+// missing (red) whatever the status says.
+//
+// Setting the Stage to "Quoted" or later also satisfies the Rates step, even
+// with no number typed in. Reaching Quoted means the rates were worked out with
+// the customer, whether or not they were ever entered here.
 function isStageAtOrPastQuoted(shipmentStage) {
-  if (shipmentStage === 'Cancelled') return false // ✅ NEW — Cancelled sits last in the list for dropdown purposes, but isn't actually "further along" in the real workflow
+  if (shipmentStage === 'Cancelled') return false // Cancelled sits last in the list for the dropdown but is not further along in the real workflow
   const idx = STAGE_OPTIONS.indexOf(shipmentStage)
   const quotedIdx = STAGE_OPTIONS.indexOf('Quoted')
   return idx !== -1 && idx >= quotedIdx
@@ -388,11 +400,9 @@ function isStepComplete(statusKey, ff, cha, accounts, shipmentStage) {
   }
 }
 
-// ✅ NEW — maps an update mutation's `section` key to the slug of the
-// Section title it lives in, so after saving we know which DOM block to
-// scroll back to next time. Keys with no Section (header quick-edit
-// fields like stage/remarks are always visible, no scrolling needed)
-// are simply left out.
+// Maps an update mutation's `section` key to the slug of the Section it lives
+// in, so after saving we know which block to scroll back to next time. Keys
+// with no Section (the header quick-edit fields) are left out.
 const SECTION_KEY_TO_SLUG = {
   rates: 'weight-details', cbm: 'weight-details',
   nomination: 'nomination', booking: 'booking', schedule: 'schedule', awb: 'awb-details',
@@ -403,10 +413,10 @@ const SECTION_KEY_TO_SLUG = {
   notificationemail: 'notification-settings',
 }
 
-// ✅ NEW — "what's still missing" for the completeness panel. Lists every
-// required field that is still empty, using the same labels as the fields on
-// the page. Must match the required-field lists in the backend (isArchiveEligible
-// in the controllers). Notification Email is NOT required.
+// "What is still missing" for the completeness panel. Lists every required
+// field that is still empty, with the same labels as the fields on the page.
+// Must match the required-field lists in the backend (isArchiveEligible in the
+// controllers). Notification Email is not required.
 const isBlank = (v) => v === null || v === undefined || v === ''
 const missingOf = (pairs) => pairs.filter(([, v]) => isBlank(v)).map(([label]) => label)
 function getCompletenessSections(sh) {
@@ -416,65 +426,70 @@ function getCompletenessSections(sh) {
   const simple = ['Transport', 'DO Release', 'FF Only'].includes(sh.shipmentType)
   const chaOnly = sh.shipmentType === 'CHA Only'
   const isExport = sh.importExport === 'Export'
+  const section = (title, tab, pairs) => ({ title, tab, total: pairs.length, missing: missingOf(pairs) })
   const sections = []
   if (!simple && !chaOnly) {
-    sections.push({ title: 'Freight', tab: 'Freight tab', missing: missingOf([
+    sections.push(section('Freight', 'freight', [
       ['Consignee Name', ff.consigneeName], ['Shipper Name', ff.shipperName],
       ['Gross Weight', ff.grossWeight], ['Chargeable Weight', ff.weight],
       ['Nomination Date', ff.nominationDate], ['Booking Date', ff.bookingDate], ['Pickup Date', ff.pickupDate],
       ['ETD', ff.etd], ['ETA', ff.eta],
       ['MAWB', ff.mawb], ['HAWB', ff.hawb], ['AWB Date', ff.awbDate],
       ['Pre-Alerts Sent On', ff.preAlertsSentDate], ['DO Collection Date', cha.doCollectionDate]
-    ]) })
+    ]))
   }
   if (!simple) {
-    sections.push({ title: 'Customs', tab: 'Customs tab', missing: missingOf([
+    sections.push(section('Customs', 'cha', [
       ['Job No', cha.jobNo], ['Checklist Date', cha.checklistDate], ['Approval Date', cha.checklistApprovalDate],
       ...(isExport
         ? [['SB No', cha.sbNo], ['SB Date', cha.sbDate], ['LEO Date', cha.leoDate], ['Hand Over Date', cha.handOverDate]]
         : [['BOE No', cha.boeNo], ['BOE Date', cha.boeDate], ['OOC Date', cha.oocDate], ['Gate Pass Date', cha.gatePassDate], ['Delivery Date', cha.deliveryDate]]),
       ['Tracking No', cha.trackingNumber]
-    ]) })
+    ]))
   }
-  sections.push({ title: 'Invoice', tab: 'Accounts tab', missing: missingOf([
+  sections.push(section('Invoice', 'accounts', [
     ['Invoice No', acc.invoiceNumber], ['Invoice Date', acc.invoiceDate], ['Sending Date', acc.sendingDate]
-  ]) })
+  ]))
   return sections
 }
 
-function CompletenessPanel({ shipment }) {
+const TAB_NAMES = { freight: 'Freight tab', cha: 'Customs tab', accounts: 'Accounts tab' }
+
+function CompletenessPanel({ shipment, sections, onOpenTab }) {
   if (!shipment || shipment.currentStatus === 'CANCELLED') return null
   if (shipment.isArchived) {
     return (
-      <div className="glass rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 px-4 py-2.5 flex items-center gap-2">
-        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
-        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">All required fields are complete — this shipment is in the Archive.</span>
+      <div className="flex items-center gap-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3">
+        <CheckCircle2 size={18} className="text-[var(--route)] shrink-0" />
+        <span className="text-sm font-medium text-[var(--text-primary)]">All required fields are complete. This shipment is in the Archive.</span>
       </div>
     )
   }
-  const sections = getCompletenessSections(shipment)
   const totalMissing = sections.reduce((n, sec) => n + sec.missing.length, 0)
   if (totalMissing === 0) {
     return (
-      <div className="glass rounded-xl border border-emerald-300/60 dark:border-emerald-700/60 px-4 py-2.5 flex items-center gap-2">
-        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
-        <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">Every required field is filled in — this shipment moves to the Archive automatically.</span>
+      <div className="flex items-center gap-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] px-4 py-3">
+        <CheckCircle2 size={18} className="text-[var(--route)] shrink-0" />
+        <span className="text-sm font-medium text-[var(--text-primary)]">Every required field is filled in. This shipment moves to the Archive automatically.</span>
       </div>
     )
   }
   return (
-    <div className="glass rounded-xl border border-amber-300/60 dark:border-amber-700/60 px-4 py-3">
-      <div className="flex items-center gap-2">
-        <AlertCircle size={16} className="text-amber-500 shrink-0" />
-        <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-          {totalMissing} required field{totalMissing === 1 ? '' : 's'} still empty — this shipment moves to the Archive automatically as soon as they are filled in
-        </span>
+    <div className="rounded-xl border border-[var(--border-color)] border-l-4 border-l-[var(--route)] bg-[var(--bg-primary)] px-4 py-3">
+      <div className="flex items-start gap-2.5">
+        <AlertCircle size={18} className="text-[var(--route)] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[var(--text-primary)]">{totalMissing} required field{totalMissing === 1 ? '' : 's'} still empty</p>
+          <p className="text-xs text-[var(--text-secondary)] mt-0.5">This shipment moves to the Archive automatically as soon as they are filled in.</p>
+        </div>
       </div>
       {sections.filter((sec) => sec.missing.length > 0).map((sec) => (
-        <div key={sec.title} className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] font-semibold text-[var(--text-secondary)] mr-1">{sec.title} <span className="font-normal text-[var(--text-muted)]">({sec.tab})</span>:</span>
+        <div key={sec.title} className="mt-3 flex flex-wrap items-center gap-1.5">
+          <button type="button" onClick={() => onOpenTab(sec.tab)} className="text-xs font-semibold text-[var(--text-primary)] mr-1 underline underline-offset-2 decoration-[var(--route)] decoration-2">
+            {sec.title} <span className="font-normal text-[var(--text-secondary)] no-underline">({TAB_NAMES[sec.tab]})</span>
+          </button>
           {sec.missing.map((label) => (
-            <span key={label} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">{label}</span>
+            <span key={label} className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-color)]">{label}</span>
           ))}
         </div>
       ))}
@@ -483,7 +498,7 @@ function CompletenessPanel({ shipment }) {
 }
 
 export default function ShipmentDetail() {
-  const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const [copied, setCopied] = useState(null); const queryClient = useQueryClient()
+  const { id } = useParams(); const [searchParams] = useSearchParams(); const { addToast } = useToast(); const queryClient = useQueryClient()
   const navigate = useNavigate()
   const socket = useSocket()
   const [initialTabSet, setInitialTabSet] = useState(false)
@@ -491,7 +506,7 @@ export default function ShipmentDetail() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [showEmailDropdown, setShowEmailDropdown] = useState(false)
   const [showTypeSwitcher, setShowTypeSwitcher] = useState(false)
-  // ✅ NEW — Rate request (wakes the mailer when the page opens so it is ready by the time the button is pressed)
+  // Wake the mailer when the page opens so it is ready by the time Rate request is pressed
   const MAILER_URL = (import.meta.env.VITE_MAILER_URL || 'https://pasfreight-mailer.onrender.com').replace(/\/$/, '')
   const [rateBusy, setRateBusy] = useState(false)
   const [cancelAsk, setCancelAsk] = useState(null) // { section, data } waiting for a cancel reason
@@ -501,17 +516,15 @@ export default function ShipmentDetail() {
   useEffect(() => { try { new Image().src = `${MAILER_URL}/api/rate/ping?t=${Date.now()}` } catch {} }, [])
   const [liveEditBy, setLiveEditBy] = useState(null)
 
-  // ✅ Back should return to wherever the user actually came from (e.g.
-  // Overview with a search/filter applied, or Team Overview) rather than
-  // always dumping them on "My Shipments". navigate(-1) pops the browser
-  // history entry, so the previous page's URL — including any query
-  // params like ?search=... — is restored as-is. Falls back to "/" only
-  // if there's no history to go back to (e.g. deep link opened directly).
+  // Back returns to wherever the user came from (Overview with a search or
+  // filter applied, Team Overview, ...). navigate(-1) restores that page's URL
+  // including its query params. Falls back to "/" when there is no history,
+  // e.g. a deep link opened directly.
   const goBack = () => {
     if (window.history.state && window.history.state.idx > 0) navigate(-1)
     else navigate('/')
   }
-  
+
   const { data: shipment, isLoading } = useQuery({
     queryKey: ['shipment', id],
     queryFn: async () => { const r = await api.get(`/freight/shipments/${id}`, { params: { _t: Date.now() } }); return r.data.data },
@@ -536,10 +549,10 @@ export default function ShipmentDetail() {
   const isCHAExport = isCHAOnly && shipment?.importExport === 'Export'
   const isDORelease = shipment?.shipmentType === 'DO Release'
   const isFFOnly = shipment?.shipmentType === 'FF Only'
-  // ✅ NEW — the plain "Freight" shipment type (full Freight -> Customs ->
-  // Accounts pipeline, Import or Export), as distinct from CHA Only/FF
-  // Only/Transport/DO Release. A few fields (Commodity Name, Pre-Alerts,
-  // DO Collection shown under Freight instead of Customs) apply only here.
+  // The plain "Freight" type (full Freight -> Customs -> Accounts pipeline, Import
+  // or Export), as distinct from CHA Only / FF Only / Transport / DO Release. A
+  // few fields (Commodity Name, Pre-Alerts, DO Collection under Freight) apply
+  // only here.
   const isStandardFreight = !isTransport && !isDORelease && !isFFOnly && !isCHAOnly
   const steps = isFFOnly ? FF_ONLY_STEPS : isDORelease ? DO_RELEASE_STEPS : isTransport ? TRANSPORT_STEPS : isCHAOnly ? (isCHAExport ? CHA_EXPORT_STEPS : CHA_IMPORT_STEPS) : FULL_STEPS
   const curStored = steps.findIndex(s => s.s === shipment?.currentStatus)
@@ -552,11 +565,9 @@ export default function ShipmentDetail() {
   useEffect(() => {
     if (shipment && !initialTabSet) {
       const tabParam = searchParams.get('tab')
-      // ✅ NEW — "continue where I left off": if the URL doesn't explicitly
-      // say which tab to open (e.g. a notification linking straight to
-      // Accounts), restore whichever tab was last open for THIS specific
-      // shipment, remembered per-shipment in localStorage. Falls back to
-      // the usual type-based default only if nothing was saved yet.
+      // "Continue where I left off": when the URL does not say which tab to open
+      // (a notification linking straight to Accounts does), restore the tab last
+      // open for this shipment. Falls back to the type-based default.
       let lastTab = null
       try { lastTab = localStorage.getItem(`pas_last_tab_${id}`) } catch {}
       if (tabParam && ['freight', 'cha', 'accounts', 'history'].includes(tabParam)) setActiveTab(tabParam)
@@ -569,12 +580,9 @@ export default function ShipmentDetail() {
     }
   }, [shipment, initialTabSet, searchParams, id])
 
-  // ✅ NEW — "continue where I left off", the field-level part: once the
-  // correct tab is showing, scroll straight to whichever Section the last
-  // save touched and give it a brief highlight ring, so there's no
-  // hunting back down the page for where you stopped. One-time per
-  // visit — consumed immediately so it doesn't keep re-scrolling every
-  // re-render.
+  // "Continue where I left off", field level: once the right tab is showing,
+  // scroll to the Section the last save touched and ring it briefly. Runs once
+  // per visit (the stored slug is consumed straight away).
   useEffect(() => {
     if (!initialTabSet) return
     let slug = null
@@ -591,9 +599,7 @@ export default function ShipmentDetail() {
     return () => clearTimeout(timer)
   }, [initialTabSet, activeTab, id])
 
-  // ✅ NEW — remember whichever tab is active for this shipment, so
-  // reopening it later resumes here instead of always resetting to the
-  // type-based default.
+  // Remember the active tab per shipment so reopening resumes here.
   useEffect(() => {
     if (!initialTabSet) return // don't persist the very first programmatic set on load
     try { localStorage.setItem(`pas_last_tab_${id}`, activeTab) } catch {}
@@ -639,9 +645,7 @@ export default function ShipmentDetail() {
       queryClient.invalidateQueries({ queryKey: ['shipments'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
       queryClient.invalidateQueries({ queryKey: ['shipments-total-stats'] })
-      // ✅ NEW — "continue where I left off": remember which section this
-      // save touched, so reopening this shipment scrolls straight back to
-      // it with a brief highlight instead of landing at the top.
+      // Remember which section this save touched, so reopening scrolls back to it
       const slug = SECTION_KEY_TO_SLUG[variables.section]
       if (slug) { try { localStorage.setItem(`pas_last_field_${id}`, slug) } catch {} }
       if (socket && shipment) {
@@ -705,14 +709,10 @@ export default function ShipmentDetail() {
     window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${ff.notificationEmail}&su=${subject}&body=${body}`, '_blank')
   }
 
-  // ─── CHANGE SHIPMENT TYPE (NEW) ───
-  // Lets an employee fix a shipment created under the wrong category
-  // (e.g. created as Freight, should have been FF Only) without deleting
-  // and starting over. All existing data (Consignee, Shipper, weights,
-  // dates already entered) is preserved — it's stored in the same
-  // underlying fields regardless of type; switching only changes which
-  // tabs/fields are shown and recalculates the workflow status to match
-  // the new type's steps.
+  // Change shipment type: fixes a shipment created under the wrong category
+  // without deleting and starting over. Everything already entered is kept in the
+  // same underlying fields whatever the type; switching only changes which tabs
+  // and fields are shown and recalculates the workflow status for the new type.
   const TYPE_SWITCH_OPTIONS = [
     { label: 'Freight', shipmentType: 'Air', importExport: shipment?.importExport || 'Import' },
     { label: 'FF Only', shipmentType: 'FF Only', importExport: shipment?.importExport || 'Import' },
@@ -769,18 +769,62 @@ export default function ShipmentDetail() {
     pw.document.close()
   }
 
-  const getStatusBadge = (s) => { const b = {'ENQUIRY':'bg-gradient-to-r from-amber-400 to-amber-300 text-amber-900 border-amber-300','RATES_REQUESTED':'bg-gradient-to-r from-orange-400 to-amber-300 text-orange-900 border-orange-300','RATES_ADDED':'bg-gradient-to-r from-sky-400 to-sky-300 text-sky-900 border-sky-300','NOMINATED':'bg-gradient-to-r from-violet-400 to-violet-300 text-violet-900 border-violet-300','BOOKED':'bg-gradient-to-r from-indigo-400 to-indigo-300 text-indigo-900 border-indigo-300','SCHEDULED':'bg-gradient-to-r from-cyan-400 to-cyan-300 text-cyan-900 border-cyan-300','AWB_GENERATED':'bg-gradient-to-r from-teal-400 to-teal-300 text-teal-900 border-teal-300','CHECKLIST_APPROVED':'bg-gradient-to-r from-emerald-400 to-emerald-300 text-emerald-900 border-emerald-300','BOE_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DO_COLLECTED':'bg-gradient-to-r from-green-400 to-green-300 text-green-900 border-green-300','OOC_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','GATE_PASS':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','LEO_DONE':'bg-gradient-to-r from-sky-500 to-sky-400 text-sky-900 border-sky-400','HAND_OVER':'bg-gradient-to-r from-purple-400 to-purple-300 text-purple-900 border-purple-300','SB_FILED':'bg-gradient-to-r from-lime-400 to-lime-300 text-lime-900 border-lime-300','DELIVERED':'bg-gradient-to-r from-emerald-500 to-emerald-400 text-white border-emerald-400','INVOICE_GENERATED':'bg-gradient-to-r from-orange-400 to-orange-300 text-orange-900 border-orange-300','INVOICE_SENT':'bg-gradient-to-r from-rose-400 to-rose-300 text-rose-900 border-rose-300','COMPLETED':'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-800 border-gray-300'}; return b[s]||'bg-gradient-to-r from-gray-400 to-gray-300 text-gray-700 border-gray-300' }
+  const stepperRef = useRef(null)
+  const curStepRef = useRef(null)
+  const actionsRef = useRef(null)
+  const hasShipment = !!shipment
 
-  if (isLoading) return <div className="flex items-center justify-center h-96"><div className="w-12 h-12 border-3 border-indigo-200 dark:border-indigo-800 border-t-indigo-600 rounded-full animate-spin" /></div>
-  if (!shipment) return <div className="text-center py-16"><div className="w-16 h-16 bg-gradient-to-br from-indigo-400 to-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Package size={32} className="text-white"/></div><h3 className="text-lg font-semibold text-[var(--text-primary)]">Shipment not found</h3><button onClick={goBack} className="inline-flex items-center gap-1 mt-4 text-indigo-600 dark:text-indigo-400"><ArrowLeft size={14} />Back</button></div>
+  // A long workflow scrolls sideways on a phone, so bring the current step into view.
+  useEffect(() => {
+    const box = stepperRef.current
+    const step = curStepRef.current
+    if (!box || !step) return
+    box.scrollLeft = Math.max(0, step.offsetLeft - box.clientWidth / 2 + step.offsetWidth / 2)
+  }, [hasShipment, shipment?.currentStatus, shipment?.shipmentType])
+
+  // Close the Send Email / Change Type menus on an outside click or Escape.
+  useEffect(() => {
+    if (!showEmailDropdown && !showTypeSwitcher) return
+    const close = () => { setShowEmailDropdown(false); setShowTypeSwitcher(false) }
+    const onDown = (e) => { if (actionsRef.current && !actionsRef.current.contains(e.target)) close() }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [showEmailDropdown, showTypeSwitcher])
+
+  useEffect(() => {
+    if (!cancelAsk) return
+    const onKey = (e) => { if (e.key === 'Escape') setCancelAsk(null) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [cancelAsk])
+
+  if (isLoading) {
+    return (
+      <div className="max-w-6xl mx-auto space-y-4" aria-busy="true" aria-label="Loading shipment">
+        <div className="skeleton h-36 rounded-2xl" />
+        <div className="skeleton h-28 rounded-2xl" />
+        <div className="skeleton h-72 rounded-2xl" />
+      </div>
+    )
+  }
+  if (!shipment) {
+    return (
+      <div className="text-center py-16">
+        <div className="w-16 h-16 bg-[var(--bg-tertiary)] text-[var(--text-secondary)] rounded-2xl flex items-center justify-center mx-auto mb-4"><Package size={30} /></div>
+        <h3 className="text-lg font-semibold text-[var(--text-primary)]">Shipment not found</h3>
+        <button onClick={goBack} className="btn btn-secondary mt-4"><ArrowLeft size={16} />Back</button>
+      </div>
+    )
+  }
   const ff = shipment.freightForwarding || {}; const cha = shipment.cha || {}; const accounts = shipment.accounts || {};
-  // ✅ FIX — this used to output locale format (e.g. "9/24/2026" in the
-  // US), but <input type="date"> requires ISO format ("2026-09-24") to
-  // pre-fill and for its native picker to work at all. toISOString()
-  // then slicing to just the date part gives the correct format.
+  // <input type="date"> needs ISO format (2026-09-24) to fill in. The locale
+  // format would break it, so take the date part of the ISO string.
   const Fmt = d => d ? new Date(d).toISOString().split('T')[0] : null
 
-  // ✅ NEW — Rate request: asks the mailer to prepare the enquiry mail for this shipment, then opens the review screen
+  // Rate request: asks the mailer to prepare the enquiry mail for this
+  // shipment, then opens the review screen.
   const openRateRequest = async () => {
     if (rateBusy) return
     const win = window.open('', '_blank') // opened right away so the browser does not block it
@@ -798,206 +842,299 @@ export default function ShipmentDetail() {
   }
 
   const tabs = [
-    { k: 'freight', l: 'Freight Forwarding', i: Ship },
-    ...(!isTransport && !isDORelease && !isFFOnly ? [{ k: 'cha', l: 'Customs Clearance', i: FileCheck }] : []),
-    ...(isDORelease ? [{ k: 'do-release', l: 'DO Release', i: ClipboardList }] : []),
-    { k: 'accounts', l: 'Accounts', i: Receipt },
-    { k: 'history', l: 'Status Timeline', i: Clock }
+    { k: 'freight', l: 'Freight Forwarding', short: 'Freight', i: Ship },
+    ...(!isTransport && !isDORelease && !isFFOnly ? [{ k: 'cha', l: 'Customs Clearance', short: 'Customs', i: FileCheck }] : []),
+    ...(isDORelease ? [{ k: 'do-release', l: 'DO Release', short: 'DO Release', i: ClipboardList }] : []),
+    { k: 'accounts', l: 'Accounts', short: 'Accounts', i: Receipt },
+    { k: 'history', l: 'Status Timeline', short: 'Timeline', i: Clock }
   ]
 
+  const sections = getCompletenessSections(shipment)
+  const tabCount = (key) => sections.find((sec) => sec.tab === key)
+  const stepsDone = steps.filter(st => isStepComplete(st.s, ff, cha, accounts, shipment.shipmentStage)).length
+  const statusText = shipment.currentStatus.replace(/_/g, ' ')
+  const typeLabel = isFFOnly ? 'FF Only' : isDORelease ? 'DO Release' : isTransport ? 'Transport' : isCHAOnly ? (isCHAExport ? 'CHA Export' : 'CHA Import') : null
+  const partyName = ff.consigneeName || ff.customerName
+  const created = toDDMMYYYY(new Date(shipment.createdAt).toISOString().split('T')[0])
+  const workflowName = isFFOnly ? 'FF Only workflow' : isDORelease ? 'DO Release workflow' : isTransport ? 'Transport workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export workflow' : 'CHA Import workflow') : 'Shipment workflow'
+  const docTitle = isFFOnly ? 'Freight forwarding file' : isDORelease ? 'DO release' : isTransport ? 'Transport note' : isCHAOnly ? 'Customs file' : /sea/i.test(shipment.shipmentType || '') ? 'Sea waybill' : 'Air waybill'
+  const daysOpen = Math.max(0, Math.floor((Date.now() - new Date(shipment.createdAt).getTime()) / 86400000))
+  const etaShort = ff.eta ? new Date(ff.eta).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—'
+  const missingTotal = sections.reduce((n, sec) => n + sec.missing.length, 0)
+  const actionBtn = 'btn btn-secondary min-h-[44px] sm:min-h-[40px] px-3 sm:px-4'
+  const menuClass = 'absolute right-0 top-full mt-1 w-56 bg-[var(--bg-primary)] rounded-xl shadow-xl border border-[var(--border-color)] z-30 py-1 animate-scale-in'
+  const menuItem = 'w-full text-left px-4 min-h-[44px] text-sm text-[var(--text-primary)] hover:bg-[var(--hover-bg)] flex items-center gap-2 disabled:opacity-50'
+  const metaLabel = 'text-xs font-semibold text-[var(--text-secondary)] mb-1'
+
   return (
-    <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
-      <div><button onClick={goBack} className="inline-flex items-center gap-1.5 text-sm text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 mb-3"><ArrowLeft size={15} />Back to shipments</button>
-        <div className="glass rounded-xl border border-[var(--border-color)] p-5 shadow-lg space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 dark:from-indigo-400 dark:to-blue-400 bg-clip-text text-transparent">{shipment.refNo}</h1>
-                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusBadge(shipment.currentStatus)}`}>{shipment.currentStatus.replace(/_/g,' ')}</span>
-                {isFFOnly && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-purple-500 to-indigo-500 border border-purple-400">FF Only</span>}
-                {isDORelease && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-emerald-500 border border-teal-400">DO Release</span>}
-                {isTransport && <span className="px-2 py-0.5 rounded-full text-xs font-medium text-white bg-gradient-to-r from-sky-500 to-blue-500 border border-sky-400">Transport</span>}
-                {isCHAOnly && <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white border ${isCHAExport ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-400' : 'bg-gradient-to-r from-emerald-500 to-green-500 border-emerald-400'}`}>{isCHAExport ? 'CHA Export' : 'CHA Import'}</span>}
+    <div className="max-w-6xl mx-auto space-y-4 animate-fade-in">
+      <section className="card relative">
+        <div className="flex items-start justify-between gap-4 rounded-t-2xl bg-[var(--route)] text-[var(--on-route)] px-4 sm:px-6 py-4">
+          <div className="flex items-start gap-2 min-w-0">
+            <button onClick={goBack} aria-label="Back to shipments" title="Back to shipments" className="w-11 h-11 -ml-2 -mt-1 flex items-center justify-center rounded-lg hover:bg-white/15 flex-shrink-0"><ArrowLeft size={20} /></button>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] opacity-80">PAS Freight Services · {docTitle}</p>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">{shipment.refNo}</h1>
+                <span className="tag uppercase tracking-wide !text-[11px] bg-white/20 border border-white/30">{statusText}</span>
+                {typeLabel && <span className="tag !text-[11px] bg-white/20 border border-white/30">{typeLabel}</span>}
                 {liveEditBy && (
-                  <span className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full animate-pulse">
-                    <Zap size={10} /> {liveEditBy} is editing...
-                  </span>
+                  <span className="tag !text-[11px] bg-white/20 border border-white/30 animate-pulse"><Zap size={11} /> {liveEditBy} is editing...</span>
                 )}
               </div>
-              {/* ✅ HANDLED BY — Freight / Customs / Accounts, showing
-                  EVERYONE who has worked that team's part on this
-                  shipment, not just whoever was first. */}
-              <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                <HandledByBadge label="Freight" name={(shipment.teamContributors?.FREIGHT || []).join(', ')} colorClass="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300" />
-                <HandledByBadge label="Customs" name={(shipment.teamContributors?.CUSTOMS || []).join(', ')} colorClass="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" />
-                <HandledByBadge label="Accounts" name={(shipment.teamContributors?.ACCOUNTS || []).join(', ')} colorClass="bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300" />
-              </div>
-              <p className="text-sm text-[var(--text-secondary)] mt-1">Created {toDDMMYYYY(new Date(shipment.createdAt).toISOString().split('T')[0])}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {!isTransport && !isDORelease && !isCHAOnly && (
-                <button onClick={openRateRequest} disabled={rateBusy} title="Prepare the enquiry mail to agents — you review it before it is sent" className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:from-indigo-600 hover:to-blue-700 text-sm font-medium shadow-md disabled:opacity-60">
-                  {rateBusy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />} Rate request
-                </button>
-              )}
-              <div className="relative">
-                <button onClick={() => setShowTypeSwitcher(!showTypeSwitcher)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-slate-500 to-slate-600 text-white rounded-lg hover:from-slate-600 hover:to-slate-700 text-sm font-medium shadow-lg hover-lift"><ArrowUpDown size={16} />Change Type <ChevronDown size={14} /></button>
-                {showTypeSwitcher && (
-                  <div className="absolute right-0 top-full mt-1 w-48 glass rounded-lg shadow-xl border border-[var(--border-color)] z-20 py-1 animate-scale-in">
-                    {TYPE_SWITCH_OPTIONS.map((opt) => (
-                      <button key={opt.label} onClick={() => handleSwitchType(opt)} className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-indigo-50 dark:hover:bg-indigo-900/20">{opt.label}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <Link to={`/create?edit=${shipment.id}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-lg hover:from-amber-500 hover:to-orange-600 text-sm font-medium shadow-lg shadow-amber-200 hover-lift"><Pencil size={16} />Edit</Link>
-              <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 text-sm font-medium shadow-lg shadow-emerald-200 hover-lift"><Printer size={16} />Print</button>
-              <div className="relative">
-                <button onClick={() => setShowEmailDropdown(!showEmailDropdown)} className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-lg hover:from-sky-500 hover:to-blue-600 text-sm font-medium shadow-lg shadow-sky-200 hover-lift"><Send size={16} />Send Email <ChevronDown size={14} /></button>
-                {showEmailDropdown && (
-                  <div className="absolute right-0 top-full mt-1 w-52 glass rounded-lg shadow-xl border border-[var(--border-color)] z-20 py-1 animate-scale-in">
-                    <button onClick={handleSendTestEmail} disabled={sendingEmail} className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-indigo-50 dark:hover:bg-indigo-900/20 flex items-center gap-2 disabled:opacity-50">{sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="text-indigo-500" />}{sendingEmail ? 'Sending...' : 'Send via System'}</button>
-                    <button onClick={handleOpenGmail} className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-primary)] hover:bg-indigo-50 dark:hover:bg-indigo-900/20 flex items-center gap-2"><svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.649 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068A1.485 1.485 0 011.5 3H2l10 7.25L22 3h.5c.425 0 .8.162 1.069.432.27.268.431.643.431 1.068z"/></svg>Open in Gmail</button>
-                  </div>
-                )}
-              </div>
+              <p className="text-sm opacity-90 mt-1">{partyName ? `${partyName} · ` : ''}Created {created}</p>
             </div>
           </div>
-          {(
-            <div className="flex flex-wrap items-center gap-4 pt-3 border-t border-[var(--border-color)]">
-              {!isTransport && !isFFOnly && !isDORelease && (
-                <>
-                  <div className="flex items-center gap-2"><Luggage size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Transport Mode:</span><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
-                  <div className="flex items-center gap-2"><ArrowUpDown size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Import/Export:</span><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set I/E" /></div>
-                </>
-              )}
-              {isTransport && (
-                <>
-                  <div className="flex items-center gap-2"><Truck size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Vehicle:</span><InlineField value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Set vehicle" /></div>
-                  <div className="flex items-center gap-2"><User size={14} className="text-sky-400" /><span className="text-xs text-sky-500 dark:text-sky-400 font-medium">Customer:</span><InlineField value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} placeholder="Set customer" /></div>
-                </>
-              )}
-              <div className="flex items-center gap-2"><Activity size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Status:</span>
-                <InlineField
-                  value={STATUS_DROPDOWN_OPTIONS.includes(shipment.currentStatus) ? shipment.currentStatus.replace(/_/g, ' ') : shipment.currentStatus?.replace(/_/g, ' ')}
-                  options={statusOpts.map(s => s.replace(/_/g, ' '))}
-                  onSave={v => saveStageStatus('status', { status: v.replace(/ /g, '_') })}
-                  className={shipment.currentStatus === 'CANCELLED' ? 'px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : ''}
-                  placeholder="Select"
-                />
-              </div>
-              {(isFFOnly || isDORelease) && shipment.currentStatus !== 'CANCELLED' && steps[cur + 1] && (() => {
-                const nx = steps[cur + 1]; const help = NEXT_STEP_HELP[nx.s]
-                return (
-                  <button onClick={() => { if (nx.s === 'RATES_REQUESTED') openRateRequest(); else if (help?.tab) { setActiveTab(isDORelease && help.tab === 'freight' ? 'do-release' : (isDORelease && nx.s === 'DO_COLLECTED' ? 'do-release' : help.tab)); window.scrollTo({ top: 420, behavior: 'smooth' }) } }}
-                    title={`Next step: ${nx.l}`} className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold text-white bg-gradient-to-r from-indigo-500 to-violet-500 shadow hover:from-indigo-600 hover:to-violet-600">
-                    Next: {nx.l}{help ? ` — ${help.text}` : ''} →
-                  </button>
-                )
-              })()}
-              <div className="flex items-center gap-2 flex-1"><MessageSquare size={14} className="text-indigo-400" /><span className="text-xs text-indigo-500 dark:text-indigo-400 font-medium">Remarks:</span><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." className="flex-1" /></div>
-            </div>
-          )}
+          <div aria-hidden="true" className="hidden sm:block h-12 w-48 rounded-sm opacity-90 flex-shrink-0 self-center" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px, currentColor 4px 5px, transparent 5px 8px, currentColor 8px 11px, transparent 11px 12px)' }} />
         </div>
-      </div>
 
-      {/* Cancel reason — asked whenever someone cancels, so lost enquiries can be learned from */}
+        {(ff.fromLocation || ff.toLocation) && (
+          <div className="relative px-4 sm:px-8 pt-6 pb-4">
+            <RouteArc from={ff.fromLocation} to={ff.toLocation} etd={toDDMMYYYY(Fmt(ff.etd))} eta={toDDMMYYYY(Fmt(ff.eta))} mode={isTransport ? 'Transport' : shipment.shipmentType} percent={steps.length > 1 ? (stepsDone / steps.length) * 100 : 0} stamp={statusText} />
+          </div>
+        )}
+
+        <div aria-hidden="true" className="relative h-7 overflow-hidden">
+          <span className="absolute left-4 right-4 top-1/2 border-t-[3px] border-dotted border-[var(--route-line)]" />
+          <span className="absolute -left-3.5 top-0 w-7 h-7 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-color)]" />
+          <span className="absolute -right-3.5 top-0 w-7 h-7 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-color)]" />
+        </div>
+
+        <div className="px-4 sm:px-6 pt-2 pb-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-[var(--route-line)] bg-[var(--route-soft)] px-4 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Workflow</p>
+            <p className="text-2xl font-bold text-[var(--text-primary)] mt-0.5">{stepsDone} <span className="text-base font-semibold text-[var(--text-secondary)]">/ {steps.length}</span></p>
+          </div>
+          <div className="rounded-xl border border-[var(--route-line)] bg-[var(--route-soft)] px-4 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Days open</p>
+            <p className="text-2xl font-bold text-[var(--text-primary)] mt-0.5">{daysOpen}</p>
+          </div>
+          <div className="rounded-xl border border-[var(--route-line)] bg-[var(--route-soft)] px-4 py-3">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">ETA</p>
+            <p className="text-2xl font-bold text-[var(--text-primary)] mt-0.5">{etaShort}</p>
+          </div>
+          <div className={`rounded-xl border px-4 py-3 ${missingTotal > 0 ? 'border-orange-300 dark:border-orange-500/40 bg-[var(--accent-soft)]' : 'border-[var(--route-line)] bg-[var(--route-soft)]'}`}>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--text-secondary)]">Required fields missing</p>
+            <p className="text-2xl font-bold text-[var(--text-primary)] mt-0.5">{missingTotal}</p>
+          </div>
+        </div>
+
+        <div className="px-4 sm:px-6 pb-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4">
+          <div>
+            <p className={metaLabel}>Status</p>
+            <InlineField
+              value={STATUS_DROPDOWN_OPTIONS.includes(shipment.currentStatus) ? shipment.currentStatus.replace(/_/g, ' ') : shipment.currentStatus?.replace(/_/g, ' ')}
+              options={statusOpts.map(s => s.replace(/_/g, ' '))}
+              onSave={v => saveStageStatus('status', { status: v.replace(/ /g, '_') })}
+              className={shipment.currentStatus === 'CANCELLED' ? 'px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' : ''}
+              placeholder="Select"
+            />
+          </div>
+          {!isTransport && !isFFOnly && !isDORelease && (
+            <>
+              <div><p className={metaLabel}>Transport mode</p><InlineField value={shipment.shipmentType} options={TRANSPORT_MODES} onSave={v => updateMutation.mutate({ section: 'shipmenttype', data: { shipmentType: v } })} placeholder="Set mode" /></div>
+              <div><p className={metaLabel}>Import / Export</p><InlineField value={shipment.importExport} options={IMPORT_EXPORT_OPTIONS} onSave={v => updateMutation.mutate({ section: 'importexport', data: { importExport: v } })} placeholder="Set import or export" /></div>
+            </>
+          )}
+          {isTransport && (
+            <>
+              <div><p className={metaLabel}>Vehicle</p><InlineField value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => updateMutation.mutate({ section: 'rates', data: { vehicleType: v } })} placeholder="Set vehicle" /></div>
+              <div><p className={metaLabel}>Customer</p><InlineField value={ff.customerName} onSave={v => updateMutation.mutate({ section: 'rates', data: { customerName: v } })} placeholder="Set customer" /></div>
+            </>
+          )}
+          <div className="sm:col-span-2 lg:col-span-1"><p className={metaLabel}>Remarks</p><InlineField value={shipment.remarks} onSave={v => updateMutation.mutate({ section: 'remarks', data: { remarks: v } })} placeholder="Add remarks..." /></div>
+          <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-[var(--text-secondary)] mr-1">Handled by</span>
+            <HandledByBadge label="Freight" name={(shipment.teamContributors?.FREIGHT || []).join(', ')} />
+            <HandledByBadge label="Customs" name={(shipment.teamContributors?.CUSTOMS || []).join(', ')} />
+            <HandledByBadge label="Accounts" name={(shipment.teamContributors?.ACCOUNTS || []).join(', ')} />
+            {(isFFOnly || isDORelease) && shipment.currentStatus !== 'CANCELLED' && steps[cur + 1] && (() => {
+              const nx = steps[cur + 1]; const help = NEXT_STEP_HELP[nx.s]
+              return (
+                <button onClick={() => { if (nx.s === 'RATES_REQUESTED') openRateRequest(); else if (help?.tab) { setActiveTab(isDORelease && help.tab === 'freight' ? 'do-release' : (isDORelease && nx.s === 'DO_COLLECTED' ? 'do-release' : help.tab)); window.scrollTo({ top: 420, behavior: 'smooth' }) } }}
+                  title={`Next step: ${nx.l}`} className="btn btn-accent min-h-[44px] sm:min-h-[36px] !text-xs ml-auto">
+                  Next: {nx.l}{help ? ` — ${help.text}` : ''} →
+                </button>
+              )
+            })()}
+          </div>
+        </div>
+
+        <div ref={actionsRef} className="rounded-b-2xl border-t border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {sections.map((sec) => (
+              <span key={sec.title} className="tag !text-xs bg-[var(--route-soft)] text-[var(--route-ink)] border border-[var(--route-line)]">{sec.title} {sec.total - sec.missing.length}/{sec.total}</span>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isTransport && !isDORelease && !isCHAOnly && (
+              <button onClick={openRateRequest} disabled={rateBusy} title="Prepare the enquiry mail to agents. You review it before it is sent" className="btn btn-accent min-h-[44px] sm:min-h-[40px]">
+                {rateBusy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Rate request
+              </button>
+            )}
+            <Link to={`/create?edit=${shipment.id}`} aria-label="Edit shipment" title="Edit shipment" className={actionBtn}><Pencil size={16} /></Link>
+            <button onClick={handlePrint} aria-label="Print" title="Print" className={actionBtn}><Printer size={16} /></button>
+            <div className="relative">
+              <button onClick={() => { setShowEmailDropdown(!showEmailDropdown); setShowTypeSwitcher(false) }} aria-label="Send email" aria-expanded={showEmailDropdown} title="Send email" className={actionBtn}><Mail size={16} /><span className="hidden sm:inline">Email</span><ChevronDown size={14} /></button>
+              {showEmailDropdown && (
+                <div className={menuClass}>
+                  <button onClick={handleSendTestEmail} disabled={sendingEmail} className={menuItem}>{sendingEmail ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} className="text-[var(--route)]" />}{sendingEmail ? 'Sending...' : 'Send via System'}</button>
+                  <button onClick={handleOpenGmail} className={menuItem}><svg width="14" height="14" viewBox="0 0 24 24" fill="#ea4335"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.649 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068A1.485 1.485 0 011.5 3H2l10 7.25L22 3h.5c.425 0 .8.162 1.069.432.27.268.431.643.431 1.068z"/></svg>Open in Gmail</button>
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <button onClick={() => { setShowTypeSwitcher(!showTypeSwitcher); setShowEmailDropdown(false) }} aria-label="Change type" aria-expanded={showTypeSwitcher} title="Change type" className={actionBtn}><ArrowUpDown size={16} /><span className="hidden sm:inline">Change Type</span><ChevronDown size={14} /></button>
+              {showTypeSwitcher && (
+                <div className={menuClass}>
+                  {TYPE_SWITCH_OPTIONS.map((opt) => (
+                    <button key={opt.label} onClick={() => handleSwitchType(opt)} className={menuItem}>{opt.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Cancel reason: asked whenever someone cancels, so lost enquiries can be learned from */}
       {cancelAsk && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setCancelAsk(null)}>
-          <div className="glass rounded-xl border border-[var(--border-color)] shadow-2xl w-full max-w-md p-5 bg-white dark:bg-slate-800" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-semibold text-red-600 mb-1">Cancel this shipment?</h3>
-            <p className="text-xs text-[var(--text-secondary)] mb-3">Tell us why — it is saved in the history and remarks. You can reactivate it any time.</p>
-            <div className="flex flex-wrap gap-2 mb-3">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center modal-backdrop p-0 sm:p-4" onClick={() => setCancelAsk(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-2xl w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]" onClick={e => e.stopPropagation()}>
+            <h3 id="cancel-title" className="text-lg font-semibold text-[var(--text-primary)] mb-1">Cancel this shipment?</h3>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">Tell us why. It is saved in the history and remarks. You can reactivate it any time.</p>
+            <div className="flex flex-wrap gap-2 mb-4">
               {CANCEL_REASONS.map(r => (
-                <button key={r} onClick={() => setCancelReason(r)} className={`px-3 py-1.5 rounded-full text-xs font-medium border ${cancelReason === r ? 'bg-red-500 text-white border-red-500' : 'border-[var(--border-color)] text-[var(--text-primary)] hover:border-red-300'}`}>{r}</button>
+                <button key={r} onClick={() => setCancelReason(r)} aria-pressed={cancelReason === r} className={`px-3.5 min-h-[40px] rounded-full text-sm font-medium border ${cancelReason === r ? 'bg-red-600 text-white border-red-600' : 'border-[var(--input-border)] text-[var(--text-primary)] hover:bg-[var(--hover-bg)]'}`}>{r}</button>
               ))}
             </div>
-            <input value={cancelNote} onChange={e => setCancelNote(e.target.value)} placeholder="Add a note (optional)" className="w-full px-3 py-2 border border-[var(--border-color)] rounded-lg text-sm bg-transparent mb-4" />
-            <div className="flex justify-end gap-2">
-              <button onClick={() => setCancelAsk(null)} className="px-4 py-2 rounded-lg text-sm border border-[var(--border-color)]">Keep shipment</button>
-              <button onClick={confirmCancel} disabled={!cancelReason && !cancelNote.trim()} className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">Cancel shipment</button>
+            <input value={cancelNote} onChange={e => setCancelNote(e.target.value)} placeholder="Add a note (optional)" className={`${inputBase} border-[var(--input-border)] focus:border-[var(--input-focus)] mb-5`} />
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button onClick={() => setCancelAsk(null)} className="btn btn-secondary min-h-[44px]">Keep shipment</button>
+              <button onClick={confirmCancel} disabled={!cancelReason && !cancelNote.trim()} className="btn min-h-[44px] bg-red-600 text-white hover:bg-red-700">Cancel shipment</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ✅ EVERYONE INVOLVED (NEW) — full contributor list for this
-          shipment, distinct from the 3 Handled By badges above. */}
-      <EveryoneInvolved contributors={shipment.contributors} />
-
-      {/* ✅ NEW — shows exactly which required fields are still empty */}
-      <CompletenessPanel shipment={shipment} />
-
-      {/* ✅ NEW — clear visual banner when a shipment has been manually
-          cancelled (via the Status dropdown above), so this is
-          obvious at a glance rather than something you'd only notice by
-          reading the Status dropdown's value. The workflow stepper below
-          still renders normally underneath — cancelling doesn't erase
-          any progress already made, it just flags the shipment as dead. */}
       {shipment.currentStatus === 'CANCELLED' && (
-        <div className="glass rounded-xl border-2 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-4 flex items-center gap-3">
-          <AlertCircle size={22} className="text-red-500 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold text-red-700 dark:text-red-400">This shipment has been cancelled</p>
-            <p className="text-xs text-red-600 dark:text-red-400/80">Click Reactivate (or change the Status above) to bring it back.</p>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-[var(--border-color)] border-l-4 border-l-[var(--route)] bg-[var(--bg-primary)] p-4">
+          <div className="flex items-start gap-3 flex-1">
+            <AlertCircle size={22} className="text-[var(--text-primary)] shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">This shipment has been cancelled</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">Click Reactivate, or change the Status above, to bring it back. Progress already made is kept.</p>
+            </div>
           </div>
-          <button onClick={handleReactivate} disabled={reactivating} className="ml-auto flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 shadow disabled:opacity-60">
-            {reactivating ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Reactivate
+          <button onClick={handleReactivate} disabled={reactivating} className="btn btn-primary min-h-[44px]">
+            {reactivating ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} Reactivate
           </button>
         </div>
       )}
-      
-      <div className="glass rounded-xl border border-[var(--border-color)] p-5 overflow-x-auto shadow-sm">
-        <div className="flex items-center justify-between mb-2"><span className="text-[11px] font-semibold text-indigo-400 dark:text-indigo-300 uppercase tracking-wider">{isFFOnly ? 'FF Only Workflow' : isDORelease ? 'DO Release Workflow' : isTransport ? 'Transport Workflow' : isCHAOnly ? (isCHAExport ? 'CHA Export Workflow' : 'CHA Import Workflow') : 'Shipment Workflow'}</span></div>
-        <div className="flex items-center gap-0 min-w-max mt-1">
-          {steps.map((step, i) => { const Icon = step.i; const complete = isStepComplete(step.s, ff, cha, accounts, shipment.shipmentStage); const now = i === cur; const missing = !complete && i <= cur && !step.optional
-            return (<div key={step.s} className="flex items-center"><div className={`flex flex-col items-center ${complete || missing || now ? 'opacity-100' : 'opacity-40'}`}><div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 transition-all ${missing ? 'border-red-500 bg-red-50 dark:bg-red-900/30' : now ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-110 shadow-md shadow-indigo-200' : complete ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30' : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-slate-800'}`} title={missing ? `${step.d} — not filled in yet` : step.d}>{missing ? <AlertCircle size={16} className="text-red-500" /> : complete ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Icon size={16} className="text-gray-400 dark:text-gray-500" />}</div><span className={`text-[10px] mt-1.5 font-medium whitespace-nowrap ${missing ? 'text-red-600 dark:text-red-400' : now ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-500 dark:text-gray-400'}`}>{step.l}</span></div>{i < steps.length - 1 && <div className={`w-8 h-0.5 mx-0.5 mt-[-16px] ${complete ? 'bg-emerald-400' : 'bg-gray-200 dark:bg-gray-700'}`} />}</div>)
+
+      <EveryoneInvolved contributors={shipment.contributors} />
+
+      <CompletenessPanel shipment={shipment} sections={sections} onOpenTab={setActiveTab} />
+
+      <section className="card p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mb-3">
+          <h2 className="text-sm font-semibold text-[var(--text-primary)]">{workflowName}</h2>
+          <span className="text-xs font-semibold text-[var(--text-secondary)]">{stepsDone} of {steps.length} steps done</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-[var(--border-color)] mb-4" role="progressbar" aria-valuemin={0} aria-valuemax={steps.length} aria-valuenow={stepsDone}>
+          <div className="h-1.5 rounded-full bg-[var(--route)]" style={{ width: `${steps.length ? Math.round((stepsDone / steps.length) * 100) : 0}%` }} />
+        </div>
+        <div ref={stepperRef} className="relative overflow-x-auto pb-2">
+          <div className="flex items-start min-w-max">
+            {steps.map((step, i) => {
+              const Icon = step.i
+              const complete = isStepComplete(step.s, ff, cha, accounts, shipment.shipmentStage)
+              const now = i === cur
+              const missing = !complete && i <= cur && !step.optional
+              const circle = missing
+                ? 'border-dashed border-[var(--text-primary)] bg-[var(--bg-primary)]'
+                : now
+                  ? 'border-[var(--accent)] bg-[var(--accent-soft)] ring-4 ring-orange-500/20'
+                  : complete
+                    ? 'border-[var(--route)] bg-[var(--route)]'
+                    : 'border-[var(--input-border)] bg-[var(--bg-primary)]'
+              const label = missing
+                ? 'text-[var(--text-primary)] font-semibold'
+                : now
+                  ? 'text-[var(--text-primary)] font-bold'
+                  : 'text-[var(--text-secondary)] font-medium'
+              return (
+                <div key={step.s} ref={now ? curStepRef : undefined} className="flex items-start">
+                  <div className={`flex flex-col items-center w-[64px] ${complete || missing || now ? '' : 'opacity-60'}`}>
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${circle}`} title={missing ? `${step.d} — not filled in yet` : step.d}>
+                      {missing
+                        ? <AlertCircle size={16} className="text-[var(--text-primary)]" />
+                        : complete
+                          ? <Check size={16} strokeWidth={3} className="text-[var(--on-route)]" />
+                          : <Icon size={16} className={now ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'} />}
+                    </div>
+                    <span className={`text-[11px] mt-1.5 text-center leading-tight ${label}`}>{step.l}</span>
+                  </div>
+                  {i < steps.length - 1 && <div className={`h-0.5 w-4 mt-[17px] ${complete ? 'bg-[var(--route)]' : 'bg-[var(--border-color)]'}`} />}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <div className="flex items-center gap-x-4 gap-y-1 mt-2 pt-3 border-t border-[var(--border-color)] flex-wrap text-xs text-[var(--text-secondary)]">
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--route)]" />Completed</span>
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--accent)]" />Current</span>
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border border-dashed border-[var(--text-primary)]" />Missing</span>
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-[var(--input-border)]" />Not yet reached</span>
+        </div>
+      </section>
+
+      <div role="tablist" aria-label="Shipment sections" className="sticky top-14 lg:top-16 z-20 -mx-4 px-4 sm:mx-0 sm:px-0 pt-1 bg-[var(--bg-secondary)]">
+        <div className="flex gap-1.5 overflow-x-auto">
+          {tabs.map(t => {
+            const Icon = t.i
+            const active = activeTab === t.k
+            const count = tabCount(t.k)
+            const done = count ? count.total - count.missing.length : 0
+            return (
+              <button key={t.k} role="tab" aria-selected={active} onClick={() => setActiveTab(t.k)}
+                className={`flex items-center gap-2 px-4 min-h-[46px] rounded-t-xl text-sm font-semibold whitespace-nowrap flex-shrink-0 border border-b-0 ${active ? 'bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)] shadow-[inset_0_3px_0_var(--accent)] relative z-10 -mb-px' : 'bg-[var(--bg-tertiary)] border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
+                <Icon size={16} />
+                <span className="sm:hidden">{t.short}</span>
+                <span className="hidden sm:inline">{t.l}</span>
+                {count && (
+                  <span className={`px-1.5 rounded-full text-[11px] font-bold leading-5 ${count.missing.length === 0 ? 'bg-[var(--route)] text-[var(--on-route)]' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border border-[var(--border-color)]'}`}>{done}/{count.total}</span>
+                )}
+              </button>
+            )
           })}
         </div>
-        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-[var(--border-color)] justify-center flex-wrap"><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-emerald-500 shadow-sm shadow-emerald-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Completed</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500 shadow-sm shadow-indigo-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Current</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-red-500 shadow-sm shadow-red-300" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Missing</span></div><div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-gray-300 dark:bg-gray-600" /><span className="text-[10px] text-gray-500 dark:text-gray-400">Not yet reached</span></div></div>
       </div>
-      
-      <div className="hidden sm:flex glass rounded-xl p-1 gap-1 border border-[var(--border-color)]">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${activeTab===t.k?'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md':'text-[var(--text-secondary)] hover:text-indigo-500 dark:hover:text-indigo-400'}`}><Icon size={16}/><span>{t.l}</span></button>})}</div>
-      <div className="sm:hidden flex glass rounded-xl p-1 gap-1 overflow-x-auto border border-[var(--border-color)]">{tabs.map(t=>{const Icon=t.i;return <button key={t.k} onClick={()=>setActiveTab(t.k)} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex-shrink-0 ${activeTab===t.k?'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-md':'text-[var(--text-secondary)]'}`}><Icon size={14}/>{t.l}</button>})}</div>
 
-      <div className="glass rounded-xl border border-[var(--border-color)] p-4 sm:p-6 shadow-sm">
+      <div className="card rounded-tl-none p-4 sm:p-6 -mt-px">
+        {activeTab !== 'history' && (
+          <p className="mb-4 flex items-center gap-2 text-xs text-[var(--text-secondary)]"><Pencil size={13} className="shrink-0" />Type a value and press Enter. It saves by itself and moves to the next field. Shift + Enter goes back.</p>
+        )}
         {/* FREIGHT TAB */}
-        {activeTab==='freight'&&!isTransport&&!isDORelease&&<div className="space-y-4"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"><C icon={MapPinned} l="From" v={ff.fromLocation}/><C icon={Navigation} l="To" v={ff.toLocation}/><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/>{isStandardFreight && <C icon={Box} l="Commodity" v={ff.commodityName}/>}</div>
-          {/* ✅ Consignee/Shipper editable here, using the same searchable
-              master list as the Create Shipment page. */}
+        {activeTab==='freight'&&!isTransport&&!isDORelease&&<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start"><div className="col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3"><C icon={FileSignature} l="Terms" v={ff.terms}/><C icon={Anchor} l="Agent" v={ff.agent}/><C icon={Package} l="Packages" v={ff.noOfPackages}/>{isStandardFreight && <C icon={Box} l="Commodity" v={ff.commodityName}/>}</div>
           <Section title="Parties Involved" icon={User}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Consignee Name</label><PartyField value={ff.consigneeName} type="CONSIGNEE" onSave={v => saveField({ section: 'consignee', data: { consigneeName: v } })} /></div>
-            <div><label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">Shipper Name</label><PartyField value={ff.shipperName} type="SHIPPER" onSave={v => saveField({ section: 'shipper', data: { shipperName: v } })} /></div>
+            <PartyField label="Consignee Name" value={ff.consigneeName} type="CONSIGNEE" onSave={v => saveField({ section: 'consignee', data: { consigneeName: v } })} />
+            <PartyField label="Shipper Name" value={ff.shipperName} type="SHIPPER" onSave={v => saveField({ section: 'shipper', data: { shipperName: v } })} />
           </div></Section>
           <Section title="Notification Settings" icon={Mail}><Field label="Notification Email" value={ff.notificationEmail} onSave={v => saveField({ section: 'notificationemail', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" /></Section>
-          {/* ✅ REMOVED for standard Freight — Route Details is now set at
-              creation instead (see Create Shipment page). FF Only / CHA
-              Only never had it on their create forms, so they keep it
-              editable here, unchanged. */}
-          {!isStandardFreight && <Section title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => saveField({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => saveField({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => saveField({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => saveField({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>}
-          {/* ✅ CBM removed from here for standard Freight (now set at
-              creation) — Gross/Chargeable Weight stay editable for
-              everyone, since those genuinely can change after creation. */}
-          <Section title="Weight Details" icon={Scale}><div className={`grid grid-cols-1 ${isStandardFreight ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-3`}><Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => saveField({ section: 'rates', data: { grossWeight: v } })} type="number" /><Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => saveField({ section: 'rates', data: { weight: v } })} type="number" />{!isStandardFreight && <Field label="CBM" value={ff.cbm} onSave={v => saveField({ section: 'cbm', data: { cbm: v } })} type="number" />}</div></Section>
-          {/* ✅ REMOVED for standard Freight — Commodity Name is now set
-              at creation instead. */}
+          {!isStandardFreight && <Section wide title="Route Details" icon={MapPinned}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><ComboField label="From (Origin)" value={ff.fromLocation} options={COUNTRY_PORTS} onSave={v => saveField({ section: 'fromlocation', data: { fromLocation: v } })} placeholder="Custom country/port..." /><ComboField label="To (Destination)" value={ff.toLocation} options={INDIA_PORTS} onSave={v => saveField({ section: 'tolocation', data: { toLocation: v } })} placeholder="Custom city/port..." /><ComboField label="Terms" value={ff.terms} options={TERMS_OPTIONS} onSave={v => saveField({ section: 'terms', data: { terms: v } })} placeholder="Custom terms..." /><ComboField label="Port Location" value={ff.portLocation} options={PORT_LOCATIONS} onSave={v => saveField({ section: 'portlocation', data: { portLocation: v } })} placeholder="Custom port code..." /></div></Section>}
+          <Section wide={!isStandardFreight} title="Weight Details" icon={Scale}><div className={`grid grid-cols-1 ${isStandardFreight ? 'sm:grid-cols-2' : 'sm:grid-cols-3'} gap-3`}><Field label="Gross Weight (kg)" value={ff.grossWeight} onSave={v => saveField({ section: 'rates', data: { grossWeight: v } })} type="number" /><Field label="Chargeable Weight (kg)" value={ff.weight} onSave={v => saveField({ section: 'rates', data: { weight: v } })} type="number" />{!isStandardFreight && <Field label="CBM" value={ff.cbm} onSave={v => saveField({ section: 'cbm', data: { cbm: v } })} type="number" />}</div></Section>
           <Section title="Nomination" icon={Calendar}><Field label="Nomination Date" value={Fmt(ff.nominationDate)} onSave={v => saveField({ section: 'nomination', data: { nominationDate: v } })} type="date" /></Section>
           <Section title="Booking" icon={Calendar}><Field label="Booking Date" value={Fmt(ff.bookingDate)} onSave={v => saveField({ section: 'booking', data: { bookingDate: v } })} type="date" /></Section>
-          {/* ✅ NEW — Pickup Date, between Booking and Schedule */}
           <Section title="Pickup" icon={Truck}><Field label="Pickup Date" value={Fmt(ff.pickupDate)} onSave={v => saveField({ section: 'pickup', data: { pickupDate: v } })} type="date" /></Section>
           <Section title="Schedule" icon={Plane}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="ETD" value={Fmt(ff.etd)} onSave={v => saveField({ section: 'schedule', data: { etd: v } })} type="date" /><Field label="ETA" value={Fmt(ff.eta)} onSave={v => saveField({ section: 'schedule', data: { eta: v } })} type="date" /></div></Section>
           <Section title="AWB Details" icon={Barcode}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="MAWB" value={ff.mawb} onSave={v => saveField({ section: 'awb', data: { mawb: v } })} /><Field label="HAWB" value={ff.hawb} onSave={v => saveField({ section: 'awb', data: { hawb: v } })} /><Field label="AWB Date" value={Fmt(ff.awbDate)} onSave={v => saveField({ section: 'awb', data: { awbDate: v } })} type="date" /></div></Section>
-          {/* ✅ RE-ADDED — Pre-Alerts + DO Collection, back on the Freight
-              tab (standard Freight type only). Stays off the Create page
-              per the separate instruction — this field genuinely tends
-              to happen after creation, so it needs to live somewhere
-              editable post-creation, and this is that place. */}
           {isStandardFreight && <Section title="Pre-Alerts & DO Collection" icon={ClipboardList}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Pre-Alerts Sent On" value={Fmt(ff.preAlertsSentDate)} onSave={v => saveField({ section: 'rates', data: { preAlertsSentDate: v } })} type="date" /><Field label="DO Collection Date" value={Fmt(cha.doCollectionDate)} onSave={v => saveField({ section: 'do', data: { doCollectionDate: v } })} type="date" /></div></Section>}
           </div>}
 
         {/* DO RELEASE TAB */}
-        {isDORelease && activeTab==='do-release'&&<div className="space-y-4">
-          <Section title="DO Release Details" icon={ClipboardList}>
+        {isDORelease && activeTab==='do-release'&&<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+          <Section wide title="DO Release Details" icon={ClipboardList}>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="MAWB No" value={ff.mawb} onSave={v => saveField({ section: 'awb', data: { mawb: v } })} />
               <Field label="HAWB No" value={ff.hawb} onSave={v => saveField({ section: 'awb', data: { hawb: v } })} />
@@ -1014,8 +1151,8 @@ export default function ShipmentDetail() {
         </div>}
 
         {/* TRANSPORT TAB */}
-        {isTransport && activeTab==='freight'&&<div className="space-y-4">
-          <Section title="Transport Details" icon={Truck}>
+        {isTransport && activeTab==='freight'&&<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+          <Section wide title="Transport Details" icon={Truck}>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <ComboField label="Transport Mode" value={ff.transportMode} options={TRANSPORT_MODE_OPTIONS} onSave={v => saveField({ section: 'rates', data: { transportMode: v } })} placeholder="Custom mode..." />
               <ComboField label="Vehicle Type" value={ff.vehicleType} options={VEHICLE_TYPES} onSave={v => saveField({ section: 'rates', data: { vehicleType: v } })} placeholder="Custom type..." />
@@ -1025,7 +1162,7 @@ export default function ShipmentDetail() {
               <Field label="Customer Name" value={ff.customerName} onSave={v => saveField({ section: 'rates', data: { customerName: v } })} />
             </div>
           </Section>
-          <Section title="Route & Delivery" icon={MapPinned}>
+          <Section wide title="Route & Delivery" icon={MapPinned}>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <Field label="From" value={ff.fromLocation} onSave={v => saveField({ section: 'fromlocation', data: { fromLocation: v } })} />
               <Field label="To" value={ff.toLocation} onSave={v => saveField({ section: 'tolocation', data: { toLocation: v } })} />
@@ -1036,15 +1173,12 @@ export default function ShipmentDetail() {
             <Field label="Notification Email" value={ff.notificationEmail} onSave={v => saveField({ section: 'rates', data: { notificationEmail: v } })} type="email" placeholder="email@example.com" />
           </Section>
         </div>}
-        
+
         {/* CUSTOMS TAB */}
-        {activeTab==='cha'&&!isTransport&&!isDORelease&&!isFFOnly&&<div className="space-y-4">
-          <Section title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => saveField({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => saveField({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => saveField({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
+        {activeTab==='cha'&&!isTransport&&!isDORelease&&!isFFOnly&&<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+          <Section wide title="Checklist" icon={ClipboardCheck}><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><Field label="Job No" value={cha.jobNo} onSave={v => saveField({ section: 'checklist', data: { jobNo: v } })} /><Field label="Checklist Date" value={Fmt(cha.checklistDate)} onSave={v => saveField({ section: 'checklist', data: { checklistDate: v } })} type="date" /><Field label="Approval Date" value={Fmt(cha.checklistApprovalDate)} onSave={v => saveField({ section: 'checklist', data: { checklistApprovalDate: v } })} type="date" /></div></Section>
           {!isCHAExport && (<>
             <Section title="BOE" icon={FileText}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="BOE No" value={cha.boeNo} onSave={v => saveField({ section: 'boe', data: { boeNo: v } })} /><Field label="BOE Date" value={Fmt(cha.boeDate)} onSave={v => saveField({ section: 'boe', data: { boeDate: v } })} type="date" /></div></Section>
-            {/* ✅ MOVED — for the standard Freight type, DO Collection now
-                lives on the Freight tab instead (see below). CHA Only
-                keeps it here, unchanged. */}
             {!isStandardFreight && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => saveField({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
             <Section title="OOC" icon={CheckCircle2}><Field label="OOC Date" value={Fmt(cha.oocDate)} onSave={v => saveField({ section: 'ooc', data: { oocDate: v } })} type="date" /></Section>
             <Section title="Gate Pass" icon={Truck}><Field label="Gate Pass Date" value={Fmt(cha.gatePassDate)} onSave={v => saveField({ section: 'gatepass', data: { gatePassDate: v } })} type="date" /></Section>
@@ -1056,28 +1190,94 @@ export default function ShipmentDetail() {
             <Section title="Hand Over" icon={Truck}><Field label="Hand Over Date" value={Fmt(cha.handOverDate)} onSave={v => saveField({ section: 'handover', data: { handOverDate: v } })} type="date" /></Section>
           </>)}
         </div>}
-        
+
         {/* ACCOUNTS TAB */}
-        {activeTab==='accounts'&&<div className="space-y-4">
+        {activeTab==='accounts'&&<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
           {isFFOnly && <Section title="DO Collection" icon={FileCheck}><Field label="DO Date" value={Fmt(cha.doCollectionDate)} onSave={v => saveField({ section: 'do', data: { doCollectionDate: v } })} type="date" /></Section>}
           <Section title="Invoice" icon={Banknote}><div className="grid grid-cols-1 sm:grid-cols-2 gap-3"><Field label="Invoice No" value={accounts.invoiceNumber} onSave={v => saveField({ section: 'invoice', data: { invoiceNumber: v } })} /><Field label="Invoice Date" value={Fmt(accounts.invoiceDate)} onSave={v => saveField({ section: 'invoice', data: { invoiceDate: v } })} type="date" /></div></Section><Section title="Invoice Sending" icon={Send}><Field label="Sending Date" value={Fmt(accounts.sendingDate)} onSave={v => saveField({ section: 'invoiceSend', data: { sendingDate: v } })} type="date" /></Section></div>}
-        
-        {/* HISTORY TAB */}
-        {activeTab==='history'&&<div><h3 className="text-base font-semibold mb-4 text-indigo-700 dark:text-indigo-300">Status Timeline</h3>{shipment.statusHistory?.length>0?<div className="relative pl-6 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-6">{[...shipment.statusHistory].reverse().map((h,i)=><div key={i} className="relative"><div className="absolute -left-[25px] w-3 h-3 rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 border-2 border-white dark:border-slate-800 ring-2 ring-indigo-200 dark:ring-indigo-800 shadow-sm"/><div className="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/50 dark:to-blue-950/50 rounded-lg p-3 ml-2 border border-indigo-100 dark:border-indigo-900"><p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{h.status.replace(/_/g,' ')}</p>{h.remarks&&<p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{h.remarks}</p>}<p className="text-xs text-gray-400 dark:text-gray-500 mt-1">{new Date(h.createdAt).toLocaleString()}</p></div></div>)}</div>:<div className="text-center py-8 text-gray-500 dark:text-gray-400"><Clock size={32} className="mx-auto text-gray-300 dark:text-gray-600 mb-2"/><p className="text-sm">No status changes recorded yet.</p></div>}</div>}
+
+        {activeTab==='history'&&<div>
+          <h3 className="text-base font-semibold mb-4 text-[var(--text-primary)]">Status Timeline</h3>
+          {shipment.statusHistory?.length>0
+            ? <ol className="relative ml-2 border-l-2 border-[var(--border-color)] space-y-5">
+                {[...shipment.statusHistory].reverse().map((h,i)=>(
+                  <li key={i} className="relative pl-6">
+                    <span className={`absolute -left-[7px] top-1.5 w-3 h-3 rounded-full border-2 border-[var(--bg-primary)] ${i === 0 ? 'bg-[var(--accent)] ring-4 ring-orange-500/20' : 'bg-[var(--input-border)]'}`} />
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">{h.status.replace(/_/g,' ')}</p>
+                    {h.remarks&&<p className="text-sm text-[var(--text-secondary)] mt-0.5">{h.remarks}</p>}
+                    <p className="text-xs text-[var(--text-muted)] mt-1">{new Date(h.createdAt).toLocaleString()}</p>
+                  </li>
+                ))}
+              </ol>
+            : <div className="text-center py-10 text-[var(--text-secondary)]"><Clock size={30} className="mx-auto text-[var(--text-muted)] mb-2"/><p className="text-sm">No status changes recorded yet.</p></div>}
+        </div>}
       </div>
     </div>
   )
 }
 
-function C({icon:I,label:l,value:v}){return <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/30 dark:to-blue-950/30 rounded-lg border border-indigo-100 dark:border-indigo-900"><I size={16} className="text-indigo-400 dark:text-indigo-300 flex-shrink-0"/><div className="min-w-0"><p className="text-xs text-indigo-400 dark:text-indigo-300">{l}</p><p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{v||'—'}</p></div></div>}
+// Waybill route: origin and destination with a flight-path arc between them.
+// The solid part of the arc and the vehicle icon show how far along the
+// workflow the shipment is.
+function RouteArc({ from, to, etd, eta, mode, percent, stamp }) {
+  const Icon = mode === 'Transport' ? Truck : /sea/i.test(mode || '') ? Ship : Plane
+  const t = Math.min(1, Math.max(0, percent / 100))
+  const lerp = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]
+  const p0 = [8, 92], p1 = [300, -46], p2 = [592, 92]
+  const q0 = lerp(p0, p1, t), q1 = lerp(p1, p2, t), at = lerp(q0, q1, t)
+  const end = (label, place, date, dateLabel, right) => (
+    <div className={`min-w-0 ${right ? 'text-right order-2 sm:order-3' : 'order-1'}`}>
+      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--route-ink)]">{label}</p>
+      <p className="text-2xl sm:text-4xl font-black tracking-tight text-[var(--text-primary)] truncate">{place || '—'}</p>
+      {date && <p className="text-xs sm:text-sm text-[var(--text-secondary)] mt-0.5">{dateLabel} {date}</p>}
+    </div>
+  )
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-[1fr_minmax(160px,2.2fr)_1fr] items-center gap-x-3 gap-y-2 sm:gap-6">
+      {end('Origin', from, etd, 'ETD', false)}
+      <div className="relative h-20 sm:h-24 col-span-2 sm:col-span-1 order-3 sm:order-2" role="img" aria-label={`Route from ${from || 'origin'} to ${to || 'destination'}, ${Math.round(percent)} percent of the workflow done`}>
+        <svg viewBox="0 0 600 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full overflow-visible">
+          <path d={`M${p0} Q${p1} ${p2}`} fill="none" stroke="var(--route-line)" strokeWidth="3" strokeDasharray="2 9" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {t > 0 && <path d={`M${p0} Q${q0} ${at}`} fill="none" stroke="var(--route)" strokeWidth="4" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        <span className="absolute w-2.5 h-2.5 -ml-[5px] -mt-[5px] rounded-full bg-[var(--route)]" style={{ left: '1.3%', top: '92%' }} />
+        <span className="absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full border-[3px] border-[var(--route)] bg-[var(--bg-primary)]" style={{ left: '98.7%', top: '92%' }} />
+        <span className="absolute -ml-[18px] -mt-[18px] w-9 h-9 rounded-full bg-[var(--accent)] text-[var(--on-accent)] flex items-center justify-center shadow-md ring-4 ring-[var(--bg-primary)]" style={{ left: `${(at[0] / 600) * 100}%`, top: `${at[1]}%` }}>
+          <Icon size={16} />
+        </span>
+        <span aria-hidden="true" className="hidden sm:block absolute left-1/2 bottom-0 -translate-x-1/2 -rotate-6 whitespace-nowrap border-[3px] border-[var(--accent)] text-[var(--accent)] rounded-md px-3 py-0.5 text-sm font-black uppercase tracking-[0.2em] opacity-90">{stamp}</span>
+      </div>
+      {end('Destination', to, eta, 'ETA', true)}
+    </div>
+  )
+}
+
+function C({ icon: I, l, v }) {
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+      <span className="w-9 h-9 rounded-lg bg-[var(--route-soft)] text-[var(--route)] flex items-center justify-center flex-shrink-0"><I size={16} /></span>
+      <div className="min-w-0">
+        <p className="text-xs text-[var(--text-secondary)]">{l}</p>
+        <p className="text-sm font-semibold text-[var(--text-primary)] truncate">{v || '—'}</p>
+      </div>
+    </div>
+  )
+}
 function slugifyTitle(title) { return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') }
-function Section({ title, icon: Icon, children }) { return <div id={`section-${slugifyTitle(title)}`} className="border border-[var(--border-color)] rounded-xl overflow-hidden shadow-sm"><div className="flex items-center gap-2 p-4 bg-gradient-to-r from-indigo-50 to-blue-50/50 dark:from-indigo-950/30 dark:to-blue-950/20 border-b border-[var(--border-color)]"><Icon size={14} className="text-indigo-400 dark:text-indigo-300" /><p className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">{title}</p></div><div className="p-4">{children}</div></div> }
-// ✅ NEW — converts an ISO date (yyyy-mm-dd, what the actual <input
-// type="date"> needs internally to work at all) into dd-mm-yyyy for
-// display only. The two must stay separate: browsers require ISO format
-// for the date input's value to pre-fill and for its native picker to
-// work — showing dd-mm-yyyy directly in that value would silently break
-// the picker.
+function Section({ title, icon: Icon, children, wide = false }) {
+  return (
+    <div id={`section-${slugifyTitle(title)}`} className={`border border-[var(--border-color)] rounded-2xl bg-[var(--bg-primary)] p-4 ${wide ? 'md:col-span-2 lg:col-span-3' : ''}`}>
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-primary)] mb-3">
+        <span className="w-7 h-7 rounded-lg bg-[var(--route-soft)] text-[var(--route)] flex items-center justify-center"><Icon size={15} /></span>
+        {title}
+      </h3>
+      <div className={wide ? '' : '[&>.grid]:grid-cols-1'}>{children}</div>
+    </div>
+  )
+}
+// Turns an ISO date (yyyy-mm-dd) into dd-mm-yyyy for display. The date input
+// itself needs the ISO form to pre-fill and for its native picker to work, so
+// the two have to stay separate.
 function toDDMMYYYY(isoDate) {
   if (!isoDate) return null
   const parts = isoDate.split('-')
@@ -1091,10 +1291,12 @@ function Field({ label, value, onSave, type = 'text', placeholder = 'Not set', o
   const shown = (v) => (isDate ? (toDDMMYYYY(asText(v)) || '') : asText(v))
   const [val, setVal] = useState(shown(value))
   const [state, setState] = useState('idle')
+  const [note, setNote] = useState('')
   const inputRef = useRef(null)
   const pickerRef = useRef(null)
   const savedRef = useRef(asText(value))
   const listId = useId()
+  const inputId = useId()
 
   useSavedFade(state, setState)
 
@@ -1108,7 +1310,7 @@ function Field({ label, value, onSave, type = 'text', placeholder = 'Not set', o
     let next = raw
     if (isDate && raw !== '') {
       const iso = toISODate(raw)
-      if (!iso) { setState('error'); return false }
+      if (!iso) { setNote('That date does not exist. Type it as dd-mm-yyyy.'); setState('error'); return false }
       next = iso
     }
     if (next === savedRef.current) {
@@ -1120,7 +1322,7 @@ function Field({ label, value, onSave, type = 'text', placeholder = 'Not set', o
     setState('saving')
     Promise.resolve(onSave(next)).then(
       () => setState('saved'),
-      () => { savedRef.current = previous; setState('error') }
+      () => { savedRef.current = previous; setNote('Could not save. Check your connection and try again.'); setState('error') }
     )
   }
 
@@ -1132,9 +1334,10 @@ function Field({ label, value, onSave, type = 'text', placeholder = 'Not set', o
 
   return (
     <div>
-      <label className="block text-xs text-indigo-400 dark:text-indigo-300 mb-1">{label}</label>
+      <label htmlFor={inputId} className={labelClass}>{label}</label>
       <div className="relative">
         <input
+          id={inputId}
           ref={inputRef}
           data-flow=""
           type={isDate ? 'text' : type}
@@ -1157,13 +1360,13 @@ function Field({ label, value, onSave, type = 'text', placeholder = 'Not set', o
               setState('idle')
             }
           }}
-          className={`w-full px-3 py-2 ${isDate ? 'pr-16' : 'pr-9'} border rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-800 dark:text-gray-100 outline-none focus:ring-2 transition-colors ${fieldTone(state)}`}
+          className={`${inputBase} ${isDate ? 'pr-20' : 'pr-9'} ${fieldTone(state)}`}
         />
-        <SaveMark state={state} className={isDate ? 'right-9' : 'right-3'} />
+        <SaveMark state={state} className={isDate ? 'right-11' : 'right-3'} />
         {isDate && (
           <>
-            <button type="button" tabIndex={-1} onClick={openPicker} title="Pick from calendar" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-500">
-              <Calendar size={14} />
+            <button type="button" tabIndex={-1} onClick={openPicker} aria-label={`Pick ${label} from calendar`} title="Pick from calendar" className="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 flex items-center justify-center rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--hover-bg)]">
+              <Calendar size={16} />
             </button>
             <input
               ref={pickerRef}
@@ -1178,6 +1381,7 @@ function Field({ label, value, onSave, type = 'text', placeholder = 'Not set', o
         )}
         {options && <datalist id={listId}>{options.map(o => <option key={o} value={o} />)}</datalist>}
       </div>
+      <FieldNote state={state} note={note} />
     </div>
   )
 }
