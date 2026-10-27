@@ -164,8 +164,10 @@ server.listen(PORT, '0.0.0.0', () => {
   // from env REMINDERS_MODE: off | dry (default, logs only) | bell | live.
   {
     const { runReminderSweep } = require('./src/services/reminders.service');
+    const { runEnquirySweep } = require('./src/services/enquiryReminders.service');
     const tick = async () => {
       try { await runReminderSweep(); } catch (err) { console.error('[REMINDER] sweep failed:', err.message); }
+      try { await runEnquirySweep(); } catch (err) { console.error('[ENQUIRY] sweep failed:', err.message); }
     };
     setInterval(tick, 20 * 60 * 1000);
     setTimeout(tick, 60 * 1000); // first check one minute after boot
