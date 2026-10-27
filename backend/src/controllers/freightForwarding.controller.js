@@ -1254,6 +1254,11 @@ const getAllShipments = async (req, res) => {
       where.isArchived = isArchived === 'true';
     }
     if (status) where.currentStatus = status;
+    // Cancelled shipments live only in the Cancelled view: keep them out of every other list.
+    // Searching, the Cancelled card and the Cancelled status filter still show them.
+    if (cancelledOnly !== 'true' && status !== 'CANCELLED' && !search) {
+      where.AND = [...(where.AND || []), getNotCancelledFilter()];
+    }
     if (inProgressOnly === 'true' && !status) {
       where.currentStatus = { notIn: ['DELIVERED', 'HAND_OVER', 'INVOICE_GENERATED', 'INVOICE_SENT'] };
       where.AND = [...(where.AND || []), getNotCancelledFilter()]; // ✅ NEW — a stale enquiry belongs in Cancelled, not In Progress
@@ -1543,6 +1548,8 @@ const getShipmentStats = async (req, res) => {
     // this preserves the existing Total/Delivered/Invoiced/etc behavior
     // unchanged.
     if (scopeConditions.length > 0) where.AND = [...(where.AND || []), ...scopeConditions];
+    // A cancelled shipment is counted only in the Cancelled card, not in Total / This Month / Delivered etc.
+    if (status !== 'CANCELLED') where.AND = [...(where.AND || []), getNotCancelledFilter()];
 
     // Helper — merges the active filters above into any base where
     // clause (like a pipeline stage's own definition) without disturbing
@@ -2540,6 +2547,7 @@ function getCancelledWhere(isArchivedFlag = false) {
     isArchived: isArchivedFlag,
     OR: [
       { currentStatus: 'CANCELLED' },
+      { shipmentStage: 'Cancelled' }, // also catches older shipments whose Stage says Cancelled but whose Status was never changed
       { currentStatus: 'ENQUIRY', createdAt: { lte: getCancelledThresholdDate() }, statusHistory: { none: { status: 'REOPENED', createdAt: { gt: getCancelledThresholdDate() } } } }
     ]
   };
@@ -2553,6 +2561,7 @@ function getNotCancelledFilter() {
   return {
     AND: [
       { currentStatus: { not: 'CANCELLED' } },
+      { OR: [{ shipmentStage: null }, { shipmentStage: { not: 'Cancelled' } }] },
       { OR: [
         { currentStatus: { not: 'ENQUIRY' } },
         { createdAt: { gt: getCancelledThresholdDate() } },
