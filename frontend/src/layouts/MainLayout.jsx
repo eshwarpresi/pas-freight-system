@@ -49,11 +49,13 @@ function buildGroups(isAdmin) {
   const overview = isAdmin
     ? [
         { path: '/', icon: LayoutDashboard, label: 'All Shipments' },
+        { path: '/enquiry-cleanup', icon: ClipboardList, label: 'Enquiry Clean-up' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
       ]
     : [
         { path: '/', icon: LayoutDashboard, label: 'My Shipments' },
         { path: '/overview', icon: Layers, label: 'Overview' },
+        { path: '/enquiry-cleanup', icon: ClipboardList, label: 'Enquiry Clean-up' },
         { path: '/analytics', icon: BarChart3, label: 'Analytics' },
       ]
 
@@ -65,6 +67,7 @@ function buildGroups(isAdmin) {
         { path: '/daily-report', icon: BarChart2, label: 'Daily Report' },
         { path: '/team-performance', icon: TrendingUp, label: 'Team Performance' },
         { path: '/reminders', icon: BellRing, label: 'Reminders' },
+        ...(isAdmin ? [{ path: '/conversion-report', icon: TrendingUp, label: 'Conversion Report' }] : []),
       ],
     },
     {

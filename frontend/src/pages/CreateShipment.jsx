@@ -591,10 +591,43 @@ export default function CreateShipment() {
     return true
   }
 
+  // ─── DUPLICATE GUARD (NEW) ───
+  // Before a NEW shipment is saved, the server compares every detail typed here (customer,
+  // shipper, consignee, route, commodity, weights...) with recent open shipments. If one looks
+  // like the same job, the person sees it first and decides: open the existing one, or create anyway.
+  const [dupMatches, setDupMatches] = useState([])
+  const [dupAsk, setDupAsk] = useState(false)
+  const dupConfirmed = useRef(false)
+
+  const findDuplicates = async () => {
+    try {
+      const res = await api.post('/freight/shipments/check-duplicate', {
+        customerName: formData.customerName, shipperName: formData.shipperName, consigneeName: formData.consigneeName,
+        fromLocation: formData.fromLocation, toLocation: formData.toLocation,
+        commodityName: formData.commodityName, terms: formData.terms,
+        noOfPackages: formData.noOfPackages, grossWeight: formData.grossWeight, weight: formData.weight, cbm: formData.cbm,
+        shipmentType: isFFOnly ? 'FF Only' : isDORelease ? 'DO Release' : isTransport ? 'Transport' : (isCHA ? 'CHA Only' : (formData.mode || '')),
+        importExport: isCHAExport ? 'Export' : (isCHA ? 'Import' : (formData.importExport || ''))
+      })
+      return res.data?.data || []
+    } catch { return [] } // the check must never stop someone from saving
+  }
+
+  const createAnyway = () => {
+    dupConfirmed.current = true
+    setDupAsk(false)
+    handleSubmit({ preventDefault() {} })
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!validate()) return
     setLoading(true)
+    if (!isEditMode && !dupConfirmed.current) {
+      const found = await findDuplicates()
+      if (found.length > 0) { setDupMatches(found); setDupAsk(true); setLoading(false); return }
+    }
+    dupConfirmed.current = false
     try {
       const shipmentTypeVal = isFFOnly ? 'FF Only' : isDORelease ? 'DO Release' : isTransport ? 'Transport' : (isCHA ? 'CHA Only' : (formData.mode || ''))
       const importExportVal = isCHAExport ? 'Export' : (isCHA ? 'Import' : (formData.importExport || ''))
@@ -949,6 +982,31 @@ export default function CreateShipment() {
         <div className="mb-4 flex items-center justify-between p-3 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg text-sm">
           <span className="text-amber-700 flex items-center gap-2"><Sparkles size={14} />You have a saved draft</span>
           <button onClick={clearDraft} className="text-amber-600 hover:text-amber-800 text-xs font-medium">Clear draft</button>
+        </div>
+      )}
+
+      {dupAsk && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => setDupAsk(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="dup-title" className="bg-white border border-gray-200 shadow-2xl w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
+            <h3 id="dup-title" className="text-lg font-semibold text-gray-900 mb-1">This looks like an existing shipment</h3>
+            <p className="text-sm text-gray-600 mb-4">The details match {dupMatches.length === 1 ? 'a shipment' : `${dupMatches.length} shipments`} already in the system. Check before creating another one.</p>
+            <div className="space-y-2 mb-5">
+              {dupMatches.map((m) => (
+                <div key={m.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <Link to={`/shipment/${m.id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-gray-900 underline underline-offset-2">{m.refNo}</Link>
+                    <span className="text-xs font-semibold text-amber-800">{m.score}% match</span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-1">{(m.status || '').replace(/_/g, ' ')} · created {new Date(m.createdAt).toLocaleDateString('en-GB')}{m.createdByName ? ` by ${m.createdByName}` : ''}</p>
+                  <p className="text-xs text-gray-600 mt-1">Same: {m.matched.join(', ')}{m.differs.length ? `. Different: ${m.differs.join(', ')}` : ''}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+              <button type="button" onClick={() => setDupAsk(false)} className="px-4 min-h-[44px] rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Go back and check</button>
+              <button type="button" onClick={createAnyway} className="px-4 min-h-[44px] rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">It is different, create anyway</button>
+            </div>
+          </div>
         </div>
       )}
 
