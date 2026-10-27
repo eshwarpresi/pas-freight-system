@@ -79,6 +79,12 @@ router.post('/party-names/bulk', freightController.bulkCreatePartyNames);
 router.put('/party-names/:id', freightController.updatePartyName);
 router.delete('/party-names/:id', freightController.deletePartyName);
 
+// ─── ENQUIRY CLEAN-UP (NEW) — static paths, must stay before /:id ───
+router.get('/shipments/stale-enquiries', freightController.getStaleEnquiries); // weekly clean-up list
+router.post('/shipments/check-duplicate', freightController.checkDuplicate); // duplicate guard on Create Shipment
+router.get('/reports/lost-reasons', freightController.getLostReasons); // why enquiries were lost
+router.get('/reports/conversion', freightController.getConversionReport); // enquiries / quotations / wins per person per week
+
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);
 
@@ -109,6 +115,7 @@ router.put('/shipments/:id/schedule', freightController.updateSchedule);
 router.put('/shipments/:id/awb', freightController.updateAWB);
 router.put('/shipments/:id/stage', freightController.updateStage);
 router.put('/shipments/:id/status', freightController.updateManualStatus); // ✅ NEW — manual Status dropdown, including Cancelled
+router.put('/shipments/:id/reopen', freightController.reopenShipment); // ✅ NEW — restart the 5-day enquiry timer / undo a cancel
 router.put('/shipments/:id/remarks', freightController.updateRemarks);
 router.put('/shipments/:id/fromlocation', freightController.updateFromLocation);
 router.put('/shipments/:id/tolocation', freightController.updateToLocation);

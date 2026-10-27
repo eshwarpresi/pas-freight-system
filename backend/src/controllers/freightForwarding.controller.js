@@ -1,4 +1,5 @@
 const prisma = require('../utils/prisma');
+const cleanup = require('./enquiryCleanup.controller'); // enquiry clock, clean-up list, reopen, duplicate check, reports
 const { exportShipmentsToExcel, exportShipmentsForClient } = require('../utils/excelExport');
 const { sendStatusEmail, sendEnquiryReceivedEmail, sendFreightConfirmedEmail, sendInvoiceReadyEmail, sendMilestoneEmail } = require('../utils/emailService');
 
@@ -1264,7 +1265,7 @@ const getAllShipments = async (req, res) => {
       where.currentStatus = { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] };
     }
     // ✅ NEW — "Cancelled" card click. A shipment stuck at pure ENQUIRY
-    // for more than 4 days.
+    // for more than 7 days.
     if (cancelledOnly === 'true' && !status) {
       delete where.isArchived;
       Object.assign(where, getCancelledWhere(isArchived === 'true'));
@@ -1373,6 +1374,8 @@ const getAllShipments = async (req, res) => {
       }),
       prisma.shipment.count({ where })
     ]);
+
+    await cleanup.attachEnquiryClock(shipments); // days waiting / days left on plain enquiries
 
     // ✅ HANDLED BY — EVERYONE PER TEAM (FIXED) — one batch query for the
     // whole page, not one per row. For each shipment, groups every
@@ -2508,11 +2511,12 @@ const PIPELINE_COLUMN_LIMIT = 20;
 
 // ─── CANCELLED / STALE ENQUIRY (NEW) ───
 // A shipment that's sat at pure ENQUIRY (nothing at all filled in yet —
-// no rates, no nomination, no anything) for more than 4 days is treated
-// as effectively cancelled/abandoned. Threshold is deliberately "more
-// than 4 days", not "3 days" and not "on day 4" — a shipment created
-// today is day 0; it only qualifies once a full 4 days have elapsed.
-const CANCELLED_THRESHOLD_DAYS = 4;
+// no rates, no nomination, no anything) for 5 full days is treated as
+// effectively cancelled/abandoned (reminder on day 2, warning on day 3).
+// A shipment created today is day 0. "Reopen" restarts the clock: it adds a
+// REOPENED row to the shipment history, and a reopen newer than the
+// threshold keeps the enquiry out of Cancelled.
+const CANCELLED_THRESHOLD_DAYS = 5;
 
 function getCancelledThresholdDate() {
   return new Date(Date.now() - CANCELLED_THRESHOLD_DAYS * 24 * 60 * 60 * 1000);
@@ -2522,7 +2526,7 @@ function getCancelledThresholdDate() {
 // ✅ UPDATED — now also recognizes an EXPLICIT manual cancellation
 // (currentStatus === 'CANCELLED', set by an employee picking "Cancelled"
 // from the Status or Stage dropdown), in addition to the existing
-// automatic "stuck at Enquiry for 4+ days" detection. Either path lands
+// automatic "stuck at Enquiry for 7+ days" detection. Either path lands
 // a shipment here.
 // ✅ FIXED — now takes the actual tab you're viewing (isArchivedFlag)
 // instead of always hardcoding "active only" regardless of which tab is
@@ -2536,7 +2540,7 @@ function getCancelledWhere(isArchivedFlag = false) {
     isArchived: isArchivedFlag,
     OR: [
       { currentStatus: 'CANCELLED' },
-      { currentStatus: 'ENQUIRY', createdAt: { lte: getCancelledThresholdDate() } }
+      { currentStatus: 'ENQUIRY', createdAt: { lte: getCancelledThresholdDate() }, statusHistory: { none: { status: 'REOPENED', createdAt: { gt: getCancelledThresholdDate() } } } }
     ]
   };
 }
@@ -2551,7 +2555,8 @@ function getNotCancelledFilter() {
       { currentStatus: { not: 'CANCELLED' } },
       { OR: [
         { currentStatus: { not: 'ENQUIRY' } },
-        { createdAt: { gt: getCancelledThresholdDate() } }
+        { createdAt: { gt: getCancelledThresholdDate() } },
+        { statusHistory: { some: { status: 'REOPENED', createdAt: { gt: getCancelledThresholdDate() } } } }
       ] }
     ]
   };
@@ -2900,6 +2905,7 @@ const getShipmentById = async (req, res) => {
       teamContributorsFinal.FREIGHT.unshift(s.createdByName);
     }
 
+    await cleanup.attachEnquiryClock([s]);
     res.json({ status: 'success', data: { ...s, contributors, teamContributors: teamContributorsFinal } });
   } catch (error) { console.error('Error:', error); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
@@ -3216,6 +3222,11 @@ const updateAWB = async (req, res) => {
 };
 
 module.exports = { 
+  getStaleEnquiries: cleanup.getStaleEnquiries, // ✅ NEW — weekly clean-up list
+  reopenShipment: cleanup.reopenShipment, // ✅ NEW — Reopen a cancelled / timed-out enquiry
+  checkDuplicate: cleanup.checkDuplicate, // ✅ NEW — duplicate guard on Create Shipment
+  getLostReasons: cleanup.getLostReasons, // ✅ NEW — why enquiries were lost
+  getConversionReport: cleanup.getConversionReport, // ✅ NEW — enquiries/quotes/wins per person per week
   getShipmentBreakdown, // ✅ NEW — full Total Shipments reconciliation
   recomputeCurrentStatus, // ✅ NEW — shared by cha.controller.js and accounts.controller.js
   updateManualStatus, // ✅ NEW — manual Status dropdown, including Cancelled
