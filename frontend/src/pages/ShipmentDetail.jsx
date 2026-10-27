@@ -18,7 +18,7 @@ const STATUS_DROPDOWN_OPTIONS = [
   'CHECKLIST_APPROVED', 'BOE_FILED', 'SB_FILED', 'DO_COLLECTED', 'OOC_DONE', 'LEO_DONE', 'GATE_PASS',
   'HAND_OVER', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT', 'CANCELLED'
 ]
-const CANCEL_REASONS = ['Price too high', 'Lost to competitor', 'Customer postponed', 'No cargo / customer dropped', 'Agent rate not workable', 'Duplicate enquiry', 'Other']
+const CANCEL_REASONS = ['Price too high', 'No response from customer', 'Went to a competitor', 'Cargo not ready', 'Customer postponed', 'Agent rate not workable', 'Duplicate enquiry', 'Other']
 // what to do for each step (used by the "Next step" guide button): which tab, and what to fill
 const NEXT_STEP_HELP = {
   RATES_REQUESTED: { tab: null, text: 'Send the rate request' },
@@ -513,6 +513,7 @@ export default function ShipmentDetail() {
   const [cancelReason, setCancelReason] = useState('')
   const [cancelNote, setCancelNote] = useState('')
   const [reactivating, setReactivating] = useState(false)
+  const [reopening, setReopening] = useState(false)
   useEffect(() => { try { new Image().src = `${MAILER_URL}/api/rate/ping?t=${Date.now()}` } catch {} }, [])
   const [liveEditBy, setLiveEditBy] = useState(null)
 
@@ -690,6 +691,21 @@ export default function ShipmentDetail() {
     } catch (e) { addToast(e.response?.data?.message || 'Could not reactivate', 'error') }
     finally { setReactivating(false) }
   }
+
+  // Restart the 5-day enquiry timer (an enquiry that timed out, or one that is about to)
+  const handleReopen = async () => {
+    setReopening(true)
+    try {
+      await api.put(`/freight/shipments/${id}/reopen`)
+      addToast('Enquiry reopened. The 5-day timer has started again', 'success')
+      queryClient.invalidateQueries({ queryKey: ['shipment', id] }); queryClient.invalidateQueries({ queryKey: ['shipments'] }); queryClient.invalidateQueries({ queryKey: ['shipments-full-stats'] })
+    } catch (e) { addToast(e.response?.data?.message || 'Could not reopen', 'error') }
+    finally { setReopening(false) }
+  }
+  const askCancelEnquiry = () => { setCancelReason(''); setCancelNote(''); setCancelAsk({ section: 'status', data: { status: 'CANCELLED' } }) }
+  // why it was cancelled, taken from the history entry written when it was cancelled
+  const cancelledEntry = (shipment?.statusHistory || []).find(h => h.status === 'CANCELLED')
+  const cancelledWhy = (/Reason:\s*(.*)$/i.exec(cancelledEntry?.remarks || '') || [])[1] || ''
 
   const handleSendTestEmail = async () => {
     const ff = shipment?.freightForwarding || {}
@@ -1017,12 +1033,45 @@ export default function ShipmentDetail() {
         </div>
       )}
 
+      {/* Enquiry timer: a plain enquiry with no progress moves to Cancelled after 5 days */}
+      {shipment.currentStatus === 'ENQUIRY' && shipment.enquiryStale && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-[var(--border-color)] border-l-4 border-l-red-500 bg-[var(--bg-primary)] p-4">
+          <div className="flex items-start gap-3 flex-1">
+            <AlertCircle size={22} className="text-red-500 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">Cancelled: no progress for 5 days</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">Nothing was filled in for 5 days, so this enquiry moved to Cancelled. Reopen it if the customer is still interested.</p>
+            </div>
+          </div>
+          <button onClick={handleReopen} disabled={reopening} className="btn btn-primary min-h-[44px]">
+            {reopening ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />} Reopen
+          </button>
+        </div>
+      )}
+      {shipment.currentStatus === 'ENQUIRY' && !shipment.enquiryStale && shipment.enquiryAgeDays >= 2 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-[var(--border-color)] border-l-4 border-l-[var(--route)] bg-[var(--bg-primary)] p-4">
+          <div className="flex items-start gap-3 flex-1">
+            <Clock size={22} className="text-[var(--text-primary)] shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{shipment.enquiryDaysLeft} day{shipment.enquiryDaysLeft === 1 ? '' : 's'} left before this enquiry is cancelled</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">It has been at Enquiry for {shipment.enquiryAgeDays} days with no rates. Ask for rates, or cancel it with a reason.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {!isTransport && !isDORelease && !isCHAOnly && (
+              <button onClick={openRateRequest} disabled={rateBusy} className="btn btn-accent min-h-[44px]"><Send size={16} /> Rate request</button>
+            )}
+            <button onClick={askCancelEnquiry} className="btn btn-secondary min-h-[44px]">Cancel enquiry</button>
+          </div>
+        </div>
+      )}
+
       {shipment.currentStatus === 'CANCELLED' && (
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-[var(--border-color)] border-l-4 border-l-[var(--route)] bg-[var(--bg-primary)] p-4">
           <div className="flex items-start gap-3 flex-1">
             <AlertCircle size={22} className="text-[var(--text-primary)] shrink-0" />
             <div>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">This shipment has been cancelled</p>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">This shipment has been cancelled{cancelledWhy ? `: ${cancelledWhy}` : ''}</p>
               <p className="text-xs text-[var(--text-secondary)] mt-0.5">Click Reactivate, or change the Status above, to bring it back. Progress already made is kept.</p>
             </div>
           </div>

@@ -625,7 +625,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setSelected([])
   }
 
-  // ─── CANCELLED CARD (NEW) ─── Stuck at pure Enquiry for 4+ days
+  // ─── CANCELLED CARD (NEW) ─── Manually cancelled, or stuck at pure Enquiry for 5 days
   const showCancelled = () => {
     setCancelledOnly(true)
     setPendingCustomsOnly(false)
@@ -675,6 +675,19 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   }
 
   // ─── QUERY FOR SHIPMENTS ───
+  // Enquiries 3+ days old that are heading for automatic cancellation (shown as a banner)
+  const { data: staleData } = useQuery({
+    queryKey: ['stale-enquiries', mineOnly ? 'mine' : 'all'],
+    queryFn: async () => {
+      const res = await api.get('/freight/shipments/stale-enquiries', { params: mineOnly ? { mine: 'true' } : {} })
+      return res.data?.data || []
+    },
+    enabled: !targetUserId && !referenceGroup,
+    staleTime: 120000, refetchOnWindowFocus: false
+  })
+  const dueSoon = (staleData || []).filter(r => !r.enquiryStale)
+  const cancelsTomorrow = dueSoon.filter(r => r.enquiryDaysLeft <= 1).length
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['shipments', debouncedSearch, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, todayInvoicedOnly, pendingCustomsOnly, pendingInvoiceOnly, simpleTypesOnly, cancelledOnly, createdFrom, createdTo, employeeId, page, perPage, scopeKey],
     queryFn: async () => {
@@ -1011,7 +1024,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       { label: 'Pending Customs', value: analytics.pipelineCustoms, icon: FileCheck, gradient: 'from-emerald-500 to-teal-600', desc: 'Freight done, waiting on Customs', onClick: showPendingCustoms, active: pendingCustomsOnly },
       { label: 'Pending Invoice', value: analytics.pipelineInvoice, icon: Banknote, gradient: 'from-amber-500 to-orange-600', desc: 'Customs done, waiting on Invoice', onClick: showPendingInvoice, active: pendingInvoiceOnly },
       { label: 'FF Only / Transport / DO', value: analytics.pipelineSimple, icon: Box, gradient: 'from-violet-500 to-purple-600', desc: 'In progress, not yet invoiced', onClick: showSimpleTypesInProgress, active: simpleTypesOnly },
-      { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Manually cancelled, or stuck at Enquiry 4+ days', onClick: showCancelled, active: cancelledOnly },
+      { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Cancelled, or no progress for 5 days', onClick: showCancelled, active: cancelledOnly },
     ] : []),
     { label: "Today's Shipments", value: todayCount || 0, icon: Calendar, gradient: 'from-rose-500 to-pink-600', desc: 'Created today', onClick: showTodayShipments, active: todayOnly },
     { label: 'This Month Shipments', value: analytics.monthlyShipments, icon: TrendingUp, gradient: 'from-cyan-500 to-sky-600', desc: 'Created this calendar month', onClick: showThisMonthShipments, active: thisMonthOnly },
@@ -1058,6 +1071,19 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
             <span>{liveNotification.message}</span>
             <button onClick={() => setLiveNotification(null)} className="ml-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"><X size={14} /></button>
           </div>
+        </div>
+      )}
+
+      {dueSoon.length > 0 && !showBin && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-[var(--border-color)] border-l-4 border-l-red-500 bg-[var(--bg-primary)] px-4 py-3">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <AlertCircle size={20} className="text-red-500 shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{dueSoon.length} enquir{dueSoon.length === 1 ? 'y has' : 'ies have'} had no progress for 3+ days</p>
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">{cancelsTomorrow > 0 ? `${cancelsTomorrow} will be cancelled automatically within a day. ` : ''}Enquiries with no progress for 5 days move to Cancelled. Quote them, follow up, or cancel with a reason.</p>
+            </div>
+          </div>
+          <Link to="/enquiry-cleanup" className="btn btn-primary min-h-[40px] shrink-0">Review enquiries</Link>
         </div>
       )}
 
@@ -1421,7 +1447,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                           <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{s.freightForwarding?.eta ? fmtDDMMYYYY(s.freightForwarding.eta) : <span className="text-[var(--text-muted)]">—</span>}</td>
                         </>
                       )}
-                      <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.currentStatus)}`}>{s.currentStatus.replace(/_/g,' ')}</span></td>
+                      <td className="px-2.5 py-2.5 whitespace-nowrap"><span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ${getStatusBadge(s.enquiryStale ? 'CANCELLED' : s.currentStatus)}`}>{(s.enquiryStale ? 'CANCELLED' : s.currentStatus).replace(/_/g,' ')}</span>{s.currentStatus === 'ENQUIRY' && !s.enquiryStale && s.enquiryAgeDays >= 2 && (<span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300">{s.enquiryDaysLeft}d left</span>)}{s.enquiryStale && (<span className="ml-1.5 text-[10px] text-[var(--text-muted)]">no progress 5 days</span>)}</td>
                       <td className="px-2.5 py-2.5 whitespace-nowrap">{s.shipmentStage ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${getStageBadge(s.shipmentStage)}`}>{s.shipmentStage}</span> : <span className="text-[var(--text-muted)]">—</span>}</td>
                       <td className="px-2.5 py-2.5 text-sm text-[var(--text-secondary)] whitespace-nowrap">{fmtDDMMYYYY(s.createdAt)}</td>
                       {showBin && (
