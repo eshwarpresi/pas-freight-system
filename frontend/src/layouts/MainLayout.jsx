@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard, Menu, X, LogOut, ChevronDown, ChevronLeft, ChevronRight, Moon, Sun, Bell, CheckCheck,
   Ship, FileCheck, Truck, ClipboardList, FileText, BarChart3, FileUp, Receipt, Hash, Mail,
   FileSpreadsheet, ExternalLink, Layers, Users, Shield, BarChart2, TrendingUp, BellRing, Plus,
-  RefreshCw, WifiOff, CheckCircle2, Upload, Banknote
+  RefreshCw, WifiOff, CheckCircle2, Upload, Banknote, Search, Star, CornerDownLeft
 } from 'lucide-react'
 import AdminWelcomeBanner from '../components/AdminWelcomeBanner'
 import api, { onNetworkStatusChange } from '../lib/api'
@@ -14,7 +15,19 @@ import { useToast } from '../components/Toast'
 const GROUPS_KEY = 'pas_nav_groups'
 const COLLAPSED_KEY = 'pas_sidebar_collapsed'
 const DARK_KEY = 'pas_dark_mode'
-const DEFAULT_GROUPS = { overview: true, team: true, modules: true, actions: true, refs: false, insights: false, tools: false }
+const PINS_KEY = 'pas_nav_pins'
+const DEFAULT_PINS = ['/', '/enquiry-cleanup']
+const DEFAULT_GROUPS = { overview: true, team: true, modules: true, refs: true, more: false, tools: true }
+
+// Icon tile colours for the module and reference-group links (dark sidebar).
+const TINTS = {
+  violet: 'bg-violet-500/20 text-violet-300',
+  indigo: 'bg-indigo-500/25 text-indigo-200',
+  emerald: 'bg-emerald-500/20 text-emerald-300',
+  sky: 'bg-sky-500/20 text-sky-300',
+  teal: 'bg-teal-500/20 text-teal-300',
+}
+const DOTS = { amber: 'bg-amber-400', teal: 'bg-teal-400', indigo: 'bg-indigo-400', rose: 'bg-rose-400' }
 
 const TOOL_LINKS = [
   { url: 'https://pasfreight-mailer.onrender.com', icon: Mail, label: 'Bulk Emailing' },
@@ -33,6 +46,21 @@ function readStored(key, fallback) {
 
 function writeStored(key, value) {
   try { localStorage.setItem(key, value) } catch { /* private mode or full storage: the setting just won't persist */ }
+}
+
+function readPins() {
+  try {
+    const parsed = JSON.parse(readStored(PINS_KEY, 'null'))
+    return Array.isArray(parsed) ? parsed : DEFAULT_PINS
+  } catch {
+    return DEFAULT_PINS
+  }
+}
+
+// 1432 -> "1.4k", so a big number still fits in a small badge.
+function shortCount(n) {
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
+  return String(n)
 }
 
 function readGroups() {
@@ -72,29 +100,25 @@ function buildGroups(isAdmin) {
     },
     {
       id: 'modules', label: 'Modules', items: [
-        { path: '/ff-only', icon: FileText, label: 'FF Only' },
-        { path: '/freight', icon: Ship, label: 'Freight' },
-        { path: '/cha', icon: FileCheck, label: 'CHA' },
-        { path: '/transport', icon: Truck, label: 'Transport' },
-        { path: '/do-release', icon: ClipboardList, label: 'DO Release' },
+        { path: '/ff-only', icon: FileText, label: 'FF Only', tint: 'violet' },
+        { path: '/freight', icon: Ship, label: 'Freight', tint: 'indigo' },
+        { path: '/cha', icon: FileCheck, label: 'CHA', tint: 'emerald' },
+        { path: '/transport', icon: Truck, label: 'Transport', tint: 'sky' },
+        { path: '/do-release', icon: ClipboardList, label: 'DO Release', tint: 'teal' },
       ],
     },
     {
       id: 'refs', label: 'Reference Groups', items: [
-        { path: '/rl', icon: Hash, code: 'RL', label: 'RL (RLI / RLE)' },
-        { path: '/pp', icon: Hash, code: 'PP', label: 'PP (PPI / PPE)' },
-        { path: '/sp', icon: Hash, code: 'SP', label: 'SP (SPI / SPE)' },
-        { path: '/jd', icon: Hash, code: 'JD', label: 'JD (JDI / JDE)' },
+        { path: '/rl', icon: Hash, code: 'RL', sub: 'RLI / RLE', dot: 'amber', label: 'RL (RLI / RLE)' },
+        { path: '/pp', icon: Hash, code: 'PP', sub: 'PPI / PPE', dot: 'teal', label: 'PP (PPI / PPE)' },
+        { path: '/sp', icon: Hash, code: 'SP', sub: 'SPI / SPE', dot: 'indigo', label: 'SP (SPI / SPE)' },
+        { path: '/jd', icon: Hash, code: 'JD', sub: 'JDI / JDE', dot: 'rose', label: 'JD (JDI / JDE)' },
       ],
     },
     {
-      id: 'insights', label: 'Insights', items: [
+      id: 'more', label: 'Insights & Actions', items: [
         { path: '/reference-codes', icon: Hash, label: 'Reference Codes' },
         { path: '/employee-stats', icon: Users, label: 'Employee Stats' },
-      ],
-    },
-    {
-      id: 'actions', label: 'Actions', items: [
         { path: '/checklist-scanner', icon: FileUp, label: 'Checklist Scanner' },
         { path: '/delivery-challan', icon: Receipt, label: 'Delivery Challan' },
       ],
@@ -127,6 +151,19 @@ function timeAgo(date) {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+// Wraps the part of a label that matches what was typed in the search palette.
+function Hl({ text, q }) {
+  const at = q ? String(text).toLowerCase().indexOf(q.toLowerCase()) : -1
+  if (at < 0) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, at)}
+      <mark className="bg-yellow-200 text-inherit rounded px-0.5 dark:bg-yellow-400/30">{text.slice(at, at + q.length)}</mark>
+      {text.slice(at + q.length)}
+    </>
+  )
+}
+
 // The logo image, with a plain text fallback so the menu never shows a broken picture.
 function Logo({ alt = '', className = '', textClass = '' }) {
   const [failed, setFailed] = useState(false)
@@ -155,6 +192,12 @@ export default function MainLayout({ user }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStored(COLLAPSED_KEY, 'false') === 'true')
   const [openGroups, setOpenGroups] = useState(readGroups)
   const [keyboardUp, setKeyboardUp] = useState(false)
+  const [pins, setPins] = useState(readPins)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteQuery, setPaletteQuery] = useState('')
+  const [paletteIndex, setPaletteIndex] = useState(0)
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const paletteInputRef = useRef(null)
   const notifRef = useRef(null)
   const userRef = useRef(null)
 
@@ -166,6 +209,33 @@ export default function MainLayout({ user }) {
 
   useEffect(() => { writeStored(COLLAPSED_KEY, sidebarCollapsed) }, [sidebarCollapsed])
   useEffect(() => { writeStored(GROUPS_KEY, JSON.stringify(openGroups)) }, [openGroups])
+  useEffect(() => { writeStored(PINS_KEY, JSON.stringify(pins)) }, [pins])
+
+  // Counts shown on the menu. Both are cheap calls the dashboard already makes,
+  // and the stale-enquiries one shares its cache with the dashboard's banner.
+  const scope = isAdmin ? 'all' : 'mine'
+  const { data: shipmentTotal } = useQuery({
+    queryKey: ['nav-shipment-total', scope],
+    queryFn: async () => {
+      const params = { isArchived: 'false', ...(isAdmin ? {} : { mine: 'true' }) }
+      const res = await api.get('/freight/shipments/stats', { params })
+      return res.data?.data?.total ?? null
+    },
+    staleTime: 120000, refetchInterval: 300000, refetchOnWindowFocus: false, retry: false,
+  })
+  const { data: staleList } = useQuery({
+    queryKey: ['stale-enquiries', scope],
+    queryFn: async () => {
+      const res = await api.get('/freight/shipments/stale-enquiries', { params: isAdmin ? {} : { mine: 'true' } })
+      return res.data?.data || []
+    },
+    staleTime: 120000, refetchOnWindowFocus: false, retry: false,
+  })
+  const badgeFor = (path) => {
+    if (path === '/' && shipmentTotal > 0) return { n: shipmentTotal, tone: 'bg-orange-500 text-white' }
+    if (path === '/enquiry-cleanup' && staleList?.length > 0) return { n: staleList.length, tone: 'bg-rose-500 text-white' }
+    return null
+  }
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode)
@@ -314,6 +384,7 @@ export default function MainLayout({ user }) {
       setNotifOpen(false)
       setUserMenuOpen(false)
       setSidebarOpen(false)
+      setPaletteOpen(false)
     }
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
@@ -322,6 +393,45 @@ export default function MainLayout({ user }) {
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [])
+
+  // Ctrl+K / Cmd+K opens the search palette. It runs first (capture phase) so it
+  // takes over from the dashboard's own Ctrl+K, which the palette now covers.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === 'k') {
+        e.preventDefault()
+        e.stopPropagation()
+        setPaletteOpen(v => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  useEffect(() => {
+    if (!paletteOpen) return
+    setPaletteQuery('')
+    setPaletteIndex(0)
+    const t = setTimeout(() => paletteInputRef.current && paletteInputRef.current.focus(), 30)
+    return () => clearTimeout(t)
+  }, [paletteOpen])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(paletteQuery.trim()), 250)
+    return () => clearTimeout(t)
+  }, [paletteQuery])
+
+  const { data: shipmentHits } = useQuery({
+    queryKey: ['nav-palette-shipments', scope, debouncedQuery],
+    queryFn: async () => {
+      const params = { search: debouncedQuery, limit: 5, page: 1, isArchived: 'false', ...(isAdmin ? {} : { mine: 'true' }) }
+      const res = await api.get('/freight/shipments', { params })
+      return res.data?.data || []
+    },
+    enabled: paletteOpen && debouncedQuery.length >= 2,
+    staleTime: 30000, retry: false, refetchOnWindowFocus: false,
+    placeholderData: (previous) => previous,
+  })
 
   const markAllRead = () => setNotifications(prev => prev.map(n => ({ ...n, isRead: true })))
   const markAsRead = (notifId, shipmentId) => {
@@ -343,6 +453,73 @@ export default function MainLayout({ user }) {
   const toggleGroup = (id) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }))
   const closeSidebar = () => setSidebarOpen(false)
 
+  const toggleGroupPin = (path) => setPins(prev => prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path])
+
+  const allPages = useMemo(
+    () => groups.filter(g => !g.external).flatMap(g => g.items.map(it => ({ ...it, groupLabel: g.label }))),
+    [groups]
+  )
+  const pinnedItems = pins.map(p => allPages.find(it => it.path === p)).filter(Boolean)
+
+  // What the palette shows: pages, shipments and a few actions, in that order.
+  const paletteSections = useMemo(() => {
+    const q = paletteQuery.trim().toLowerCase()
+    const matches = (text) => !q || text.toLowerCase().includes(q)
+    const rank = (a, b) => a.label.toLowerCase().indexOf(q) - b.label.toLowerCase().indexOf(q)
+
+    let pages = allPages
+      .filter(it => matches(`${it.label} ${it.groupLabel}`))
+      .map(it => ({ key: `page-${it.path}`, kind: 'page', label: it.label, sub: it.groupLabel, icon: it.icon, tint: it.tint, run: () => navigate(it.path) }))
+    let tools = TOOL_LINKS
+      .filter(it => matches(it.label))
+      .map(it => ({ key: `tool-${it.url}`, kind: 'tool', label: it.label, sub: 'Opens in a new tab', icon: it.icon, run: () => window.open(it.url, '_blank', 'noopener,noreferrer') }))
+    if (q) pages = [...pages].sort(rank)
+
+    const ships = (debouncedQuery.length >= 2 && q.length >= 2 ? shipmentHits || [] : []).map(s => {
+      const ff = s.freightForwarding || {}
+      const who = ff.consigneeName || ff.customerName || ff.shipperName || ''
+      return {
+        key: `ship-${s.id}`, kind: 'ship', label: s.refNo, sub: [who, String(s.currentStatus || s.status || '').replace(/_/g, ' ').toLowerCase()].filter(Boolean).join(' · '),
+        right: [s.shipmentType, s.importExport].filter(Boolean).join(' · '), icon: Ship, run: () => navigate(`/shipment/${s.id}`),
+      }
+    })
+
+    const actions = [
+      { key: 'act-new', kind: 'action', label: 'New shipment', sub: 'Start a new enquiry', icon: Plus, run: () => navigate('/create') },
+      { key: 'act-dark', kind: 'action', label: darkMode ? 'Switch to light mode' : 'Switch to dark mode', sub: 'Appearance', icon: darkMode ? Sun : Moon, run: () => setDarkMode(v => !v) },
+    ].filter(a => matches(`${a.label} ${a.sub}`))
+
+    return [
+      { title: 'Pages', items: [...pages, ...tools] },
+      { title: 'Shipments', items: ships },
+      { title: 'Actions', items: actions },
+    ].filter(s => s.items.length > 0)
+  }, [paletteQuery, debouncedQuery, allPages, shipmentHits, darkMode, navigate])
+
+  const paletteFlat = useMemo(() => paletteSections.flatMap(s => s.items), [paletteSections])
+  const activeEntry = paletteFlat[Math.min(paletteIndex, Math.max(paletteFlat.length - 1, 0))]
+
+  const runEntry = (entry) => {
+    if (!entry) return
+    setPaletteOpen(false)
+    closeSidebar()
+    entry.run()
+  }
+
+  const onPaletteKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setPaletteIndex(i => Math.min(i + 1, paletteFlat.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setPaletteIndex(i => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); runEntry(activeEntry) }
+    else if (e.key === 'Escape') { e.preventDefault(); setPaletteOpen(false) }
+  }
+
+  // Keep the highlighted row in view while arrowing through a long list.
+  useEffect(() => {
+    if (!paletteOpen) return
+    const el = document.querySelector('[data-palette-active="true"]')
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' })
+  }, [paletteIndex, paletteOpen, paletteFlat.length])
+
   // Breadcrumb for the top bar: where the person is, in two steps.
   const crumbs = useMemo(() => {
     if (pathname.startsWith('/shipment/')) {
@@ -361,37 +538,73 @@ export default function MainLayout({ user }) {
   const rail = sidebarCollapsed
   const hideInRail = rail ? 'lg:hidden' : ''
 
-  const renderItem = (item, external) => {
+  const renderItem = (item, keyPrefix = '') => {
     const Icon = item.icon
-    const active = !external && pathMatches(pathname, item.path)
-    const base = `relative flex items-center gap-3 min-h-[44px] lg:min-h-[38px] px-3 rounded-lg text-[15px] lg:text-sm ${rail ? 'lg:justify-center lg:px-0' : ''}`
-    const tone = active
-      ? 'bg-[var(--nav-active-bg)] text-[var(--brand-indigo)] font-semibold'
-      : 'text-[var(--text-secondary)] hover:bg-[var(--hover-bg)] hover:text-[var(--text-primary)] font-medium'
-    const inner = (
-      <>
-        {active && <span className="absolute left-0 inset-y-2 w-[3px] rounded-r bg-[var(--accent)]" />}
-        {item.code
-          ? <span className="w-[22px] h-[18px] flex-shrink-0 rounded text-[10px] font-bold flex items-center justify-center bg-[var(--bg-tertiary)] border border-[var(--border-color)]">{item.code}</span>
-          : <Icon size={18} className="flex-shrink-0" strokeWidth={active ? 2.25 : 2} />}
-        <span className={`flex-1 truncate ${hideInRail}`}>{item.label}</span>
-        {external && <ExternalLink size={13} className={`text-[var(--text-muted)] ${hideInRail}`} />}
-      </>
+    const active = pathMatches(pathname, item.path)
+    const badge = badgeFor(item.path)
+    const pinned = pins.includes(item.path)
+    const tile = active
+      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50'
+      : (TINTS[item.tint] || 'bg-white/10 text-indigo-200')
+    return (
+      <div key={`${keyPrefix}${item.path}`} className="group relative">
+        <Link to={item.path} onClick={closeSidebar} title={rail ? item.label : undefined}
+          aria-current={active ? 'page' : undefined}
+          className={`relative flex items-center gap-3 min-h-[46px] lg:min-h-[42px] px-2 rounded-xl text-[15px] lg:text-sm transition-colors ${rail ? 'lg:justify-center lg:px-0' : ''} ${active
+            ? 'bg-gradient-to-r from-indigo-500/40 to-indigo-500/10 text-white font-semibold ring-1 ring-inset ring-indigo-400/30'
+            : 'text-indigo-100/80 hover:bg-white/[0.07] hover:text-white font-medium'}`}>
+          {active && <span className={`absolute -left-3 ${rail ? 'lg:-left-2' : ''} inset-y-2.5 w-1 rounded-r bg-orange-500`} />}
+          <span className={`w-8 h-8 lg:w-7 lg:h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${tile}`}>
+            <Icon size={16} strokeWidth={active ? 2.4 : 2} />
+          </span>
+          <span className={`flex-1 truncate ${hideInRail}`}>{item.label}</span>
+          {badge && (
+            <>
+              <span className={`${hideInRail} min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center lg:group-hover:opacity-0 ${badge.tone}`}>{shortCount(badge.n)}</span>
+              {rail && <span className={`hidden lg:flex absolute top-0 right-1 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold items-center justify-center ring-2 ring-[#141A4A] ${badge.tone}`}>{shortCount(badge.n)}</span>}
+            </>
+          )}
+        </Link>
+        {!rail && (
+          <button type="button" onClick={() => toggleGroupPin(item.path)}
+            aria-label={pinned ? `Unpin ${item.label}` : `Pin ${item.label}`} aria-pressed={pinned}
+            title={pinned ? 'Unpin' : 'Pin to top'}
+            className={`hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 items-center justify-center rounded-lg hover:bg-white/10 focus:opacity-100 ${pinned ? 'text-amber-400 opacity-0 group-hover:opacity-100' : 'text-indigo-200/70 opacity-0 group-hover:opacity-100'}`}>
+            <Star size={14} fill={pinned ? 'currentColor' : 'none'} />
+          </button>
+        )}
+      </div>
     )
-    if (external) {
-      return (
-        <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer" title={rail ? item.label : undefined} className={`${base} ${tone}`}>
-          {inner}
-        </a>
-      )
-    }
+  }
+
+  const renderRefTile = (item) => {
+    const active = pathMatches(pathname, item.path)
     return (
       <Link key={item.path} to={item.path} onClick={closeSidebar} title={rail ? item.label : undefined}
-        aria-current={active ? 'page' : undefined} className={`${base} ${tone}`}>
-        {inner}
+        aria-current={active ? 'page' : undefined}
+        className={`rounded-xl px-3 py-2.5 flex flex-col gap-0.5 transition-colors ${rail ? 'lg:items-center lg:px-0 lg:py-2' : ''} ${active ? 'bg-indigo-500/30 ring-1 ring-inset ring-indigo-400/40' : 'bg-white/[0.06] hover:bg-white/10'}`}>
+        <span className="flex items-center gap-2 text-[15px] font-bold text-white">
+          <span className={`w-2 h-2 rounded-full ${DOTS[item.dot]}`} />{item.code}
+        </span>
+        <span className={`text-[10.5px] text-indigo-200/60 ${hideInRail}`}>{item.sub}</span>
       </Link>
     )
   }
+
+  const renderTools = (items) => (
+    <div className={`grid grid-cols-3 gap-2 px-1 ${rail ? 'lg:grid-cols-1 lg:px-0' : ''}`}>
+      {items.map((item) => {
+        const Icon = item.icon
+        return (
+          <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer" title={item.label} aria-label={`${item.label} (opens in a new tab)`}
+            className="relative flex items-center justify-center h-11 rounded-xl bg-white/[0.06] hover:bg-white/10 text-indigo-100">
+            <Icon size={18} />
+            <ExternalLink size={9} className="absolute top-1.5 right-1.5 text-indigo-200/50" />
+          </a>
+        )
+      })}
+    </div>
+  )
 
   const bottomTabs = [
     { path: '/', icon: LayoutDashboard, label: 'Home' },
@@ -470,13 +683,13 @@ export default function MainLayout({ user }) {
 
       <aside
         aria-label="Main menu"
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-[290px] max-w-[86vw] ${rail ? 'lg:w-[76px]' : 'lg:w-[260px]'} bg-[var(--bg-primary)] border-r border-[var(--border-color)] transition-transform duration-200 lg:transition-none lg:translate-x-0 ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-[290px] max-w-[86vw] ${rail ? 'lg:w-[80px]' : 'lg:w-[280px]'} bg-gradient-to-b from-[#0E1236] to-[#141A4A] text-indigo-100 border-r border-white/5 transition-transform duration-200 lg:transition-none lg:translate-x-0 ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
       >
-        <div className={`flex-shrink-0 h-16 flex items-center justify-between px-4 border-b border-[var(--border-color)] ${rail ? 'lg:justify-center lg:px-2' : ''}`}>
-          <Link to="/" onClick={closeSidebar} aria-label="PAS Freight Services, home" className="flex items-center rounded-md dark:bg-white dark:px-1.5 dark:py-0.5">
-            <Logo alt="PAS Freight Services" className={`h-11 w-auto ${rail ? 'lg:h-9' : ''}`} textClass={hideInRail} />
+        <div className={`flex-shrink-0 h-16 flex items-center justify-between px-4 ${rail ? 'lg:justify-center lg:px-2' : ''}`}>
+          <Link to="/" onClick={closeSidebar} aria-label="PAS Freight Services, home" className="flex items-center rounded-xl bg-white px-2 py-1 shadow-lg shadow-black/20">
+            <Logo alt="PAS Freight Services" className={`h-9 w-auto ${rail ? 'lg:h-7' : ''}`} textClass={hideInRail} />
           </Link>
-          <button onClick={closeSidebar} aria-label="Close menu" className="lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]">
+          <button onClick={closeSidebar} aria-label="Close menu" className="lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-indigo-200 hover:bg-white/10">
             <X size={20} />
           </button>
         </div>
@@ -485,63 +698,89 @@ export default function MainLayout({ user }) {
           onClick={() => setSidebarCollapsed(v => !v)}
           aria-label={rail ? 'Expand menu' : 'Collapse menu'}
           title={rail ? 'Expand menu' : 'Collapse menu'}
-          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-sm items-center justify-center text-[var(--text-secondary)] hover:text-[var(--brand-indigo)] z-10"
+          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-[#141A4A] border border-white/15 shadow-sm items-center justify-center text-indigo-200 hover:text-white z-10"
         >
           {rail ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
 
-        <div className={`flex-shrink-0 p-3 ${rail ? 'lg:px-2' : ''}`}>
-          <Link to="/create" onClick={closeSidebar} title={rail ? 'New Shipment' : undefined}
-            className={`flex items-center justify-center gap-2 h-11 lg:h-10 rounded-lg bg-[var(--accent)] text-[var(--on-accent)] text-sm font-semibold hover:bg-[var(--accent-hover)] shadow-sm ${rail ? 'lg:px-0' : ''}`}>
-            <Plus size={18} strokeWidth={2.5} />
-            <span className={hideInRail}>New Shipment</span>
+        <div className={`flex-shrink-0 px-3 pb-2 ${rail ? 'lg:px-2' : ''}`}>
+          <button onClick={() => setPaletteOpen(true)} title={rail ? 'Search (Ctrl K)' : undefined} aria-label="Search pages and shipments"
+            className={`w-full flex items-center gap-2.5 h-11 px-3.5 rounded-xl bg-white/[0.07] border border-white/10 text-indigo-200/70 text-sm hover:bg-white/10 ${rail ? 'lg:justify-center lg:px-0' : ''}`}>
+            <Search size={16} className="flex-shrink-0" />
+            <span className={`flex-1 text-left truncate ${hideInRail}`}>Jump to a page or shipment</span>
+            <kbd className={`text-[10.5px] font-bold rounded-md bg-white/10 px-1.5 py-0.5 text-indigo-100/80 hidden lg:block ${hideInRail}`}>Ctrl K</kbd>
+          </button>
+          <Link to="/create" onClick={closeSidebar}
+            className="lg:hidden mt-2 flex items-center justify-center gap-2 h-11 rounded-xl bg-orange-500 text-white text-sm font-bold shadow-lg shadow-orange-900/30">
+            <Plus size={18} strokeWidth={2.5} /> New Shipment
           </Link>
         </div>
 
-        <nav className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-3 ${rail ? 'lg:px-2' : ''}`}>
+        <nav className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-3 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.18)_transparent] ${rail ? 'lg:px-2' : ''}`}>
+          {pinnedItems.length > 0 && (
+            <div className={`mb-1 ${rail ? 'lg:hidden' : ''}`}>
+              <div className="px-2 h-8 flex items-center justify-between text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#7B82B8]">
+                <span>Pinned</span>
+                <Star size={11} className="text-amber-400" fill="currentColor" />
+              </div>
+              <div className="space-y-0.5">{pinnedItems.map((item) => renderItem(item, 'pin-'))}</div>
+            </div>
+          )}
+
           {groups.map((group, index) => {
             const hasActive = !group.external && group.items.some((it) => pathMatches(pathname, it.path))
             const expanded = openGroups[group.id] || hasActive
             return (
-              <div key={group.id} className={index > 0 ? 'mt-1' : ''}>
-                {rail && index > 0 && <div className="hidden lg:block h-px bg-[var(--border-color)] my-2" />}
+              <div key={group.id} className="mt-1">
+                {rail && index > 0 && <div className="hidden lg:block h-px bg-white/10 my-2" />}
                 <button
                   onClick={() => toggleGroup(group.id)}
                   aria-expanded={expanded}
-                  className={`w-full flex items-center justify-between px-3 h-9 rounded-md text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)] hover:text-[var(--text-primary)] ${hideInRail}`}
+                  className={`w-full flex items-center justify-between px-2 h-9 rounded-md text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#7B82B8] hover:text-white ${hideInRail}`}
                 >
                   <span>{group.label}</span>
                   <ChevronDown size={14} className={`transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`} />
                 </button>
-                <div className={`space-y-0.5 ${expanded ? '' : `hidden ${rail ? 'lg:block' : ''}`}`}>
-                  {group.items.map((item) => renderItem(item, group.external))}
+                <div className={`${expanded ? '' : `hidden ${rail ? 'lg:block' : ''}`}`}>
+                  {group.external
+                    ? renderTools(group.items)
+                    : group.id === 'refs'
+                      ? <div className={`grid grid-cols-2 gap-2 px-1 ${rail ? 'lg:grid-cols-1 lg:px-0' : ''}`}>{group.items.map(renderRefTile)}</div>
+                      : <div className="space-y-0.5">{group.items.map((item) => renderItem(item))}</div>}
                 </div>
               </div>
             )
           })}
         </nav>
 
-        <div className="flex-shrink-0 border-t border-[var(--border-color)] p-3">
-          <div className={`flex items-center gap-3 px-1 ${rail ? 'lg:justify-center lg:px-0' : ''}`}>
-            <div className="w-9 h-9 rounded-full bg-indigo-600 dark:bg-indigo-500 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">{userInitial}</div>
-            <div className={`flex-1 min-w-0 ${hideInRail}`}>
-              <p className="text-sm font-semibold text-[var(--text-primary)] truncate flex items-center gap-1.5">
-                {displayName}
-                {isAdmin && <Shield size={12} className="text-[var(--accent)] flex-shrink-0" aria-label="Admin" />}
-              </p>
-              <p className="text-xs text-[var(--text-muted)] truncate">{user?.email || ''}</p>
+        <div className="flex-shrink-0 p-3 border-t border-white/10">
+          <div className={`flex items-center gap-3 rounded-2xl bg-white/[0.07] p-2.5 ${rail ? 'lg:flex-col lg:gap-2 lg:p-2' : ''}`}>
+            <div className="relative flex-shrink-0">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-sm font-bold">{userInitial}</div>
+              <span className="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-[#141A4A]" />
             </div>
-          </div>
-          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2">
-            <button onClick={() => setDarkMode(v => !v)} className="btn btn-secondary min-h-[44px]">
-              {darkMode ? <Sun size={16} /> : <Moon size={16} />} {darkMode ? 'Light' : 'Dark'}
-            </button>
-            <button onClick={handleLogout} className="btn btn-danger min-h-[44px]"><LogOut size={16} /> Sign out</button>
+            <div className={`flex-1 min-w-0 ${hideInRail}`}>
+              <p className="text-sm font-semibold text-white truncate">{displayName}</p>
+              <p className="text-xs text-indigo-200/60 truncate flex items-center gap-1">
+                {isAdmin && <Shield size={11} className="text-orange-400 flex-shrink-0" aria-hidden="true" />}
+                {isAdmin ? 'Administrator' : 'Team member'}
+              </p>
+            </div>
+            <div className={`flex gap-1.5 ${rail ? 'lg:flex-col' : ''}`}>
+              <button onClick={() => setDarkMode(v => !v)} aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} title={darkMode ? 'Light mode' : 'Dark mode'}
+                className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-indigo-100">
+                {darkMode ? <Sun size={16} className="text-amber-300" /> : <Moon size={16} />}
+              </button>
+              <button onClick={handleLogout} aria-label="Sign out" title="Sign out"
+                className="w-9 h-9 rounded-lg bg-white/10 hover:bg-rose-500/80 flex items-center justify-center text-indigo-100 hover:text-white">
+                <LogOut size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
 
-      <div className={rail ? 'lg:ml-[76px]' : 'lg:ml-[260px]'}>
+      <div className={rail ? 'lg:ml-[80px]' : 'lg:ml-[280px]'}>
         <div className="sticky top-0 z-30">
           {updateAvailable && (
             <div role="status" className="px-4 py-2 text-center text-sm font-medium text-white bg-indigo-600 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
@@ -584,11 +823,18 @@ export default function MainLayout({ user }) {
             </div>
 
             <div className="flex items-center gap-1">
+              <button onClick={() => setPaletteOpen(true)} aria-label="Search pages and shipments" title="Search (Ctrl K)"
+                className="w-11 h-11 lg:w-10 lg:h-10 flex items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]">
+                <Search size={19} />
+              </button>
               {bell}
               <button onClick={() => setDarkMode(v => !v)} aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
                 className="hidden lg:flex w-10 h-10 items-center justify-center rounded-lg text-[var(--text-secondary)] hover:bg-[var(--hover-bg)]">
                 {darkMode ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} />}
               </button>
+              <Link to="/create" className="hidden lg:flex items-center gap-1.5 ml-2 h-10 px-4 rounded-xl bg-[var(--accent)] text-[var(--on-accent)] text-sm font-bold hover:bg-[var(--accent-hover)] shadow-md shadow-orange-500/25">
+                <Plus size={16} strokeWidth={2.75} /> New shipment
+              </Link>
               <div className="relative hidden lg:block ml-1" ref={userRef}>
                 <button onClick={() => setUserMenuOpen(v => !v)} aria-expanded={userMenuOpen} aria-haspopup="menu"
                   className="flex items-center gap-2.5 pl-1.5 pr-2.5 h-10 rounded-lg hover:bg-[var(--hover-bg)]">
@@ -620,6 +866,72 @@ export default function MainLayout({ user }) {
           <Outlet />
         </main>
       </div>
+
+      {paletteOpen && (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center px-3 pt-16 lg:pt-[12vh]" role="dialog" aria-modal="true" aria-label="Search">
+          <div className="absolute inset-0 bg-[#0E1236]/50 backdrop-blur-sm" onClick={() => setPaletteOpen(false)} aria-hidden="true" />
+          <div className="relative w-full max-w-[660px] bg-[var(--bg-primary)] rounded-3xl shadow-2xl overflow-hidden border border-[var(--border-color)]">
+            <div className="flex items-center gap-3 px-5 h-16 border-b border-[var(--border-color)]">
+              <Search size={18} className="text-[var(--text-muted)] flex-shrink-0" />
+              <input
+                ref={paletteInputRef}
+                value={paletteQuery}
+                onChange={(e) => { setPaletteQuery(e.target.value); setPaletteIndex(0) }}
+                onKeyDown={onPaletteKey}
+                placeholder="Search pages, shipments, actions…"
+                aria-label="Search"
+                autoComplete="off"
+                spellCheck={false}
+                className="flex-1 bg-transparent outline-none text-base text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              />
+              <kbd className="text-[11px] font-semibold rounded-md bg-[var(--bg-tertiary)] text-[var(--text-secondary)] px-2 py-1">Esc</kbd>
+            </div>
+
+            <div className="max-h-[min(60vh,480px)] overflow-y-auto p-2" role="listbox">
+              {paletteFlat.length === 0 && (
+                <p className="px-4 py-10 text-center text-sm text-[var(--text-muted)]">
+                  {paletteQuery.trim() ? `Nothing found for “${paletteQuery.trim()}”` : 'Start typing to search'}
+                </p>
+              )}
+              {(() => {
+                let flatIndex = -1
+                return paletteSections.map((section) => (
+                  <div key={section.title} className="mb-1">
+                    <p className="px-3 pt-3 pb-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-[var(--text-muted)]">{section.title}</p>
+                    {section.items.map((entry) => {
+                      flatIndex += 1
+                      const idx = flatIndex
+                      const on = activeEntry && activeEntry.key === entry.key
+                      const EIcon = entry.icon
+                      return (
+                        <button key={entry.key} role="option" aria-selected={on} data-palette-active={on ? 'true' : undefined}
+                          onMouseMove={() => setPaletteIndex(idx)} onClick={() => runEntry(entry)}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left ${on ? 'bg-[var(--nav-active-bg)]' : ''}`}>
+                          <span className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${TINTS[entry.tint] ? '' : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'} ${TINTS[entry.tint] || ''}`}>
+                            <EIcon size={17} />
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className="block text-sm font-semibold text-[var(--text-primary)] truncate"><Hl text={entry.label} q={paletteQuery.trim()} /></span>
+                            {entry.sub && <span className="block text-xs text-[var(--text-muted)] truncate">{entry.sub}</span>}
+                          </span>
+                          {entry.right && <span className="text-xs font-semibold text-[var(--text-muted)] flex-shrink-0">{entry.right}</span>}
+                          {on && !entry.right && <span className="hidden sm:flex items-center gap-1 text-xs font-semibold text-[var(--text-muted)] flex-shrink-0"><CornerDownLeft size={12} /> Open</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))
+              })()}
+            </div>
+
+            <div className="hidden sm:flex items-center gap-5 px-5 py-3 border-t border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-muted)]">
+              <span><kbd className="font-bold mr-1">↑↓</kbd> move</span>
+              <span><kbd className="font-bold mr-1">Enter</kbd> open</span>
+              <span><kbd className="font-bold mr-1">Esc</kbd> close</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <nav
         aria-label="Quick menu"

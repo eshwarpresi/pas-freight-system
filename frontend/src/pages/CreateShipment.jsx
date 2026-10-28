@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
@@ -7,10 +7,14 @@ import { useSocket } from '../App'
 import { 
   ArrowLeft, Hash, Calendar, Box, User, Anchor, 
   Ship, Sparkles, Loader2, Building2, Globe, AlertCircle,
-  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail, Truck, MapPin, ClipboardList, FileText, Plus, X
+  FileCheck, ArrowUpDown, Barcode, Weight, Info, Pencil, Eye, Scale, Mail, Truck, MapPin, ClipboardList, FileText, Plus, X,
+  CheckCircle2, Search, Copy, Zap
 } from 'lucide-react'
 
 const DRAFT_KEY = 'pas_shipment_draft'
+const QUICK_KEY = 'pas_create_quick'
+const LAST_PREFIX_KEY = 'pas_last_prefix'
+const LAST_INITIALS_KEY = 'pas_last_initials'
 const IMPORT_EXPORT_TYPES = ['Import', 'Export']
 const TRANSPORT_MODES = ['Air', 'Sea FCL', 'Sea LCL', 'Courier']
 const VEHICLE_TYPES = ['10ft', '20ft', '32ft', '40ft']
@@ -26,14 +30,232 @@ const INDIA_PORTS = ['BANGALORE', 'CHENNAI', 'MUMBAI', 'DELHI', 'HYDERABAD', 'KO
 const TERMS_OPTIONS = ['EXW', 'FOB', 'FCA', 'CIF', 'DDP', 'DAP', 'DAT', 'CPT', 'CIP', 'FAS', 'CFR']
 const PORT_LOCATIONS = ['SIN', 'INBLR4', 'INMAA4', 'INBOM4', 'INDEA4', 'INHYD4', 'INCCU4', 'INAMD4', 'INPNQ4', 'INCOK4', 'INTUT4', 'INVTZ4', 'INMUN4', 'INNSV4', 'INKAT4', 'INENR4']
 
-// ─── PARTY AUTOCOMPLETE (NEW) ───
-// Searchable dropdown + free typing, shared by both Consignee Name and
-// Shipper Name (pass type="CONSIGNEE" or "SHIPPER"). Fetches the managed
-// master list once, filters it live as you type, and if you type a name
-// that isn't in the list yet, it's added to the master list automatically
-// on blur — so the list grows on its own over time, the same way the
-// Reference Prefix/Initials lists already do in this app.
-function PartyAutocomplete({ type, value, onChange, placeholder, inputClass, iconColor }) {
+// A shipment that is already finished or cancelled is not worth warning about.
+const CLOSED_STATUSES = ['CANCELLED', 'DELIVERED', 'INVOICE_GENERATED', 'INVOICE_SENT']
+
+const MODE_CARDS = [
+  { key: 'ff-only', icon: '📋', label: 'FF Only' },
+  { key: 'freight', icon: '🚢', label: 'Freight' },
+  { key: 'cha-import', icon: '🛃', label: 'CHA Import' },
+  { key: 'cha-export', icon: '📤', label: 'CHA Export' },
+  { key: 'transport', icon: '🚛', label: 'Transport' },
+  { key: 'do-release', icon: '📑', label: 'DO Release' },
+]
+
+const INPUT = 'w-full h-11 px-3.5 rounded-xl border-[1.5px] border-[var(--border-color)] bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:bg-[var(--bg-primary)] focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/15 transition-colors'
+const INPUT_ERROR = 'border-rose-400 bg-rose-50 dark:bg-rose-500/10'
+
+function readLocal(key, fallback = '') {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v
+  } catch {
+    return fallback
+  }
+}
+
+function writeLocal(key, value) {
+  try { localStorage.setItem(key, value) } catch { /* private mode: the choice just isn't remembered */ }
+}
+
+const todayISO = () => new Date().toISOString().split('T')[0]
+
+// Every field the form can hold. Used for a fresh form, "Clear draft" and "Create another".
+function blankForm() {
+  return {
+    refNo: '', enquiryDate: todayISO(),
+    noOfPackages: '', consigneeName: '', shipperName: '', agent: '',
+    importExport: '', mode: '',
+    hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '',
+    notificationEmail: '',
+    customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '',
+    fromLocation: '', toLocation: '', deliveryDate: '',
+    transportMode: '',
+    chaName: '',
+    terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: '', autoEmailEnabled: false
+  }
+}
+
+// "Create another": keep who the customer is and what is moving where, drop what is specific to one job.
+function keepForNext(d) {
+  return {
+    ...blankForm(),
+    consigneeName: d.consigneeName, shipperName: d.shipperName, agent: d.agent, customerName: d.customerName,
+    mode: d.mode, importExport: d.importExport, fromLocation: d.fromLocation, toLocation: d.toLocation,
+    terms: d.terms, portLocation: d.portLocation, commodityName: d.commodityName, containerType: d.containerType,
+    packageType: d.packageType, vehicleType: d.vehicleType, transportMode: d.transportMode, chaName: d.chaName,
+    notificationEmail: d.notificationEmail, autoEmailEnabled: d.autoEmailEnabled,
+  }
+}
+
+// A draft only counts as "unfinished work" if the person actually typed something.
+function draftHasContent(d) {
+  if (!d || typeof d !== 'object') return false
+  return ['refNo', 'consigneeName', 'shipperName', 'customerName', 'agent', 'mawb', 'hawb', 'fromLocation', 'toLocation', 'commodityName', 'noOfPackages', 'grossWeight', 'weight', 'notificationEmail']
+    .some((k) => String(d[k] || '').trim() !== '')
+}
+
+// ─── PASTE-THE-ENQUIRY READER (NEW) ───
+// Looks through a pasted email or WhatsApp message for the things a form needs:
+// packages, weight, terms, mode, route and so on. It only suggests: nothing goes
+// into the form until the person presses Apply, so a wrong guess costs one click.
+const FOUND_LABELS = {
+  consigneeName: 'Consignee', shipperName: 'Shipper', fromLocation: 'From', toLocation: 'To', mode: 'Mode',
+  importExport: 'Import / Export', noOfPackages: 'Packages', grossWeight: 'Weight (kg)', cbm: 'CBM', terms: 'Terms', commodityName: 'Commodity',
+}
+
+const titleCase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+
+function parseEnquiry(raw, knownNames) {
+  const original = String(raw || '')
+  const text = original.replace(/\s+/g, ' ').trim()
+  const found = {}
+  if (!text) return found
+
+  const packages = text.match(/(\d[\d,]*)\s*(?:x\s*)?(?:cartons?|ctns?|boxes|box|packages?|pkgs?|pallets?|crates?|drums?|bags?|pieces|pcs)\b/i)
+  if (packages) found.noOfPackages = packages[1].replace(/,/g, '')
+
+  const kg = text.match(/(\d[\d,]*(?:\.\d+)?)\s*(?:kgs?|kilograms?|kilos?)\b/i)
+  if (kg) found.grossWeight = kg[1].replace(/,/g, '')
+
+  const cbm = text.match(/(\d+(?:\.\d+)?)\s*cbm\b/i)
+  if (cbm) found.cbm = cbm[1]
+
+  const terms = TERMS_OPTIONS.find((t) => new RegExp(`\\b${t}\\b`).test(original))
+  if (terms) found.terms = terms
+
+  const mode = text.match(/\b(by air|air ?freight|air|sea ?fcl|fcl|sea ?lcl|lcl|courier)\b/i)
+  if (mode) {
+    const m = mode[1].toLowerCase().replace(/\s+/g, '')
+    if (m.includes('air')) found.mode = 'Air'
+    else if (m.includes('fcl')) found.mode = 'Sea FCL'
+    else if (m.includes('lcl')) found.mode = 'Sea LCL'
+    else if (m.includes('courier')) found.mode = 'Courier'
+  }
+
+  const ie = text.match(/\b(import|export)\b/i)
+  if (ie) found.importExport = titleCase(ie[1])
+
+  let route = text.match(/\bfrom\s+([A-Za-z][A-Za-z .'-]{1,30}?)\s+to\s+([A-Za-z][A-Za-z .'-]{1,30}?)(?=\s+(?:by|via|for|on|with|approx|about|around|fob|cif|exw|ddp|dap|fca)\b|\s+\d|[,.;:!?]|$)/i)
+  if (!route) route = text.match(/\b([A-Z][a-z]+(?: [A-Z][a-z]+)?) to ([A-Z][a-z]+(?: [A-Z][a-z]+)?)\b/)
+  if (route) {
+    found.fromLocation = route[1].trim().toUpperCase()
+    found.toLocation = route[2].trim().toUpperCase()
+  }
+
+  const commodity = original.match(/commodity\s*[:\-]\s*([^,.;\n|]{3,50})/i) || text.match(/\bof\s+([a-z][a-z &,-]{2,40}?)\s+from\b/i)
+  if (commodity) found.commodityName = titleCase(commodity[1].trim())
+
+  const consignee = original.match(/(?:consignee|customer|company|client)(?:\s+name)?\s*[:\-]\s*([^,.;\n|]{3,60})/i)
+  if (consignee) {
+    found.consigneeName = consignee[1].trim()
+  } else {
+    const lower = text.toLowerCase()
+    const known = (knownNames || [])
+      .filter((n) => n && n.length >= 4 && lower.includes(n.toLowerCase()))
+      .sort((a, b) => b.length - a.length)[0]
+    if (known) found.consigneeName = known
+  }
+  const shipper = original.match(/shipper\s*[:\-]\s*([^,.;\n|]{3,60})/i)
+  if (shipper) found.shipperName = shipper[1].trim()
+
+  return found
+}
+
+// ─── SMALL UI PIECES ───
+function Card({ id, icon: Icon, tone, title, subtitle, badge, children }) {
+  return (
+    <section id={`sec-${id}`} className="scroll-mt-24 bg-[var(--bg-primary)] rounded-3xl border border-[var(--border-color)] shadow-sm p-5 sm:p-6 mb-4">
+      <div className="flex items-center gap-3 mb-5">
+        <span className={`w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0 ${tone}`}><Icon size={17} /></span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-bold text-[var(--text-primary)]">{title}</h3>
+          {subtitle && <p className="text-xs text-[var(--text-muted)]">{subtitle}</p>}
+        </div>
+        {badge}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function Badge({ kind }) {
+  if (kind === 'done') return <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300 whitespace-nowrap">✓ Done</span>
+  if (kind === 'required') return <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 whitespace-nowrap">Required</span>
+  return <span className="text-[11px] font-semibold text-[var(--text-muted)] whitespace-nowrap">optional</span>
+}
+
+function Field({ label, htmlFor, required, optional, error, hint, className = '', children }) {
+  return (
+    <div className={className} data-error={error ? 'true' : undefined}>
+      {label && (
+        <label htmlFor={htmlFor} className="block text-[11.5px] font-bold uppercase tracking-wide text-[var(--text-secondary)] mb-1.5">
+          {label}
+          {required && <span className="text-rose-500"> *</span>}
+          {optional && <span className="ml-1.5 normal-case font-semibold text-[var(--text-muted)]">optional</span>}
+        </label>
+      )}
+      {children}
+      {hint && !error && <p className="text-[11px] text-[var(--text-muted)] mt-1">{hint}</p>}
+      {error && <p className="text-xs text-rose-500 mt-1">{error}</p>}
+    </div>
+  )
+}
+
+function Input({ icon: Icon, name, error, className = '', ...rest }) {
+  return (
+    <div className="relative">
+      {Icon && <Icon size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" />}
+      <input id={name} name={name} className={`${INPUT} ${Icon ? 'pl-10' : ''} ${error ? INPUT_ERROR : ''} ${className}`} {...rest} />
+    </div>
+  )
+}
+
+// Tap-to-pick buttons for short lists, with an optional box for a value that isn't in the list.
+function Chips({ options, value, onChange, custom, customPlaceholder = 'Other…', limit }) {
+  const [showAll, setShowAll] = useState(false)
+  const shown = limit && !showAll ? options.slice(0, limit) : options
+  const inList = options.includes(value)
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {shown.map((o) => {
+        const on = value === o
+        return (
+          <button key={o} type="button" aria-pressed={on} onClick={() => onChange(on ? '' : o)}
+            className={`px-3.5 py-2 rounded-xl text-[13px] font-bold transition-all ${on ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-indigo-400'}`}>
+            {o}
+          </button>
+        )
+      })}
+      {limit && options.length > limit && (
+        <button type="button" onClick={() => setShowAll((v) => !v)} className="px-3 py-2 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-300 border border-dashed border-indigo-300 dark:border-indigo-500/40">
+          {showAll ? 'Fewer' : `+${options.length - limit} more`}
+        </button>
+      )}
+      {custom && (
+        <input type="text" value={inList ? '' : (value || '')} onChange={(e) => onChange(e.target.value)} placeholder={customPlaceholder}
+          className="w-28 h-9 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-indigo-500" />
+      )}
+    </div>
+  )
+}
+
+// A text box that suggests values as you type but still accepts anything.
+function ComboInput({ name, listId, list, icon, error, ...rest }) {
+  return (
+    <>
+      <Input icon={icon} name={name} list={listId} error={error} autoComplete="off" {...rest} />
+      <datalist id={listId}>{list.map((o) => <option key={o} value={o} />)}</datalist>
+    </>
+  )
+}
+
+// ─── PARTY AUTOCOMPLETE ───
+// Searchable dropdown + free typing, shared by Consignee Name and Shipper Name
+// (pass type="CONSIGNEE" or "SHIPPER"). Fetches the managed master list once,
+// filters it as you type, and a name that isn't in the list yet is added to it
+// automatically on blur, so the list grows on its own over time.
+function PartyAutocomplete({ type, value, onChange, placeholder, inputClass }) {
   const [options, setOptions] = useState([])
   const [open, setOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -68,7 +290,7 @@ function PartyAutocomplete({ type, value, onChange, placeholder, inputClass, ico
 
   return (
     <div className="relative" ref={wrapRef}>
-      <User size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${iconColor} z-10`} />
+      <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)] z-10 pointer-events-none" />
       <input
         type="text"
         value={value || ''}
@@ -80,13 +302,13 @@ function PartyAutocomplete({ type, value, onChange, placeholder, inputClass, ico
         autoComplete="off"
       />
       {open && loaded && filtered.length > 0 && (
-        <div className="absolute z-20 mt-1 w-full max-h-56 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl">
+        <div className="absolute z-20 mt-1.5 w-full max-h-56 overflow-y-auto bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl shadow-xl">
           {filtered.map((name) => (
             <button
               key={name}
               type="button"
               onMouseDown={(e) => { e.preventDefault(); onChange(name); setOpen(false) }}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 border-b border-gray-50 last:border-0"
+              className="w-full text-left px-3.5 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--hover-bg)] border-b border-[var(--border-color)] last:border-0"
             >
               {name}
             </button>
@@ -94,145 +316,121 @@ function PartyAutocomplete({ type, value, onChange, placeholder, inputClass, ico
         </div>
       )}
       {open && loaded && filtered.length === 0 && value && (
-        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl px-3 py-2 text-xs text-gray-400 italic">
-          No match — this will be saved as a new name
+        <div className="absolute z-20 mt-1.5 w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-xl shadow-xl px-3.5 py-2.5 text-xs text-[var(--text-muted)] italic">
+          No match. This will be saved as a new name
         </div>
       )}
     </div>
   )
 }
 
-// ─── CHARGEABLE WEIGHT CALCULATOR (NEW) ───
-// Standard freight industry dimensional-weight calculation:
-//   Air/Courier: Volumetric Weight (kg) = (L x W x H x Pieces) / 6000
-//                — this is the IATA standard divisor; some individual
-//                airlines use 5000 instead, so double-check with your
-//                employees/carriers if numbers ever look off and adjust
-//                the constant below if needed.
-//   Sea (FCL/LCL): 1 CBM = 1000 kg is the standard sea freight
-//                conversion (dimensions are still entered in cm here for
-//                a consistent input experience; converted to CBM
-//                internally).
-// Chargeable Weight is always whichever is HIGHER: actual/gross weight,
-// or the volumetric weight calculated here.
+// ─── CHARGEABLE WEIGHT CALCULATOR ───
+// Standard freight dimensional-weight maths:
+//   Air/Courier: Volumetric Weight (kg) = (L x W x H x Pieces) / 6000 (IATA standard;
+//                some airlines use 5000, change the constant below if numbers look off).
+//   Sea (FCL/LCL): 1 CBM = 1000 kg. Sizes are typed in cm and converted internally.
+// Chargeable Weight is whichever is HIGHER: gross weight or volumetric weight.
 const AIR_VOLUMETRIC_DIVISOR = 6000
 const SEA_CBM_TO_KG = 1000
 
-function ChargeableWeightModal({ isOpen, onClose, onApply, transportMode, grossWeight }) {
+function WeightCalculator({ transportMode, grossWeight, onApply }) {
+  const [open, setOpen] = useState(false)
   const [length, setLength] = useState('')
   const [width, setWidth] = useState('')
   const [height, setHeight] = useState('')
   const [pieces, setPieces] = useState('1')
-
-  if (!isOpen) return null
 
   const isSea = transportMode === 'Sea FCL' || transportMode === 'Sea LCL'
   const L = parseFloat(length) || 0
   const W = parseFloat(width) || 0
   const H = parseFloat(height) || 0
   const P = parseFloat(pieces) || 1
-  const cbm = (L * W * H * P) / 1000000 // cm³ -> m³
-  const volumetricWeight = isSea ? cbm * SEA_CBM_TO_KG : (L * W * H * P) / AIR_VOLUMETRIC_DIVISOR
-  const actualWeight = parseFloat(grossWeight) || 0
-  const chargeableWeight = Math.max(actualWeight, volumetricWeight)
+  const cbm = (L * W * H * P) / 1000000
+  const volumetric = isSea ? cbm * SEA_CBM_TO_KG : (L * W * H * P) / AIR_VOLUMETRIC_DIVISOR
+  const actual = parseFloat(grossWeight) || 0
+  const chargeable = Math.max(actual, volumetric)
   const hasInput = L > 0 && W > 0 && H > 0
+  const small = 'w-full h-10 px-3 rounded-xl border border-[var(--border-color)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-indigo-500'
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-1">
-          <h3 className="text-lg font-bold text-gray-800">Chargeable Weight Calculator</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+    <div className="mt-4">
+      <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
+        className="inline-flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-300 hover:underline">
+        <Weight size={14} /> {open ? 'Hide the box-size calculator' : 'Work out chargeable weight from box size'}
+      </button>
+      {open && (
+        <div className="mt-3 rounded-2xl bg-[var(--bg-secondary)] p-4">
+          <p className="text-[11px] text-[var(--text-muted)] mb-3">
+            {isSea ? 'Sea freight: 1 CBM = 1000 kg.' : `Air / courier: size ÷ ${AIR_VOLUMETRIC_DIVISOR} (IATA standard).`} Box size is for one piece, in cm.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 items-end">
+            <div><label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">Length</label><input type="number" min="0" value={length} onChange={e => setLength(e.target.value)} className={small} /></div>
+            <div><label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">Width</label><input type="number" min="0" value={width} onChange={e => setWidth(e.target.value)} className={small} /></div>
+            <div><label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">Height</label><input type="number" min="0" value={height} onChange={e => setHeight(e.target.value)} className={small} /></div>
+            <div><label className="block text-[11px] font-bold text-[var(--text-secondary)] mb-1">Pieces</label><input type="number" min="1" value={pieces} onChange={e => setPieces(e.target.value)} className={small} /></div>
+            <div className="col-span-2 sm:col-span-1 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white px-3 py-2 min-h-[40px]">
+              <p className="text-[10px] uppercase tracking-wide opacity-80">Chargeable</p>
+              <p className="text-base font-extrabold leading-tight">{hasInput ? `${chargeable.toFixed(2)} kg` : '—'}</p>
+            </div>
+          </div>
+          {hasInput && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-[var(--text-secondary)]">
+              <span>CBM <b className="text-[var(--text-primary)]">{cbm.toFixed(3)}</b></span>
+              <span>Volumetric <b className="text-[var(--text-primary)]">{volumetric.toFixed(2)} kg</b></span>
+              <span>Gross <b className="text-[var(--text-primary)]">{actual.toFixed(2)} kg</b></span>
+              <button type="button" onClick={() => onApply({ chargeableWeight: chargeable.toFixed(2), cbm: cbm.toFixed(3) })}
+                className="ml-auto px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold">Use these values</button>
+            </div>
+          )}
         </div>
-        <p className="text-xs text-gray-500 mb-4">
-          Using {isSea ? 'Sea freight (1 CBM = 1000 kg)' : `Air/Courier (÷ ${AIR_VOLUMETRIC_DIVISOR}, IATA standard)`} — based on your selected Transport Mode.
-        </p>
-        <div className="grid grid-cols-3 gap-3 mb-3">
-          <div><label className="block text-xs font-medium text-gray-600 mb-1">Length (cm)</label><input type="number" value={length} onChange={e => setLength(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-          <div><label className="block text-xs font-medium text-gray-600 mb-1">Width (cm)</label><input type="number" value={width} onChange={e => setWidth(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-          <div><label className="block text-xs font-medium text-gray-600 mb-1">Height (cm)</label><input type="number" value={height} onChange={e => setHeight(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" /></div>
-        </div>
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-gray-600 mb-1">No. of Pieces</label>
-          <input type="number" min="1" value={pieces} onChange={e => setPieces(e.target.value)} className="w-full px-2.5 py-2 border border-gray-300 rounded-lg text-sm" />
-        </div>
-        {hasInput && (
-          <div className="bg-indigo-50 rounded-lg p-3 mb-4 space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-gray-600">CBM</span><span className="font-semibold text-gray-800">{cbm.toFixed(3)} m³</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Volumetric Weight</span><span className="font-semibold text-gray-800">{volumetricWeight.toFixed(2)} kg</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Actual (Gross) Weight</span><span className="font-semibold text-gray-800">{actualWeight.toFixed(2)} kg</span></div>
-            <div className="flex justify-between pt-1.5 border-t border-indigo-200"><span className="text-indigo-700 font-semibold">Chargeable Weight</span><span className="font-bold text-indigo-700">{chargeableWeight.toFixed(2)} kg</span></div>
+      )}
+    </div>
+  )
+}
+
+// ─── LIVE PREVIEW ───
+// Fills in as you type, so creating a shipment feels like watching it take shape.
+// Hidden on smaller screens where there is no room for it.
+function LivePreview({ refNo, who, tags, from, to, facts, checklist }) {
+  return (
+    <aside className="hidden xl:block sticky top-24 self-start">
+      <div className="rounded-3xl bg-gradient-to-br from-[#141A4A] to-[#1E2A78] text-white p-6 shadow-2xl shadow-indigo-900/30">
+        <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-indigo-300">Live preview</p>
+        <h3 className="text-2xl font-extrabold tracking-tight mt-1.5 truncate">{refNo || 'No reference yet'}</h3>
+        <p className="text-sm text-indigo-100/80 truncate">{who || 'No customer yet'}</p>
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {tags.map((t) => <span key={t} className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/15">{t}</span>)}
           </div>
         )}
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm font-medium">Cancel</button>
-          <button
-            onClick={() => { onApply({ chargeableWeight: chargeableWeight.toFixed(2), cbm: cbm.toFixed(3) }); onClose() }}
-            disabled={!hasInput}
-            className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-40"
-          >
-            Use This Value
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── LIVE SUMMARY PANEL (NEW) ───
-// Fills in as you type, so creating a shipment feels like watching
-// something take shape rather than filling out a static form. Sticky on
-// desktop; hidden on smaller screens where there isn't room for it
-// without crowding the actual form.
-function LiveSummaryPanel({ formData, shipmentMode, accentBg }) {
-  const checklist = [
-    { label: 'Reference Number', done: !!formData.refNo },
-    { label: 'Consignee', done: !!formData.consigneeName },
-    { label: 'Shipper', done: !!formData.shipperName },
-    { label: 'Route', done: !!(formData.fromLocation && formData.toLocation) },
-    { label: 'Weight', done: !!formData.weight },
-  ]
-  const filledCount = checklist.filter(c => c.done).length
-
-  return (
-    <div className="hidden xl:block sticky top-6 self-start">
-      <div className="rounded-xl bg-white border border-indigo-100 shadow-lg p-6">
-        <p className="text-[11px] uppercase tracking-wide text-indigo-400 mb-1">Building shipment</p>
-        <h3 className="text-xl font-bold text-gray-800 mb-4 truncate">{formData.refNo || 'Not yet named'}</h3>
-
-        <div className="space-y-2.5 mb-6">
-          {formData.consigneeName && (
-            <div><p className="text-[11px] text-gray-400">Consignee</p><p className="text-sm font-medium text-gray-700 truncate">{formData.consigneeName}</p></div>
-          )}
-          {formData.shipperName && (
-            <div><p className="text-[11px] text-gray-400">Shipper</p><p className="text-sm font-medium text-gray-700 truncate">{formData.shipperName}</p></div>
-          )}
-          {(formData.fromLocation || formData.toLocation) && (
-            <div><p className="text-[11px] text-gray-400">Route</p><p className="text-sm font-medium text-gray-700">{formData.fromLocation || '—'} → {formData.toLocation || '—'}</p></div>
-          )}
-          {(formData.weight || formData.grossWeight) && (
-            <div><p className="text-[11px] text-gray-400">Weight</p><p className="text-sm font-medium text-gray-700">{formData.weight ? `${formData.weight} kg chargeable` : `${formData.grossWeight} kg gross`}</p></div>
-          )}
-        </div>
-
-        <div className="pt-4 border-t border-gray-100">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-[11px] uppercase tracking-wide text-gray-400">Progress</p>
-            <p className="text-[11px] text-gray-400">{filledCount}/{checklist.length}</p>
+        {(from || to) && (
+          <div className="mt-4 flex items-center gap-3 rounded-2xl bg-white/10 px-4 py-3">
+            <div className="min-w-0 flex-1"><p className="text-[10px] uppercase tracking-wider text-indigo-300">From</p><p className="text-sm font-bold truncate">{from || '—'}</p></div>
+            <span className="text-orange-300 text-lg" aria-hidden="true">→</span>
+            <div className="min-w-0 flex-1 text-right"><p className="text-[10px] uppercase tracking-wider text-indigo-300">To</p><p className="text-sm font-bold truncate">{to || '—'}</p></div>
           </div>
-          <div className="space-y-1.5">
-            {checklist.map(item => (
-              <div key={item.label} className="flex items-center gap-2 text-xs">
-                <div className={`w-1.5 h-1.5 rounded-full ${item.done ? 'bg-emerald-500' : 'bg-gray-200'}`} />
-                <span className={item.done ? 'text-gray-700' : 'text-gray-400'}>{item.label}</span>
-              </div>
+        )}
+        {facts.length > 0 && (
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 mt-4">
+            {facts.map(([k, v]) => (
+              <div key={k} className="min-w-0"><p className="text-[10px] uppercase tracking-wider text-indigo-300">{k}</p><p className="text-sm font-bold truncate">{v}</p></div>
             ))}
           </div>
+        )}
+        <div className="mt-5 pt-4 border-t border-white/15 space-y-2">
+          {checklist.map((c) => (
+            <div key={c.label} className="flex items-center gap-2.5 text-[13px]">
+              <span className={`w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] flex-shrink-0 ${c.done ? 'bg-emerald-500 text-white' : 'bg-white/15 text-indigo-200'}`}>{c.done ? '✓' : '○'}</span>
+              <span className={c.done ? 'text-white' : 'text-indigo-200/70'}>{c.label}</span>
+            </div>
+          ))}
         </div>
       </div>
-    </div>
+    </aside>
   )
 }
+
+
 
 export default function CreateShipment() {
   const navigate = useNavigate()
@@ -254,6 +452,8 @@ export default function CreateShipment() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [editId, setEditId] = useState(null)
   const [loadingShipment, setLoadingShipment] = useState(false)
+  // Set when this form was started from "Create similar" on an existing shipment.
+  const [copiedFrom, setCopiedFrom] = useState('')
   const [returnPage, setReturnPage] = useState(1)
   const [returnSearch, setReturnSearch] = useState('')
   const [returnStatus, setReturnStatus] = useState('')
@@ -265,7 +465,7 @@ export default function CreateShipment() {
   // also add brand-new prefixes on the fly (e.g. typing "PIPE" the first
   // time it's needed).
   const [prefixes, setPrefixes] = useState([])
-  const [selectedPrefix, setSelectedPrefix] = useState('')
+  const [selectedPrefix, setSelectedPrefix] = useState(() => readLocal(LAST_PREFIX_KEY))
   const [newPrefixInput, setNewPrefixInput] = useState('')
   const [generatingRef, setGeneratingRef] = useState(false)
   const [addingPrefix, setAddingPrefix] = useState(false)
@@ -281,7 +481,7 @@ export default function CreateShipment() {
   // Same idea as prefixes — a managed list anyone can add/edit/delete.
   // Picking one tags the generated number, e.g. PIPE2604-GJ.
   const [initialsList, setInitialsList] = useState([])
-  const [selectedInitials, setSelectedInitials] = useState('')
+  const [selectedInitials, setSelectedInitials] = useState(() => readLocal(LAST_INITIALS_KEY))
   const [newInitialInput, setNewInitialInput] = useState('')
   const [addingInitial, setAddingInitial] = useState(false)
   const [showManageInitials, setShowManageInitials] = useState(false)
@@ -470,21 +670,11 @@ export default function CreateShipment() {
   }
 
   const [formData, setFormData] = useState(() => {
-    const saved = localStorage.getItem(DRAFT_KEY)
-    if (saved) { try { return JSON.parse(saved) } catch {} }
-    return { 
-      refNo: '', enquiryDate: new Date().toISOString().split('T')[0], 
-      noOfPackages: '', consigneeName: '', shipperName: '', agent: '', 
-      importExport: '', mode: '',
-      hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '',
-      notificationEmail: '',
-      customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '',
-      fromLocation: '', toLocation: '', deliveryDate: '',
-      transportMode: '',
-      chaName: '',
-      // ✅ NEW — Freight module only (standard Import/Export shipments)
-      terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: '', autoEmailEnabled: false
-    }
+    try {
+      const saved = localStorage.getItem(DRAFT_KEY)
+      if (saved) return { ...blankForm(), ...JSON.parse(saved) }
+    } catch {}
+    return blankForm()
   })
 
   // ─── AUTO-SAVE DRAFT (NEW) ───
@@ -508,10 +698,13 @@ export default function CreateShipment() {
       setReturnStatus(searchParams.get('status') || '')
       setReturnType(searchParams.get('type') || '')
       loadShipmentForEdit(editParam)
+    } else if (searchParams.get('copy')) {
+      // "Create similar": same customer, route and cargo, but a brand-new shipment.
+      loadShipmentForEdit(searchParams.get('copy'), true)
     }
   }, [searchParams])
 
-  const loadShipmentForEdit = async (id) => {
+  const loadShipmentForEdit = async (id, asCopy = false) => {
     setLoadingShipment(true)
     try {
       const res = await api.get(`/freight/shipments/${id}`)
@@ -526,7 +719,7 @@ export default function CreateShipment() {
       else if (s.shipmentType === 'FF Only') mode = 'ff-only'
       setShipmentMode(mode)
       
-      setFormData({
+      const loaded = {
         refNo: s.refNo || '',
         enquiryDate: ff.enquiryDate ? new Date(ff.enquiryDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         noOfPackages: ff.noOfPackages || '',
@@ -558,9 +751,25 @@ export default function CreateShipment() {
         commodityName: ff.commodityName || '',
         preAlertsSentDate: ff.preAlertsSentDate ? new Date(ff.preAlertsSentDate).toISOString().split('T')[0] : '',
         doCollectionDate: cha.doCollectionDate ? new Date(cha.doCollectionDate).toISOString().split('T')[0] : ''
-      })
+      }
+
+      if (asCopy) {
+        // Keep who the customer is and what is moving where. Clear everything that
+        // belongs to one particular job: the reference, dates, document numbers and weights.
+        setFormData({
+          ...loaded,
+          refNo: '',
+          enquiryDate: new Date().toISOString().split('T')[0],
+          noOfPackages: '', weight: '', grossWeight: '', cbm: '',
+          hawb: '', mawb: '', awbDate: '', deliveryDate: '',
+          preAlertsSentDate: '', doCollectionDate: ''
+        })
+        setCopiedFrom(s.refNo || '')
+      } else {
+        setFormData(loaded)
+      }
     } catch (err) {
-      addToast('Failed to load shipment for editing', 'error')
+      addToast(asCopy ? 'Could not load that shipment to copy' : 'Failed to load shipment for editing', 'error')
       navigate('/create')
     } finally {
       setLoadingShipment(false)
@@ -587,7 +796,12 @@ export default function CreateShipment() {
       if (!isCHA && !isEditMode && !formData.refNo.trim()) newErrors.refNo = 'Reference number is required'
     }
     setErrors(newErrors)
-    if (Object.keys(newErrors).length > 0) { addToast('Please fix the validation errors', 'warning'); return false }
+    if (Object.keys(newErrors).length > 0) {
+      addToast('Please fix the validation errors', 'warning')
+      const el = document.getElementById(Object.keys(newErrors)[0])
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus({ preventScroll: true }) }
+      return false
+    }
     return true
   }
 
@@ -726,217 +940,579 @@ export default function CreateShipment() {
         const response = await api.post('/freight/shipments', submitData)
         localStorage.removeItem(DRAFT_KEY)
         addToast(isFFOnly ? 'FF Only shipment created!' : isDORelease ? 'DO Release created!' : isTransport ? 'Transport shipment created!' : isCHA ? 'CHA Bill created successfully!' : 'Shipment created successfully!', 'success')
-        // ✅ LIVE EVERYWHERE (NEW) — previously only EDITING an existing
-        // shipment broadcast a live update; creating a brand new one
-        // broadcast nothing at all, so it never showed up on anyone
-        // else's Dashboard/Analytics/Pipeline until they manually
-        // refreshed. This makes creation live too, matching edits.
+        // ✅ LIVE EVERYWHERE — creating a shipment broadcasts too, so it shows up on
+        // everyone else's Dashboard/Analytics/Pipeline without a refresh.
         if (socket) {
           socket.emit('shipment:created', { refNo: response.data.data.refNo, id: response.data.data.id })
         }
-        if (isTransport) {
-          setTimeout(() => navigate(`/shipment/${response.data.data.id}?tab=accounts`), 500)
-        } else if (isDORelease) {
-          setTimeout(() => navigate(`/shipment/${response.data.data.id}?tab=accounts`), 500)
-        } else if (isFFOnly) {
-          setTimeout(() => navigate(`/shipment/${response.data.data.id}`), 500)
+        queryClient.removeQueries({ queryKey: ['shipments'] })
+        const newId = response.data.data.id
+        const dest = (isTransport || isDORelease) ? `/shipment/${newId}?tab=accounts` : `/shipment/${newId}${isCHA ? '?tab=customs' : ''}`
+        if (afterSave.current === 'another') {
+          afterSave.current = ''
+          startAnother()
+          addToast(`${response.data.data.refNo} saved. Ready for the next one`, 'success')
         } else {
-          setTimeout(() => navigate(`/shipment/${response.data.data.id}${isCHA ? '?tab=customs' : ''}`), 500)
+          setCreated({ id: newId, refNo: response.data.data.refNo, dest })
         }
       }
     } catch (err) { addToast(err.response?.data?.message || 'Failed to save', 'error') }
     finally { setLoading(false) }
   }
 
+  // ─── NEW HELPERS FOR THE REDESIGNED PAGE ───
+  // Quick create shows only the few fields that matter; everything else can be added later.
+  const [quick, setQuick] = useState(() => readLocal(QUICK_KEY, 'false') === 'true')
+  const full = isEditMode || !quick
+  const toggleQuick = (v) => { setQuick(v); writeLocal(QUICK_KEY, String(v)) }
+
+  const [draftRestored, setDraftRestored] = useState(() => {
+    try { return draftHasContent(JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null')) } catch { return false }
+  })
+  const [created, setCreated] = useState(null)       // set after a successful save: { id, refNo, dest }
+  const afterSave = useRef('')                        // 'another' when "Save & create another" was pressed
+  const formRef = useRef(null)
+
+  // The one field that says who the customer is, which differs by mode.
+  const primaryField = (isTransport || isDORelease) ? 'customerName' : isCHAExport ? 'shipperName' : 'consigneeName'
+  const primaryValue = formData[primaryField] || ''
+
+  const setField = (name, value) => {
+    setFormData(prev => ({ ...prev, [name]: value }))
+    setTouched(prev => ({ ...prev, [name]: true }))
+    if (errors[name]) setErrors(prev => ({ ...prev, [name]: '' }))
+  }
+
+  // Recent customers: the last few this person worked with, one tap to reuse.
+  const [recentShips, setRecentShips] = useState([])
+  useEffect(() => {
+    let on = true
+    const load = async (mine) => {
+      const res = await api.get('/freight/shipments', { params: { page: 1, limit: 40, isArchived: 'false', ...(mine ? { mine: 'true' } : {}) } })
+      return res.data?.data || []
+    }
+    load(true).then(list => (list.length ? list : load(false))).then(list => { if (on) setRecentShips(list) }).catch(() => {})
+    return () => { on = false }
+  }, [])
+  const recentNames = useMemo(() => {
+    const seen = new Set()
+    const out = []
+    for (const s of recentShips) {
+      const ff = s.freightForwarding || {}
+      const name = String((primaryField === 'customerName' ? ff.customerName : ff[primaryField]) || '').trim()
+      if (!name || seen.has(name.toLowerCase())) continue
+      seen.add(name.toLowerCase())
+      out.push(name)
+      if (out.length >= 6) break
+    }
+    return out
+  }, [recentShips, primaryField])
+
+  // Warns while typing if this customer already has an open enquiry, before a duplicate is created.
+  const [openMatches, setOpenMatches] = useState([])
+  useEffect(() => {
+    const name = primaryValue.trim()
+    if (isEditMode || name.length < 3) { setOpenMatches([]); return }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.get('/freight/shipments', { params: { search: name, limit: 6, page: 1, isArchived: 'false' } })
+        if (cancelled) return
+        const lower = name.toLowerCase()
+        const list = (res.data?.data || []).filter((s) => {
+          const ff = s.freightForwarding || {}
+          const who = String(ff.consigneeName || ff.customerName || ff.shipperName || '').toLowerCase()
+          const status = s.currentStatus || s.status
+          return who && (who.includes(lower) || lower.includes(who)) && !CLOSED_STATUSES.includes(status) && s.refNo !== copiedFrom
+        })
+        setOpenMatches(list.slice(0, 3))
+      } catch { if (!cancelled) setOpenMatches([]) }
+    }, 600)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [primaryValue, isEditMode, copiedFrom])
+
+  // "Same customer as before?": find an earlier shipment and start from a copy of it.
+  const [cloneQuery, setCloneQuery] = useState('')
+  const [cloneResults, setCloneResults] = useState([])
+  useEffect(() => {
+    const q = cloneQuery.trim()
+    if (q.length < 2) { setCloneResults([]); return }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.get('/freight/shipments', { params: { search: q, limit: 5, page: 1, isArchived: 'false' } })
+        if (!cancelled) setCloneResults(res.data?.data || [])
+      } catch { if (!cancelled) setCloneResults([]) }
+    }, 350)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [cloneQuery])
+
+  // Paste the enquiry: suggestions read from a pasted message.
+  const [pasteText, setPasteText] = useState('')
+  const [knownConsignees, setKnownConsignees] = useState([])
+  useEffect(() => {
+    api.get('/freight/party-names', { params: { type: 'CONSIGNEE' } })
+      .then(res => setKnownConsignees((res.data?.data || []).map(p => p.name)))
+      .catch(() => {})
+  }, [])
+  const allowedFound = isFFOnly
+    ? ['consigneeName', 'shipperName', 'mode', 'importExport', 'noOfPackages', 'grossWeight', 'containerType']
+    : isCHA
+      ? ['consigneeName', 'shipperName', 'mode', 'grossWeight']
+      : ['consigneeName', 'shipperName', 'mode', 'importExport', 'noOfPackages', 'grossWeight', 'cbm', 'terms', 'commodityName', 'fromLocation', 'toLocation']
+  const foundFields = useMemo(() => {
+    const all = parseEnquiry(pasteText, knownConsignees)
+    return Object.fromEntries(Object.entries(all).filter(([k]) => allowedFound.includes(k)))
+  }, [pasteText, knownConsignees, shipmentMode])
+  const applyFound = () => {
+    const keys = Object.keys(foundFields)
+    if (keys.length === 0) return
+    setFormData(prev => ({ ...prev, ...foundFields }))
+    setPasteText('')
+    addToast(`Filled ${keys.length} field${keys.length === 1 ? '' : 's'}. Please check them before saving`, 'success')
+  }
+
+  // Ctrl+Enter saves from anywhere on the page.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && formRef.current && !loading && !created && !dupAsk) {
+        e.preventDefault()
+        if (typeof formRef.current.requestSubmit === 'function') formRef.current.requestSubmit()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [loading, created, dupAsk])
+
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY)
-    setFormData({ refNo: '', enquiryDate: new Date().toISOString().split('T')[0], noOfPackages: '', consigneeName: '', shipperName: '', agent: '', importExport: '', mode: '', hawb: '', mawb: '', awbDate: '', weight: '', grossWeight: '', notificationEmail: '', customerName: '', vehicleType: '', noOfContainers: '', containerType: '', packageType: '', fromLocation: '', toLocation: '', deliveryDate: '', transportMode: '', chaName: '', terms: '', portLocation: '', cbm: '', commodityName: '', preAlertsSentDate: '', doCollectionDate: '', autoEmailEnabled: false })
+    setFormData(blankForm())
     setErrors({}); setTouched({})
+    setDraftRestored(false)
+    setCopiedFrom('')
   }
 
-  const hasDraft = !isEditMode && localStorage.getItem(DRAFT_KEY)
-  const getFieldClass = (name) => errors[name] && touched[name] ? 'border-red-400 bg-red-50' : touched[name] && formData[name] && !errors[name] ? 'border-emerald-400 bg-emerald-50' : 'border-gray-300'
-  const focusRing = isFFOnly ? 'focus:ring-purple-500 focus:border-purple-500' : isDORelease ? 'focus:ring-teal-500 focus:border-teal-500' : isTransport ? 'focus:ring-sky-500 focus:border-sky-500' : isCHA ? (isCHAExport ? 'focus:ring-amber-500 focus:border-amber-500' : 'focus:ring-emerald-500 focus:border-emerald-500') : 'focus:ring-indigo-500 focus:border-indigo-500'
-  const accentText = isFFOnly ? 'text-purple-400' : isDORelease ? 'text-teal-400' : isTransport ? 'text-sky-400' : isCHAExport ? 'text-amber-400' : isCHA ? 'text-emerald-400' : 'text-indigo-400'
-  const inputClass = `w-full pl-9 pr-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`
-  const accentBg = isFFOnly ? 'from-purple-400 to-indigo-500' : isDORelease ? 'from-teal-400 to-emerald-500' : isTransport ? 'from-sky-400 to-blue-500' : isCHAExport ? 'from-amber-400 to-orange-500' : isCHA ? 'from-emerald-400 to-green-500' : 'from-indigo-500 to-blue-600'
+  // Starts the next shipment for the same customer: details stay, job-specific fields are cleared.
+  const startAnother = () => {
+    setFormData(prev => keepForNext(prev))
+    setErrors({}); setTouched({})
+    setCreated(null)
+    setCopiedFrom('')
+    setPasteText('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
-  // ─── PREFIX PICKER UI (NEW) — dropdown + Generate button + manage panel ───
-  const renderPrefixPicker = (theme) => {
-    const selectClass = `flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 ${focusRing}`
-    return (
-      <div className="mt-2 space-y-2">
-        <div className="relative">
-          {/* Game-style spotlight — pulsing glow + bouncing arrow, shown once, */}
-          {/* disappears the moment the employee actually picks a prefix.      */}
-          {showFirstTimeGuide && (
+  const copyCreatedDetails = async () => {
+    const lines = [
+      `Ref No: ${created?.refNo || ''}`,
+      formData[primaryField] ? `${isTransport || isDORelease ? 'Customer' : isCHAExport ? 'Shipper' : 'Consignee'}: ${formData[primaryField]}` : '',
+      formData.mode ? `Mode: ${formData.mode}` : '',
+      formData.importExport ? `Import/Export: ${formData.importExport}` : '',
+      (formData.fromLocation || formData.toLocation) ? `Route: ${formData.fromLocation || '—'} → ${formData.toLocation || '—'}` : '',
+    ].filter(Boolean)
+    try { await navigator.clipboard.writeText(lines.join('\n')); addToast('Details copied', 'success') }
+    catch { addToast('Could not copy. Select the text and copy it instead', 'warning') }
+  }
+
+  const focusRing = 'focus:ring-indigo-500 focus:border-indigo-500'
+
+  // ─── PREFIX / INITIALS PICKER ───
+  // Tap a prefix, tap your initials, press Generate. The last choice is remembered on this browser.
+  const chooseLast = (key, setter) => (code) => { setter(code); writeLocal(key, code); if (code && (key === LAST_PREFIX_KEY ? selectedInitials : selectedPrefix)) dismissFirstTimeGuide() }
+  const pickPrefix = chooseLast(LAST_PREFIX_KEY, setSelectedPrefix)
+  const pickInitials = chooseLast(LAST_INITIALS_KEY, setSelectedInitials)
+  const canGenerate = prefixes.some(p => p.code === selectedPrefix) && initialsList.some(p => p.code === selectedInitials)
+
+  const chipClass = (on) => `px-3.5 py-2 rounded-xl text-[13px] font-bold transition-all ${on ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] border border-[var(--border-color)] hover:border-indigo-400'}`
+  const manageInput = 'flex-1 min-w-0 px-2.5 py-1.5 border border-[var(--border-color)] bg-[var(--input-bg)] text-[var(--text-primary)] rounded-lg text-xs'
+  const manageBox = 'border border-[var(--border-color)] rounded-2xl p-3 space-y-2 bg-[var(--bg-secondary)]'
+
+  const renderManagePanel = ({ list, editing, editValue, setEditValue, startEdit, cancelEdit, saveEdit, onDelete, newInput, setNewInput, onAdd, adding, emptyText, placeholder }) => (
+    <div className={manageBox}>
+      {list.length === 0 && <p className="text-[11px] text-[var(--text-muted)]">{emptyText}</p>}
+      {list.map((p) => (
+        <div key={p.code} className="flex items-center gap-2">
+          {editing === p.code ? (
             <>
-              <div className="absolute -top-7 left-2 flex flex-col items-center z-10 pointer-events-none">
-                <span className="text-[11px] font-semibold text-indigo-600 bg-white px-2 py-0.5 rounded-full shadow-md border border-indigo-200 whitespace-nowrap">
-                  👆 Pick prefix + initials to start
-                </span>
-                <span className="text-indigo-500 text-sm leading-none animate-bounce">▼</span>
-              </div>
-              <div className="absolute inset-0 rounded-lg ring-4 ring-indigo-400/60 animate-pulse pointer-events-none" />
+              <input type="text" value={editValue} onChange={(e) => setEditValue(e.target.value)} autoFocus className={manageInput} />
+              <button type="button" onClick={() => saveEdit(p.code)} className="px-2.5 py-1.5 bg-emerald-500 text-white rounded-lg text-[11px] font-bold">Save</button>
+              <button type="button" onClick={cancelEdit} className="px-2.5 py-1.5 border border-[var(--border-color)] text-[var(--text-secondary)] rounded-lg text-[11px]">Cancel</button>
+            </>
+          ) : (
+            <>
+              <span className="flex-1 text-xs font-bold text-[var(--text-primary)]">{p.code}</span>
+              <button type="button" onClick={() => startEdit(p.code)} className="p-1.5 text-[var(--text-muted)] hover:text-indigo-600" title="Rename"><Pencil size={13} /></button>
+              <button type="button" onClick={() => onDelete(p.code)} className="p-1.5 text-[var(--text-muted)] hover:text-red-600" title="Delete"><AlertCircle size={13} className="rotate-45" /></button>
             </>
           )}
+        </div>
+      ))}
+      <div className="flex gap-2 pt-2 border-t border-[var(--border-color)]">
+        <input type="text" value={newInput} onChange={(e) => setNewInput(e.target.value)} placeholder={placeholder} className={manageInput} />
+        <button type="button" onClick={onAdd} disabled={adding || !newInput.trim()}
+          className="px-3 py-1.5 border border-[var(--border-color)] text-[var(--text-secondary)] rounded-lg text-[11px] font-bold flex items-center gap-1 disabled:opacity-50 whitespace-nowrap">
+          {adding ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Add
+        </button>
+      </div>
+    </div>
+  )
 
-          <div className="flex gap-2 items-center">
-            <button
-              type="button"
-              onClick={() => setShowRefHelp((v) => !v)}
-              className="w-4 h-4 rounded-full border border-gray-300 text-gray-400 hover:text-gray-600 hover:border-gray-500 flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
-              title="How does this work?"
-            >
-              i
-            </button>
-            <select
-              value={selectedPrefix}
-              onChange={(e) => { setSelectedPrefix(e.target.value); if (e.target.value && selectedInitials) dismissFirstTimeGuide() }}
-              className={selectClass}
-            >
-              <option value="">Select prefix (RE, SI, PIPE...)</option>
-              {prefixes.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
-            </select>
-            <select
-              value={selectedInitials}
-              onChange={(e) => { setSelectedInitials(e.target.value); if (e.target.value && selectedPrefix) dismissFirstTimeGuide() }}
-              className="w-24 px-2 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 flex-shrink-0"
-            >
-              <option value="">Initials</option>
-              {initialsList.map((p) => <option key={p.code} value={p.code}>{p.code}</option>)}
-            </select>
-            <button
-              type="button"
-              onClick={() => { handleGenerateRef(); dismissFirstTimeGuide() }}
-              disabled={generatingRef || !selectedPrefix || !selectedInitials}
-              className={`px-3 py-2 bg-gradient-to-r ${theme} rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-50 whitespace-nowrap`}
-            >
-              {generatingRef ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
-            </button>
+  const renderRefPicker = () => (
+    <div className="space-y-4 mb-5">
+      {showFirstTimeGuide && (
+        <div className="flex items-start gap-2 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 px-3.5 py-2.5 text-xs text-indigo-800 dark:text-indigo-200">
+          <Info size={15} className="mt-0.5 flex-shrink-0" />
+          <p className="flex-1"><b>How it works:</b> tap a prefix, tap your initials, then press Generate. Your choice is remembered for next time. Don't see yours? Use "Manage" to add it.</p>
+          <button type="button" onClick={dismissFirstTimeGuide} aria-label="Got it" className="p-0.5"><X size={14} /></button>
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Field label="Prefix" className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            {prefixes.length === 0 && <span className="text-xs text-[var(--text-muted)]">No prefixes yet. Add one with Manage.</span>}
+            {prefixes.map(p => <button key={p.code} type="button" aria-pressed={selectedPrefix === p.code} onClick={() => pickPrefix(selectedPrefix === p.code ? '' : p.code)} className={chipClass(selectedPrefix === p.code)}>{p.code}</button>)}
+            <button type="button" onClick={() => setShowManagePrefixes(v => !v)} className="px-3 py-2 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-300 border border-dashed border-indigo-300 dark:border-indigo-500/40">{showManagePrefixes ? 'Close' : 'Manage'}</button>
+          </div>
+        </Field>
+        <Field label="Your initials" className="min-w-0">
+          <div className="flex flex-wrap gap-2">
+            {initialsList.length === 0 && <span className="text-xs text-[var(--text-muted)]">No initials yet. Add yours with Manage.</span>}
+            {initialsList.map(p => <button key={p.code} type="button" aria-pressed={selectedInitials === p.code} onClick={() => pickInitials(selectedInitials === p.code ? '' : p.code)} className={chipClass(selectedInitials === p.code)}>{p.code}</button>)}
+            <button type="button" onClick={() => setShowManageInitials(v => !v)} className="px-3 py-2 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-300 border border-dashed border-indigo-300 dark:border-indigo-500/40">{showManageInitials ? 'Close' : 'Manage'}</button>
+          </div>
+        </Field>
+      </div>
+      {showManagePrefixes && renderManagePanel({
+        list: prefixes, editing: editingCode, editValue: editingValue, setEditValue: setEditingValue,
+        startEdit: startEditPrefix, cancelEdit: cancelEditPrefix, saveEdit: saveEditPrefix, onDelete: handleDeletePrefix,
+        newInput: newPrefixInput, setNewInput: setNewPrefixInput, onAdd: handleAddPrefix, adding: addingPrefix,
+        emptyText: 'No prefixes yet. Add one below.', placeholder: 'New prefix, e.g. PIPE',
+      })}
+      {showManageInitials && renderManagePanel({
+        list: initialsList, editing: editingInitialCode, editValue: editingInitialValue, setEditValue: setEditingInitialValue,
+        startEdit: startEditInitial, cancelEdit: cancelEditInitial, saveEdit: saveEditInitial, onDelete: handleDeleteInitial,
+        newInput: newInitialInput, setNewInput: setNewInitialInput, onAdd: handleAddInitial, adding: addingInitial,
+        emptyText: 'No initials yet. Add yours below.', placeholder: 'Your initials, e.g. GJ',
+      })}
+    </div>
+  )
+
+  const goTo = (id) => {
+    const el = document.getElementById(`sec-${id}`)
+    if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const modeName = MODE_CARDS.find(m => m.key === shipmentMode)?.label || 'Freight'
+  const partyLabel = (isTransport || isDORelease) ? 'Customer' : isCHAExport ? 'Shipper' : 'Consignee'
+  const exportDirection = formData.importExport === 'Export'
+  const fromList = exportDirection ? INDIA_PORTS : COUNTRY_PORTS
+  const toList = exportDirection ? COUNTRY_PORTS : INDIA_PORTS
+  const swapRoute = () => setFormData(prev => ({ ...prev, fromLocation: prev.toLocation, toLocation: prev.fromLocation }))
+
+  // ─── SECTIONS (drive the left list, the progress meter and the live preview) ───
+  const sectionList = []
+  if (!isCHA) sectionList.push({ id: 'reference', label: isTransport ? 'Vehicle' : 'Reference', done: !!formData.refNo })
+  sectionList.push({ id: 'customer', label: partyLabel, done: !!primaryValue.trim() })
+  if (isDORelease) sectionList.push({ id: 'release', label: 'DO details', done: !!(formData.mawb && formData.customerName) })
+  else if (isTransport) sectionList.push({ id: 'shipment', label: 'Transport & route', done: !!(formData.fromLocation && formData.toLocation) })
+  else if (isCHA) sectionList.push({ id: 'shipment', label: 'Bill details', done: !!formData.mode })
+  else sectionList.push({ id: 'shipment', label: 'Shipment & route', done: !!(formData.mode && formData.importExport) })
+  if (full && !isTransport && !isDORelease) sectionList.push({ id: 'cargo', label: 'Cargo & weight', done: !!(formData.grossWeight || formData.weight || formData.noOfPackages) })
+  if (full) sectionList.push({ id: 'notify', label: 'Notify & team', done: !!formData.notificationEmail })
+  const doneCount = sectionList.filter(s => s.done).length
+  const percent = Math.round((doneCount / sectionList.length) * 100)
+
+  const missingRequired = []
+  if (!isEditMode && !isCHA && !isTransport && !isDORelease && !formData.refNo.trim()) missingRequired.push('Reference number')
+  if (isTransport) {
+    if (!formData.customerName.trim()) missingRequired.push('Customer')
+    if (!formData.fromLocation.trim()) missingRequired.push('From')
+    if (!formData.toLocation.trim()) missingRequired.push('To')
+  }
+  if (isDORelease) {
+    if (!formData.mawb.trim()) missingRequired.push('MAWB No')
+    if (!formData.customerName.trim()) missingRequired.push('Customer')
+  }
+
+  const previewTags = isTransport
+    ? [formData.transportMode, formData.vehicleType].filter(Boolean)
+    : isDORelease ? ['DO Release']
+      : [isCHA ? `CHA ${isCHAExport ? 'Export' : 'Import'}` : (isFFOnly ? 'FF Only' : ''), formData.mode, isCHA ? '' : formData.importExport].filter(Boolean)
+  const previewFacts = [
+    ['Terms', formData.terms], ['Port', formData.portLocation],
+    ['Packages', formData.noOfPackages],
+    ['Weight', formData.weight ? `${formData.weight} kg` : formData.grossWeight ? `${formData.grossWeight} kg gross` : ''],
+    ['CBM', formData.cbm], ['MAWB', isDORelease ? formData.mawb : ''],
+  ].filter(([, v]) => v)
+
+  const modeTitle = isEditMode ? `Edit: ${formData.refNo}` : isFFOnly ? 'New FF Only Shipment' : isDORelease ? 'New DO Release' : isTransport ? 'New Transport Shipment' : isCHAExport ? 'New CHA Bill Export' : isCHA ? 'New CHA Bill Import' : 'New Freight Shipment'
+  const submitLabel = isEditMode ? 'Update Shipment' : isFFOnly ? 'Create FF Only' : isDORelease ? 'Create DO Release' : isTransport ? 'Create Transport' : isCHAExport ? 'Create CHA Export Bill' : isCHA ? 'Create CHA Import Bill' : 'Create Shipment'
+
+  // ─── CARDS ───
+  const referenceCard = !isCHA && (
+    <Card id="reference" icon={Hash} tone="bg-indigo-500"
+      title={isTransport ? 'Vehicle' : isDORelease ? 'DO reference' : 'Reference'}
+      subtitle={isTransport ? 'Which vehicle, and which day' : isDORelease ? 'Type a DO reference, or use Auto' : isEditMode ? 'You can correct the number here' : 'Pick a prefix and your initials, then generate'}
+      badge={formData.refNo ? <Badge kind="done" /> : (!isTransport && !isDORelease && !isEditMode ? <Badge kind="required" /> : <Badge kind="optional" />)}>
+      {!isEditMode && !isTransport && !isDORelease && renderRefPicker()}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Field label={isTransport ? 'Vehicle No' : isDORelease ? 'DO Ref No' : 'Reference number'} htmlFor="refNo" required={!isEditMode && !isTransport && !isDORelease} error={errors.refNo}>
+          <div className="flex gap-2">
+            <div className="flex-1 min-w-0">
+              <Input icon={Hash} name="refNo" value={formData.refNo} onChange={handleChange} error={errors.refNo} className="font-bold"
+                placeholder={isTransport ? 'KA-01-AB-1234' : isDORelease ? 'DOR-2026…' : 'Generate, or type one'} />
+            </div>
+            {!isEditMode && !isTransport && !isDORelease && (
+              <button type="button" onClick={() => { handleGenerateRef(); dismissFirstTimeGuide() }} disabled={generatingRef || !canGenerate}
+                title={canGenerate ? 'Create the next reference number' : 'Pick a prefix and your initials first'}
+                className="h-11 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold flex items-center gap-1.5 disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap">
+                {generatingRef ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />} Generate
+              </button>
+            )}
+            {!isEditMode && isDORelease && (
+              <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))}
+                className="h-11 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold flex items-center gap-1.5 whitespace-nowrap"><Sparkles size={15} /> Auto</button>
+            )}
+          </div>
+        </Field>
+        <Field label={isTransport || isDORelease ? 'Date' : 'Enquiry date'} htmlFor="enquiryDate">
+          <Input icon={Calendar} type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} />
+        </Field>
+      </div>
+    </Card>
+  )
+
+  const customerCard = (
+    <Card id="customer" icon={isTransport || isDORelease ? User : Building2} tone="bg-teal-500" title={isTransport || isDORelease ? 'Customer' : 'Parties'}
+      subtitle={isTransport || isDORelease ? 'Who is this for?' : 'Start typing. Names you have used before appear as suggestions'}
+      badge={primaryValue.trim() ? <Badge kind="done" /> : (isTransport || isDORelease ? <Badge kind="required" /> : <Badge kind="optional" />)}>
+      <Field label={`${partyLabel} name`} htmlFor={primaryField} required={isTransport || isDORelease} error={errors.customerName && (isTransport || isDORelease) ? errors.customerName : ''}>
+        {(isTransport || isDORelease)
+          ? <Input icon={User} name="customerName" value={formData.customerName} onChange={handleChange} placeholder="Customer name" error={errors.customerName} />
+          : <PartyAutocomplete type={isCHAExport ? 'SHIPPER' : 'CONSIGNEE'} value={formData[primaryField]} onChange={(v) => setField(primaryField, v)}
+              placeholder="Search or type a new name…" inputClass={`${INPUT} pl-10`} />}
+      </Field>
+
+      {recentNames.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Recent</span>
+          {recentNames.filter(n => n.toLowerCase() !== primaryValue.trim().toLowerCase()).map(n => (
+            <button key={n} type="button" onClick={() => setField(primaryField, n)}
+              className="px-3 py-1.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-color)] text-xs font-bold text-[var(--text-secondary)] hover:border-indigo-400 max-w-[220px] truncate">{n}</button>
+          ))}
+        </div>
+      )}
+
+      {openMatches.length > 0 && (
+        <div role="status" className="mt-3 flex items-start gap-3 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
+          <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-bold">{primaryValue.trim()} already has {openMatches.length === 1 ? '1 open enquiry' : `${openMatches.length} open enquiries`}. Is this the same job?</p>
+            {openMatches.map(s => (
+              <p key={s.id} className="mt-0.5 truncate">
+                <Link to={`/shipment/${s.id}`} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-2">{s.refNo}</Link>
+                {' · '}{String(s.currentStatus || s.status || '').replace(/_/g, ' ').toLowerCase()}
+                {s.createdByName ? ` · ${s.createdByName}` : ''}
+                {s.createdAt ? ` · ${new Date(s.createdAt).toLocaleDateString('en-GB')}` : ''}
+              </p>
+            ))}
           </div>
         </div>
+      )}
 
-        {showRefHelp && (
-          <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] text-gray-600 space-y-1">
-            <p><strong>1.</strong> Pick a prefix from the dropdown (e.g. RE)</p>
-            <p><strong>2.</strong> Pick your initials (e.g. GJ)</p>
-            <p><strong>3.</strong> Click <strong>Generate</strong> — the number fills in automatically (e.g. RE2602-GJ)</p>
-            <p><strong>4.</strong> Don't see your prefix or initials? Open "Manage" below to add them</p>
-          </div>
-        )}
-
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => setShowManagePrefixes((v) => !v)}
-            className="text-[11px] text-gray-500 hover:text-gray-700 underline"
-          >
-            {showManagePrefixes ? 'Hide prefix list' : 'Manage prefixes'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowManageInitials((v) => !v)}
-            className="text-[11px] text-gray-500 hover:text-gray-700 underline"
-          >
-            {showManageInitials ? 'Hide initials list' : 'Manage initials'}
-          </button>
+      {!isTransport && !isDORelease && (full || isCHA) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <Field label={isCHAExport ? 'Consignee name' : 'Shipper name'} optional>
+            <PartyAutocomplete type={isCHAExport ? 'CONSIGNEE' : 'SHIPPER'} value={isCHAExport ? formData.consigneeName : formData.shipperName}
+              onChange={(v) => setField(isCHAExport ? 'consigneeName' : 'shipperName', v)} placeholder="Search or type a new name…" inputClass={`${INPUT} pl-10`} />
+          </Field>
+          {full && (
+            <Field label="Agent / forwarder" htmlFor="agent" optional>
+              <Input icon={Anchor} name="agent" value={formData.agent} onChange={handleChange} placeholder="Agent name" />
+            </Field>
+          )}
         </div>
+      )}
+    </Card>
+  )
 
-        {showManageInitials && (
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/60">
-            {initialsList.length === 0 && <p className="text-[11px] text-gray-400">No initials yet — add yours below.</p>}
-            {initialsList.map((p) => (
-              <div key={p.code} className="flex items-center gap-2">
-                {editingInitialCode === p.code ? (
-                  <>
-                    <input
-                      type="text"
-                      value={editingInitialValue}
-                      onChange={(e) => setEditingInitialValue(e.target.value)}
-                      autoFocus
-                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
-                    />
-                    <button type="button" onClick={() => saveEditInitial(p.code)} className="px-2 py-1.5 bg-emerald-500 text-white rounded-md text-[11px] font-medium">Save</button>
-                    <button type="button" onClick={cancelEditInitial} className="px-2 py-1.5 border border-gray-300 text-gray-500 rounded-md text-[11px]">Cancel</button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 text-xs font-semibold text-gray-700">{p.code}</span>
-                    <button type="button" onClick={() => startEditInitial(p.code)} className="p-1.5 text-gray-400 hover:text-indigo-600" title="Edit"><Pencil size={13} /></button>
-                    <button type="button" onClick={() => handleDeleteInitial(p.code)} className="p-1.5 text-gray-400 hover:text-red-600" title="Delete"><AlertCircle size={13} className="rotate-45" /></button>
-                  </>
-                )}
-              </div>
-            ))}
-            <div className="flex gap-2 pt-2 border-t border-gray-200">
-              <input
-                type="text"
-                value={newInitialInput}
-                onChange={(e) => setNewInitialInput(e.target.value)}
-                placeholder="Your initials, e.g. GJ"
-                className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
-              />
-              <button
-                type="button"
-                onClick={handleAddInitial}
-                disabled={addingInitial || !newInitialInput.trim()}
-                className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-md text-[11px] font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
-              >
-                {addingInitial ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Add
-              </button>
-            </div>
-          </div>
-        )}
+  const releaseCard = isDORelease && (
+    <Card id="release" icon={ClipboardList} tone="bg-teal-600" title="DO release details" subtitle="Air waybill numbers and the CHA handling it"
+      badge={formData.mawb.trim() ? <Badge kind="done" /> : <Badge kind="required" />}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Field label="MAWB No" htmlFor="mawb" required error={errors.mawb}>
+          <Input icon={Barcode} name="mawb" value={formData.mawb} onChange={handleChange} placeholder="MAWB number" error={errors.mawb} />
+        </Field>
+        <Field label="HAWB No" htmlFor="hawb" optional>
+          <Input icon={Barcode} name="hawb" value={formData.hawb} onChange={handleChange} placeholder="HAWB number" />
+        </Field>
+        <Field label="CHA name" htmlFor="chaName" optional className="md:col-span-2">
+          <Input icon={Building2} name="chaName" value={formData.chaName} onChange={handleChange} placeholder="CHA agent name" />
+        </Field>
+      </div>
+    </Card>
+  )
 
-        {showManagePrefixes && (
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50/60">
-            {prefixes.length === 0 && <p className="text-[11px] text-gray-400">No prefixes yet — add one below.</p>}
-            {prefixes.map((p) => (
-              <div key={p.code} className="flex items-center gap-2">
-                {editingCode === p.code ? (
-                  <>
-                    <input
-                      type="text"
-                      value={editingValue}
-                      onChange={(e) => setEditingValue(e.target.value)}
-                      autoFocus
-                      className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
-                    />
-                    <button type="button" onClick={() => saveEditPrefix(p.code)} className="px-2 py-1.5 bg-emerald-500 text-white rounded-md text-[11px] font-medium">Save</button>
-                    <button type="button" onClick={cancelEditPrefix} className="px-2 py-1.5 border border-gray-300 text-gray-500 rounded-md text-[11px]">Cancel</button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1 text-xs font-semibold text-gray-700">{p.code}</span>
-                    <button type="button" onClick={() => startEditPrefix(p.code)} className="p-1.5 text-gray-400 hover:text-indigo-600" title="Edit"><Pencil size={13} /></button>
-                    <button type="button" onClick={() => handleDeletePrefix(p.code)} className="p-1.5 text-gray-400 hover:text-red-600" title="Delete"><AlertCircle size={13} className="rotate-45" /></button>
-                  </>
-                )}
-              </div>
-            ))}
-            <div className="flex gap-2 pt-2 border-t border-gray-200">
-              <input
-                type="text"
-                value={newPrefixInput}
-                onChange={(e) => setNewPrefixInput(e.target.value)}
-                placeholder="New prefix, e.g. PIPE"
-                className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md text-xs"
-              />
-              <button
-                type="button"
-                onClick={handleAddPrefix}
-                disabled={addingPrefix || !newPrefixInput.trim()}
-                className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-md text-[11px] font-medium flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
-              >
-                {addingPrefix ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Add
-              </button>
-            </div>
+  const transportCard = isTransport && (
+    <Card id="shipment" icon={Truck} tone="bg-sky-500" title="Transport & route" subtitle="Vehicle, cargo and where it is going"
+      badge={formData.fromLocation && formData.toLocation ? <Badge kind="done" /> : <Badge kind="required" />}>
+      <Field label="Transport mode" className="mb-5">
+        <Chips options={TRANSPORT_MODE_OPTIONS} value={formData.transportMode} onChange={(v) => setField('transportMode', v)} custom />
+      </Field>
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-end">
+        <Field label="From" htmlFor="fromLocation" required error={errors.fromLocation}>
+          <Input icon={MapPin} name="fromLocation" value={formData.fromLocation} onChange={handleChange} placeholder="Origin" error={errors.fromLocation} />
+        </Field>
+        <button type="button" onClick={swapRoute} aria-label="Swap from and to" title="Swap from and to"
+          className="hidden sm:flex w-11 h-11 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 items-center justify-center hover:bg-indigo-100"><ArrowUpDown size={17} className="rotate-90" /></button>
+        <Field label="To" htmlFor="toLocation" required error={errors.toLocation}>
+          <Input icon={MapPin} name="toLocation" value={formData.toLocation} onChange={handleChange} placeholder="Destination" error={errors.toLocation} />
+        </Field>
+      </div>
+      {full && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
+            <Field label="Vehicle type"><Chips options={VEHICLE_TYPES} value={formData.vehicleType} onChange={(v) => setField('vehicleType', v)} custom /></Field>
+            <Field label="No of containers" htmlFor="noOfContainers" optional><Input icon={Box} type="number" min="1" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} /></Field>
+            <Field label="Package type" htmlFor="packageType" optional>
+              <ComboInput icon={Box} name="packageType" listId="dl-package" list={PACKAGE_TYPES} value={formData.packageType} onChange={handleChange} placeholder="Box / Carton, Pallet…" />
+            </Field>
+            <Field label="Delivery date" htmlFor="deliveryDate" optional><Input icon={Calendar} type="date" name="deliveryDate" value={formData.deliveryDate} onChange={handleChange} /></Field>
+            <Field label="Weight (kg)" htmlFor="weight" optional><Input icon={Scale} type="number" step="0.01" name="weight" value={formData.weight} onChange={handleChange} /></Field>
           </div>
+        </>
+      )}
+    </Card>
+  )
+
+  const shipmentCard = !isTransport && !isDORelease && (
+    <Card id="shipment" icon={isCHA ? FileCheck : isFFOnly ? FileText : Ship} tone="bg-orange-500"
+      title={isCHA ? 'CHA bill details' : isFFOnly ? 'Shipment' : 'Shipment & route'}
+      subtitle={isCHA ? 'How it is moving, and the air waybill numbers' : 'How is it moving, and where?'}
+      badge={(isCHA ? formData.mode : (formData.mode && formData.importExport)) ? <Badge kind="done" /> : <Badge kind="optional" />}>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <Field label="Transport mode">
+          <Chips options={TRANSPORT_MODES} value={formData.mode} onChange={(v) => setField('mode', v)} custom />
+        </Field>
+        {isCHA ? (
+          <Field label="Import / Export">
+            <span className="inline-flex px-3.5 py-2 rounded-xl text-[13px] font-bold bg-indigo-600 text-white">{isCHAExport ? 'Export' : 'Import'}</span>
+          </Field>
+        ) : (
+          <Field label="Import / Export">
+            <Chips options={IMPORT_EXPORT_TYPES} value={formData.importExport} onChange={(v) => setField('importExport', v)} custom />
+          </Field>
         )}
       </div>
-    )
-  }
+
+      {shipmentMode === 'freight' && full && (
+        <>
+          <Field label="Commodity" htmlFor="commodityName" optional className="mt-5">
+            <Input icon={Box} name="commodityName" value={formData.commodityName} onChange={handleChange} placeholder="e.g. Electronic components" />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-end mt-5">
+            <Field label="From (origin)" htmlFor="fromLocation" optional>
+              <ComboInput icon={MapPin} name="fromLocation" listId="dl-from" list={fromList} value={formData.fromLocation} onChange={handleChange} placeholder="Country or port" />
+            </Field>
+            <button type="button" onClick={swapRoute} aria-label="Swap from and to" title="Swap from and to"
+              className="hidden sm:flex w-11 h-11 rounded-full bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 items-center justify-center hover:bg-indigo-100"><ArrowUpDown size={17} className="rotate-90" /></button>
+            <Field label="To (destination)" htmlFor="toLocation" optional>
+              <ComboInput icon={MapPin} name="toLocation" listId="dl-to" list={toList} value={formData.toLocation} onChange={handleChange} placeholder="City or port" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-5">
+            <Field label="Terms"><Chips options={TERMS_OPTIONS} value={formData.terms} onChange={(v) => setField('terms', v)} custom limit={6} /></Field>
+            <Field label="Port location" htmlFor="portLocation" optional>
+              <ComboInput icon={Anchor} name="portLocation" listId="dl-port" list={PORT_LOCATIONS} value={formData.portLocation} onChange={handleChange} placeholder="e.g. INBLR4" />
+            </Field>
+          </div>
+        </>
+      )}
+
+      {isCHA && full && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+          <Field label="HAWB No" htmlFor="hawb" optional><Input icon={Barcode} name="hawb" value={formData.hawb} onChange={handleChange} /></Field>
+          <Field label="MAWB No" htmlFor="mawb" optional><Input icon={Barcode} name="mawb" value={formData.mawb} onChange={handleChange} /></Field>
+          <Field label="AWB date" htmlFor="awbDate" optional><Input icon={Calendar} type="date" name="awbDate" value={formData.awbDate} onChange={handleChange} /></Field>
+        </div>
+      )}
+    </Card>
+  )
+
+  const cargoCard = full && !isTransport && !isDORelease && (
+    <Card id="cargo" icon={Scale} tone="bg-violet-500" title="Cargo & weight"
+      subtitle={isCHA ? 'Weights for the bill' : 'Type the box size and the chargeable weight is worked out for you'}
+      badge={(formData.grossWeight || formData.weight || formData.noOfPackages) ? <Badge kind="done" /> : <Badge kind="optional" />}>
+      {isCHA ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Package weight (kg)" htmlFor="weight" optional><Input icon={Weight} type="number" step="0.01" name="weight" value={formData.weight} onChange={handleChange} /></Field>
+          <Field label="Gross weight (kg)" htmlFor="grossWeight" optional><Input icon={Scale} type="number" step="0.01" name="grossWeight" value={formData.grossWeight} onChange={handleChange} /></Field>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Field label="Packages" htmlFor="noOfPackages" optional><Input icon={Box} type="number" min="1" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} /></Field>
+            <Field label="Gross weight (kg)" htmlFor="grossWeight" optional><Input icon={Scale} type="number" step="0.01" name="grossWeight" value={formData.grossWeight} onChange={handleChange} /></Field>
+            <Field label="Chargeable weight (kg)" htmlFor="weight" optional><Input icon={Weight} type="number" step="0.01" name="weight" value={formData.weight} onChange={handleChange} /></Field>
+            {shipmentMode === 'freight' && (
+              <Field label="CBM" htmlFor="cbm" optional><Input icon={Box} type="number" step="0.001" name="cbm" value={formData.cbm} onChange={handleChange} /></Field>
+            )}
+          </div>
+          <Field label="Container type" optional className="mt-5">
+            <Chips options={CONTAINER_TYPES} value={formData.containerType} onChange={(v) => setField('containerType', v)} custom limit={4} />
+          </Field>
+          <WeightCalculator transportMode={formData.mode} grossWeight={formData.grossWeight}
+            onApply={({ chargeableWeight, cbm }) => {
+              setFormData(prev => ({ ...prev, weight: chargeableWeight, cbm: prev.cbm || cbm }))
+              addToast('Chargeable weight applied', 'success')
+            }} />
+        </>
+      )}
+    </Card>
+  )
+
+  const coHandler = employees.find(e => String(e.id) === String(coHandlerId))
+  const notifyCard = full && (
+    <Card id="notify" icon={Mail} tone="bg-amber-500" title="Notify & team" subtitle="Who else sees this, and who gets updates"
+      badge={formData.notificationEmail ? <Badge kind="done" /> : <Badge kind="optional" />}>
+      {!isEditMode && (
+        <Field label="Handled by" className="mb-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full bg-[var(--bg-secondary)] text-[13px] font-bold text-[var(--text-secondary)]">
+              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white text-[10px] flex items-center justify-center">You</span>You
+            </span>
+            {coHandler && (
+              <span className="inline-flex items-center gap-2 pl-1.5 pr-2 py-1.5 rounded-full bg-[var(--bg-secondary)] text-[13px] font-bold text-[var(--text-secondary)]">
+                <span className="w-6 h-6 rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 text-white text-[10px] flex items-center justify-center">{(coHandler.name || coHandler.email || '?').charAt(0).toUpperCase()}</span>
+                {coHandler.name || coHandler.email}
+                <button type="button" onClick={() => setCoHandlerId('')} aria-label="Remove co-handler" className="p-0.5 rounded-full hover:bg-black/10"><X size={13} /></button>
+              </span>
+            )}
+            {!coHandler && (
+              <select value="" onChange={(e) => setCoHandlerId(e.target.value)} aria-label="Add a co-handler"
+                className="h-9 px-3 rounded-full border border-dashed border-indigo-300 dark:border-indigo-500/40 bg-transparent text-xs font-bold text-indigo-600 dark:text-indigo-300 focus:outline-none">
+                <option value="">＋ Add co-handler</option>
+                {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name || emp.email}</option>)}
+              </select>
+            )}
+          </div>
+          <p className="text-[11px] text-[var(--text-muted)] mt-1.5">A co-handler also sees this shipment in their My Shipments.</p>
+        </Field>
+      )}
+      <Field label="Customer notification email" htmlFor="notificationEmail" optional>
+        <Input icon={Mail} type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" />
+      </Field>
+      {/* One-time choice made at creation: decides whether the 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) go out automatically for this shipment. */}
+      <label className="flex items-center gap-3 mt-4 cursor-pointer select-none rounded-2xl bg-[var(--bg-secondary)] px-4 py-3.5">
+        <input type="checkbox" className="peer sr-only" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} />
+        <span className="relative w-11 h-6 flex-shrink-0 rounded-full bg-gray-300 dark:bg-gray-600 transition-colors peer-checked:bg-emerald-500 peer-focus-visible:ring-4 peer-focus-visible:ring-emerald-500/30 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:translate-x-5" />
+        <span className="min-w-0">
+          <span className="block text-sm font-bold text-[var(--text-primary)]">Send automatic update emails to this customer</span>
+          <span className="block text-xs text-[var(--text-muted)]">They get a message when the enquiry is received, freight is confirmed and the invoice is ready.</span>
+        </span>
+      </label>
+    </Card>
+  )
 
   if (loadingShipment) return (
     <div className="flex items-center justify-center h-96">
@@ -948,500 +1524,229 @@ export default function CreateShipment() {
   )
 
   return (
-    <div className="max-w-[1400px] mx-auto grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
-        <div className="min-w-0">
-      <div className="mb-8">
-        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-700 mb-4"><ArrowLeft size={15} /> Back to shipments</Link>
-        <div className="flex items-center gap-3">
-          <div className={`w-12 h-12 bg-gradient-to-br ${accentBg} rounded-xl flex items-center justify-center shadow-lg`}>
-            {isEditMode ? <Pencil size={22} className="text-white" /> : isFFOnly ? <FileText size={22} className="text-white" /> : isDORelease ? <ClipboardList size={22} className="text-white" /> : isTransport ? <Truck size={22} className="text-white" /> : isCHA ? <FileCheck size={22} className="text-white" /> : <Ship size={22} className="text-white" />}
+    <div className="max-w-[1400px] mx-auto">
+      <div className="mb-6">
+        <Link to="/" className="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 dark:text-indigo-300 hover:underline mb-3"><ArrowLeft size={15} /> Back to shipments</Link>
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[var(--text-primary)] truncate">{modeTitle}</h1>
+            <p className="text-sm text-[var(--text-secondary)] mt-1">{isEditMode ? 'Change what is different, then update.' : 'Fill in what you know. You can add the rest later from the shipment page.'}</p>
           </div>
-          <div className="flex-1">
-            <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
-              {isEditMode ? `Edit: ${formData.refNo}` : isFFOnly ? 'New FF Only Shipment' : isDORelease ? 'New DO Release' : isTransport ? 'New Transport Shipment' : isCHAExport ? 'New CHA Bill Export' : isCHA ? 'New CHA Bill Import' : 'New Freight Shipment'}
-            </h2>
-          </div>
-          {isEditMode && <Link to={`/shipment/${editId}`} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-lg hover:from-indigo-600 hover:to-blue-700 text-sm font-medium shadow-lg"><Eye size={16} /> View Shipment</Link>}
+          {isEditMode && <Link to={`/shipment/${editId}`} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-lg shadow-indigo-500/20"><Eye size={16} /> View shipment</Link>}
+        </div>
+        <div className="lg:hidden mt-4">
+          <div className="flex items-center justify-between text-xs font-semibold text-[var(--text-secondary)] mb-1.5"><span>{doneCount} of {sectionList.length} sections</span><span>{percent}%</span></div>
+          <div className="h-1.5 rounded-full bg-[var(--bg-tertiary)] overflow-hidden"><div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${percent}%` }} /></div>
         </div>
       </div>
 
-      {!isEditMode && (
-        <div className="mb-6">
-          <div className="flex bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-1 border border-indigo-100 flex-wrap">
-            <button type="button" onClick={() => setShipmentMode('ff-only')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'ff-only' ? 'bg-white text-purple-700 shadow-md' : 'text-gray-500 hover:text-purple-600'}`}>📋 FF Only</button>
-            <button type="button" onClick={() => setShipmentMode('freight')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'freight' ? 'bg-white text-indigo-700 shadow-md' : 'text-gray-500 hover:text-indigo-600'}`}>🚢 Freight</button>
-            <button type="button" onClick={() => setShipmentMode('cha-import')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-import' ? 'bg-white text-emerald-700 shadow-md' : 'text-gray-500 hover:text-emerald-600'}`}>🛃 CHA Import</button>
-            <button type="button" onClick={() => setShipmentMode('cha-export')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'cha-export' ? 'bg-white text-amber-700 shadow-md' : 'text-gray-500 hover:text-amber-600'}`}>📤 CHA Export</button>
-            <button type="button" onClick={() => setShipmentMode('transport')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'transport' ? 'bg-white text-sky-700 shadow-md' : 'text-gray-500 hover:text-sky-600'}`}>🚛 Transport</button>
-            <button type="button" onClick={() => setShipmentMode('do-release')} className={`px-3 py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-200 ${shipmentMode === 'do-release' ? 'bg-white text-teal-700 shadow-md' : 'text-gray-500 hover:text-teal-600'}`}>📋 DO Release</button>
+      <div className="grid grid-cols-1 lg:grid-cols-[200px_minmax(0,1fr)] xl:grid-cols-[200px_minmax(0,1fr)_320px] gap-6 items-start">
+        <aside className="hidden lg:block sticky top-24 self-start">
+          <nav aria-label="Form sections" className="flex flex-col gap-1">
+            {sectionList.map((s, i) => (
+              <button key={s.id} type="button" onClick={() => goTo(s.id)}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-left text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] transition-colors">
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-extrabold flex-shrink-0 ${s.done ? 'bg-emerald-500 text-white' : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'}`}>{s.done ? '✓' : i + 1}</span>
+                <span className="truncate">{s.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="mt-5 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-4">
+            <p className="text-[11px] opacity-80">Form complete</p>
+            <p className="text-3xl font-extrabold leading-tight">{percent}%</p>
+            <div className="h-1.5 rounded-full bg-white/25 mt-2 overflow-hidden"><div className="h-full rounded-full bg-white transition-all" style={{ width: `${percent}%` }} /></div>
+            <p className="text-[11px] opacity-90 mt-2.5">{missingRequired.length === 0 ? 'Everything required is filled in' : `Still needed: ${missingRequired.join(', ')}`}</p>
           </div>
-        </div>
-      )}
+        </aside>
 
-      {hasDraft && !loading && (
-        <div className="mb-4 flex items-center justify-between p-3 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg text-sm">
-          <span className="text-amber-700 flex items-center gap-2"><Sparkles size={14} />You have a saved draft</span>
-          <button onClick={clearDraft} className="text-amber-600 hover:text-amber-800 text-xs font-medium">Clear draft</button>
+        <div className="min-w-0">
+          {!isEditMode && (
+            <div role="tablist" aria-label="Shipment type" className="grid grid-cols-3 sm:grid-cols-6 gap-2.5 mb-4">
+              {MODE_CARDS.map(m => {
+                const on = shipmentMode === m.key
+                return (
+                  <button key={m.key} type="button" role="tab" aria-selected={on} onClick={() => setShipmentMode(m.key)}
+                    className={`rounded-2xl px-2 py-3 text-center border-[1.5px] transition-all ${on ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-200 shadow-lg shadow-indigo-500/15' : 'border-[var(--border-color)] bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:border-indigo-300'}`}>
+                    <span className="block text-2xl mb-0.5" aria-hidden="true">{m.icon}</span>
+                    <span className="text-[12.5px] font-bold">{m.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {!isEditMode && (
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="inline-flex p-1 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)]">
+                <button type="button" onClick={() => toggleQuick(true)} aria-pressed={quick} className={`px-4 py-2 rounded-xl text-[13px] font-bold flex items-center gap-1.5 ${quick ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30' : 'text-[var(--text-secondary)]'}`}><Zap size={14} /> Quick create</button>
+                <button type="button" onClick={() => toggleQuick(false)} aria-pressed={!quick} className={`px-4 py-2 rounded-xl text-[13px] font-bold ${!quick ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30' : 'text-[var(--text-secondary)]'}`}>Full details</button>
+              </div>
+              <p className="text-xs text-[var(--text-muted)]">{quick ? 'Only the essentials. Add the rest later from the shipment page.' : 'Every field for this shipment type.'}</p>
+            </div>
+          )}
+
+          {!isEditMode && (
+            <div className="mb-4 rounded-3xl border border-emerald-200 dark:border-emerald-500/30 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-500/10 dark:to-teal-500/10 p-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center flex-shrink-0"><Copy size={18} /></span>
+                <div className="flex-1 min-w-[190px]">
+                  <p className="text-sm font-bold text-emerald-900 dark:text-emerald-200">Same customer as before?</p>
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300/80">Search an earlier shipment and start from a copy of it.</p>
+                </div>
+                <div className="relative w-full sm:w-72">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-600 pointer-events-none" />
+                  <input type="text" value={cloneQuery} onChange={(e) => setCloneQuery(e.target.value)} placeholder="Customer name or reference…" aria-label="Search an earlier shipment to copy"
+                    className="w-full h-10 pl-10 pr-3 rounded-xl border border-emerald-200 dark:border-emerald-500/30 bg-white dark:bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-emerald-500" />
+                </div>
+              </div>
+              {cloneResults.length > 0 && (
+                <div className="mt-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] overflow-hidden">
+                  {cloneResults.map(s => {
+                    const ff = s.freightForwarding || {}
+                    return (
+                      <button key={s.id} type="button" onClick={() => { setCloneQuery(''); setCloneResults([]); navigate(`/create?copy=${s.id}`) }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-[var(--hover-bg)] border-b border-[var(--border-color)] last:border-0">
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-bold text-[var(--text-primary)] truncate">{s.refNo}</span>
+                          <span className="block text-xs text-[var(--text-muted)] truncate">{ff.consigneeName || ff.customerName || ff.shipperName || '—'}</span>
+                        </span>
+                        <span className="text-xs font-semibold text-[var(--text-secondary)] whitespace-nowrap">{[s.shipmentType, s.importExport].filter(Boolean).join(' · ')}</span>
+                        <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 whitespace-nowrap">Copy →</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {draftRestored && !isEditMode && !copiedFrom && !loading && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+              <Sparkles size={15} className="flex-shrink-0" />
+              <span className="flex-1 min-w-[200px]">Your unfinished draft was restored. Carry on where you left off.</span>
+              <button type="button" onClick={clearDraft} className="text-xs font-bold underline underline-offset-2">Start fresh</button>
+              <button type="button" onClick={() => setDraftRestored(false)} aria-label="Dismiss" className="p-0.5"><X size={14} /></button>
+            </div>
+          )}
+
+          {copiedFrom && !isEditMode && (
+            <div className="mb-4 flex items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100">
+              <Info size={18} className="mt-0.5 flex-shrink-0 text-indigo-500" />
+              <div className="flex-1">
+                <p className="font-bold">Copied from {copiedFrom}</p>
+                <p className="opacity-80">Customer, route and cargo details are filled in. Weights, dates and AWB numbers were left blank. Generate a new reference number, change anything that is different, then save.</p>
+              </div>
+              <button type="button" onClick={() => setCopiedFrom('')} aria-label="Dismiss" className="p-1 rounded-md hover:bg-indigo-100 dark:hover:bg-white/10"><X size={16} /></button>
+            </div>
+          )}
+
+          {!isEditMode && !isTransport && !isDORelease && (
+            <div className="mb-4 rounded-3xl border-[1.5px] border-dashed border-orange-300 dark:border-orange-500/40 bg-gradient-to-br from-orange-50 to-rose-50 dark:from-orange-500/10 dark:to-rose-500/10 p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center flex-shrink-0"><Sparkles size={17} /></span>
+                <div>
+                  <p className="text-sm font-bold text-orange-900 dark:text-orange-200">Paste the enquiry and we'll fill the form</p>
+                  <p className="text-xs text-orange-700 dark:text-orange-300/80">Paste an email or WhatsApp message. Check what was found, then apply.</p>
+                </div>
+              </div>
+              <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={3} aria-label="Pasted enquiry text"
+                placeholder="e.g. Need a quote for 12 cartons of electronic components from Shenzhen to Bangalore by air, approx 340 kg, FOB."
+                className="w-full rounded-2xl border border-orange-200 dark:border-orange-500/30 bg-white dark:bg-[var(--bg-primary)] px-3.5 py-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-orange-400 resize-y" />
+              {pasteText.trim() && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {Object.keys(foundFields).length === 0
+                    ? <span className="text-xs text-orange-800 dark:text-orange-200">Nothing recognised yet. Try including the route, weight or number of packages.</span>
+                    : (
+                      <>
+                        {Object.entries(foundFields).map(([k, v]) => (
+                          <span key={k} className="px-3 py-1.5 rounded-full bg-white dark:bg-[var(--bg-primary)] border border-orange-200 dark:border-orange-500/30 text-xs font-semibold text-orange-800 dark:text-orange-200">
+                            {FOUND_LABELS[k] || k}<b className="ml-1.5 text-[var(--text-primary)]">{v}</b>
+                          </span>
+                        ))}
+                        <button type="button" onClick={applyFound} className="ml-auto px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold shadow-md shadow-orange-500/25">Apply to form →</button>
+                      </>
+                    )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <form ref={formRef} onSubmit={handleSubmit} noValidate>
+            {referenceCard}
+            {customerCard}
+            {releaseCard}
+            {transportCard}
+            {shipmentCard}
+            {cargoCard}
+            {notifyCard}
+
+            <div className="sticky bottom-[calc(60px+env(safe-area-inset-bottom))] lg:bottom-3 z-20 mt-2">
+              <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-xl px-4 py-3">
+                <p className="hidden sm:block flex-1 text-xs text-[var(--text-muted)]">
+                  {isEditMode ? 'Editing an existing shipment' : 'Draft saved automatically'} · <span className="text-rose-500">*</span> required
+                </p>
+                <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                  <Link to="/" className="h-11 px-3 sm:px-5 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] text-sm font-bold flex items-center hover:bg-[var(--hover-bg)]">Cancel</Link>
+                  {!isEditMode && (
+                    <button type="button" disabled={loading} onClick={() => { afterSave.current = 'another'; if (formRef.current && formRef.current.requestSubmit) formRef.current.requestSubmit() }}
+                      className="h-11 px-3 sm:px-4 rounded-xl border border-[var(--border-color)] text-[var(--text-primary)] text-sm font-bold flex items-center gap-1.5 hover:bg-[var(--hover-bg)] disabled:opacity-50 whitespace-nowrap">
+                      <Plus size={15} /> <span className="hidden sm:inline">Save &amp; create another</span><span className="sm:hidden">Another</span>
+                    </button>
+                  )}
+                  <button type="submit" disabled={loading}
+                    className="h-11 px-3 sm:px-5 flex-1 min-w-0 sm:flex-none justify-center rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold flex items-center gap-2 shadow-lg shadow-orange-500/30 disabled:opacity-60 whitespace-nowrap">
+                    {loading ? <><Loader2 size={16} className="animate-spin" />Saving...</> : <>{submitLabel}<kbd className="hidden md:inline ml-1 px-1.5 py-0.5 rounded-md bg-white/25 text-[10px] font-bold">Ctrl ↵</kbd></>}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
         </div>
-      )}
+
+        <LivePreview refNo={formData.refNo} who={primaryValue} tags={previewTags} from={formData.fromLocation} to={formData.toLocation}
+          facts={previewFacts} checklist={sectionList.map(s => ({ label: s.label, done: s.done }))} />
+      </div>
 
       {dupAsk && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => setDupAsk(false)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="dup-title" className="bg-white border border-gray-200 shadow-2xl w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-            <h3 id="dup-title" className="text-lg font-semibold text-gray-900 mb-1">This looks like an existing shipment</h3>
-            <p className="text-sm text-gray-600 mb-4">The details match {dupMatches.length === 1 ? 'a shipment' : `${dupMatches.length} shipments`} already in the system. Check before creating another one.</p>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4" onClick={() => { afterSave.current = ''; setDupAsk(false) }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="dup-title" className="bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-2xl w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] max-h-[90vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
+            <h3 id="dup-title" className="text-lg font-bold text-[var(--text-primary)] mb-1">This looks like an existing shipment</h3>
+            <p className="text-sm text-[var(--text-secondary)] mb-4">The details match {dupMatches.length === 1 ? 'a shipment' : `${dupMatches.length} shipments`} already in the system. Check before creating another one.</p>
             <div className="space-y-2 mb-5">
               {dupMatches.map((m) => (
-                <div key={m.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <div key={m.id} className="rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <Link to={`/shipment/${m.id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-gray-900 underline underline-offset-2">{m.refNo}</Link>
-                    <span className="text-xs font-semibold text-amber-800">{m.score}% match</span>
+                    <Link to={`/shipment/${m.id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-[var(--text-primary)] underline underline-offset-2">{m.refNo}</Link>
+                    <span className="text-xs font-bold text-amber-800 dark:text-amber-300">{m.score}% match</span>
                   </div>
-                  <p className="text-xs text-gray-600 mt-1">{(m.status || '').replace(/_/g, ' ')} · created {new Date(m.createdAt).toLocaleDateString('en-GB')}{m.createdByName ? ` by ${m.createdByName}` : ''}</p>
-                  <p className="text-xs text-gray-600 mt-1">Same: {m.matched.join(', ')}{m.differs.length ? `. Different: ${m.differs.join(', ')}` : ''}</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">{(m.status || '').replace(/_/g, ' ')} · created {new Date(m.createdAt).toLocaleDateString('en-GB')}{m.createdByName ? ` by ${m.createdByName}` : ''}</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-1">Same: {m.matched.join(', ')}{m.differs.length ? `. Different: ${m.differs.join(', ')}` : ''}</p>
                 </div>
               ))}
             </div>
             <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
-              <button type="button" onClick={() => setDupAsk(false)} className="px-4 min-h-[44px] rounded-lg border border-gray-300 text-sm font-medium text-gray-700 hover:bg-gray-50">Go back and check</button>
-              <button type="button" onClick={createAnyway} className="px-4 min-h-[44px] rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">It is different, create anyway</button>
+              <button type="button" onClick={() => { afterSave.current = ''; setDupAsk(false) }} className="px-4 min-h-[44px] rounded-xl border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--hover-bg)]">Go back and check</button>
+              <button type="button" onClick={createAnyway} className="px-4 min-h-[44px] rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700">It is different, create anyway</button>
             </div>
           </div>
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
-        <div className="bg-white rounded-xl border border-indigo-100 shadow-lg overflow-hidden">
-
-          {/* FF ONLY — same as FREIGHT form */}
-          {isFFOnly && (
-            <>
-              <div className="p-6 border-b border-purple-100 bg-gradient-to-br from-white to-purple-50/30">
-                <div className="flex items-center gap-2 mb-1"><Hash size={16} className="text-purple-500" /><h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider">Reference Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} placeholder="Generate below or type manually" className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')}`} /></div>
-                    </div>
-                    {!isEditMode && renderPrefixPicker('from-purple-500 to-indigo-500')}
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Enquiry Date</label>
-                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-purple-100">
-                <div className="flex items-center gap-2 mb-1"><Ship size={16} className="text-purple-500" /><h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider">Shipment Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className={`${inputClass} ${getFieldClass('noOfPackages')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
-                    <div className="flex gap-2">
-                      <select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select mode...</option>{TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="mode" value={!TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4"><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
-                  <div className="flex gap-2">
-                    <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select type...</option>{IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                    <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-purple-100">
-                <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-purple-500" /><h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider">Parties Involved</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
-                    <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor="text-purple-400" />
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
-                    <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor="text-purple-400" />
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-purple-100">
-                <div className="flex items-center gap-2 mb-1"><Globe size={16} className="text-purple-500" /><h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider">Agent Information</h3></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className={`${inputClass}`} /></div></div>
-              </div>
-              <div className="p-6 border-b border-purple-100">
-                <div className="flex items-center gap-2 mb-1"><Scale size={16} className="text-purple-500" /><h3 className="text-sm font-semibold text-purple-700 uppercase tracking-wider">Weight Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Chargeable Weight (kg)</label><div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-purple-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Container Type</label>
-                    <div className="flex gap-2">
-                      <select name="containerType" value={CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{CONTAINER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="containerType" value={!CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
-                <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
-                <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
-                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
-                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
-                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
-                </label>
-              </div>
-            </>
-          )}
-
-          {/* DO RELEASE FORM */}
-          {isDORelease && (
-            <>
-              <div className="p-6 border-b border-teal-100 bg-gradient-to-br from-white to-teal-50/30">
-                <div className="flex items-center gap-2 mb-1"><Hash size={16} className="text-teal-500" /><h3 className="text-sm font-semibold text-teal-700 uppercase tracking-wider">Reference Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">DO Ref No</label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1"><Hash size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-400" /><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} placeholder="DOR-2026..." className={`${inputClass}`} /></div>
-                      {!isEditMode && <button type="button" onClick={() => setFormData(prev => ({ ...prev, refNo: generateRefNo() }))} className="px-3 py-2.5 bg-gradient-to-r from-teal-100 to-emerald-100 rounded-lg text-xs font-medium text-teal-600 flex items-center gap-1"><Sparkles size={14} />Auto</button>}
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
-                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`${inputClass}`} /></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-6 border-b border-teal-100">
-                <div className="flex items-center gap-2 mb-1"><ClipboardList size={16} className="text-teal-500" /><h3 className="text-sm font-semibold text-teal-700 uppercase tracking-wider">DO Release Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">MAWB No <span className="text-red-500">*</span></label>
-                    <div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-400" /><input type="text" name="mawb" value={formData.mawb} onChange={handleChange} placeholder="MAWB number" className={`${inputClass} ${getFieldClass('mawb')}`} /></div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB No</label>
-                    <div className="relative"><Barcode size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-400" /><input type="text" name="hawb" value={formData.hawb} onChange={handleChange} placeholder="HAWB number" className={`${inputClass}`} /></div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">CHA Name</label>
-                    <div className="relative"><Building2 size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-400" /><input type="text" name="chaName" value={formData.chaName} onChange={handleChange} placeholder="CHA agent name" className={`${inputClass}`} /></div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name <span className="text-red-500">*</span></label>
-                    <div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-teal-400" /><input type="text" name="customerName" value={formData.customerName} onChange={handleChange} placeholder="Customer name" className={`${inputClass} ${getFieldClass('customerName')}`} /></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
-                <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
-                <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
-                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
-                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
-                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
-                </label>
-              </div>
-            </>
-          )}
-
-          {/* FREIGHT SHIPMENT */}
-          {shipmentMode === 'freight' && (
-            <>
-              <div className="p-6 border-b border-indigo-100 bg-gradient-to-br from-white to-indigo-50/30">
-                <div className="flex items-center gap-2 mb-1"><Hash size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Reference Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Reference Number <span className="text-red-500">*</span></label>
-                    <div className="flex gap-2">
-                      <div className="relative flex-1"><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} placeholder="Generate below or type manually" className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} ${getFieldClass('refNo')}`} /></div>
-                    </div>
-                    {!isEditMode && renderPrefixPicker('from-indigo-500 to-blue-500')}
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Enquiry Date</label>
-                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} /></div>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-indigo-100">
-                <div className="flex items-center gap-2 mb-1"><Ship size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Shipment Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Number of Packages</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="noOfPackages" value={formData.noOfPackages} onChange={handleChange} min="1" className={`${inputClass} ${getFieldClass('noOfPackages')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
-                    <div className="flex gap-2">
-                      <select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select mode...</option>{TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="mode" value={!TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
-                    <div className="flex gap-2">
-                      <select name="importExport" value={IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select type...</option>{IMPORT_EXPORT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="importExport" value={!IMPORT_EXPORT_TYPES.includes(formData.importExport) ? formData.importExport : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                  {/* ✅ NEW — Commodity Name (Freight module only) */}
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Commodity Name</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="commodityName" value={formData.commodityName} onChange={handleChange} placeholder="e.g. Electronic Components" className={`${inputClass}`} /></div></div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-indigo-100">
-                <div className="flex items-center gap-2 mb-1"><Building2 size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Parties Involved</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* ✅ NEW — searchable dropdown + manual entry, same list for both fields */}
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
-                    <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor="text-indigo-400" />
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
-                    <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor="text-indigo-400" />
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-indigo-100">
-                <div className="flex items-center gap-2 mb-1"><Globe size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Agent Information</h3></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className={`${inputClass}`} /></div></div>
-              </div>
-              {/* ✅ NEW — Route Details (Freight module only). Previously
-                  these fields (From/To/Terms/Port Location) could only be
-                  filled in AFTER creating the shipment, on the detail
-                  page — now available right here at creation time. */}
-              <div className="p-6 border-b border-indigo-100">
-                <div className="flex items-center gap-2 mb-1"><MapPin size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Route Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">From (Origin)</label>
-                    <div className="flex gap-2">
-                      <select name="fromLocation" value={COUNTRY_PORTS.includes(formData.fromLocation) ? formData.fromLocation : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{COUNTRY_PORTS.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="fromLocation" value={!COUNTRY_PORTS.includes(formData.fromLocation) ? formData.fromLocation : ''} onChange={handleChange} placeholder="Custom country/port..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">To (Destination)</label>
-                    <div className="flex gap-2">
-                      <select name="toLocation" value={INDIA_PORTS.includes(formData.toLocation) ? formData.toLocation : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{INDIA_PORTS.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="toLocation" value={!INDIA_PORTS.includes(formData.toLocation) ? formData.toLocation : ''} onChange={handleChange} placeholder="Custom city/port..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">Terms</label>
-                    <div className="flex gap-2">
-                      <select name="terms" value={TERMS_OPTIONS.includes(formData.terms) ? formData.terms : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="terms" value={!TERMS_OPTIONS.includes(formData.terms) ? formData.terms : ''} onChange={handleChange} placeholder="Custom terms..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                  <div><label className="block text-xs font-medium text-gray-500 mb-1.5">Port Location</label>
-                    <div className="flex gap-2">
-                      <select name="portLocation" value={PORT_LOCATIONS.includes(formData.portLocation) ? formData.portLocation : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{PORT_LOCATIONS.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="portLocation" value={!PORT_LOCATIONS.includes(formData.portLocation) ? formData.portLocation : ''} onChange={handleChange} placeholder="Custom port code..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-indigo-100">
-                <div className="flex items-center gap-2 mb-1"><Scale size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Weight Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-sm font-medium text-gray-700">Chargeable Weight (kg)</label>
-                      {/* ✅ NEW — Chargeable Weight calculator popup */}
-                      <button type="button" onClick={() => setShowWeightCalc(true)} className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-1"><Weight size={11} />Calculate</button>
-                    </div>
-                    <div className="relative"><Weight size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                  {/* ✅ NEW — CBM, previously only editable after creation */}
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">CBM</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" /><input type="number" name="cbm" value={formData.cbm} onChange={handleChange} step="0.001" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Container Type</label>
-                    <div className="flex gap-2">
-                      <select name="containerType" value={CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{CONTAINER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="containerType" value={!CONTAINER_TYPES.includes(formData.containerType) ? formData.containerType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
-                <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
-                <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
-                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
-                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
-                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
-                </label>
-              </div>
-            </>
-          )}
-
-          {/* CHA IMPORT / EXPORT */}
-          {isCHA && (
-            <>
-              <div className={`p-6 border-b ${isCHAExport ? 'border-amber-100 bg-gradient-to-br from-white to-amber-50/30' : 'border-emerald-100 bg-gradient-to-br from-white to-emerald-50/30'}`}>
-                <div className="flex items-center gap-2 mb-1"><Building2 size={16} className={isCHAExport ? 'text-amber-500' : 'text-emerald-500'} /><h3 className={`text-sm font-semibold uppercase tracking-wider ${isCHAExport ? 'text-amber-700' : 'text-emerald-700'}`}>Parties Involved</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {isCHAExport ? (
-                    <>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
-                        <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor={accentText} />
-                      </div>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
-                        <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor={accentText} />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Consignee Name</label>
-                        <PartyAutocomplete type="CONSIGNEE" value={formData.consigneeName} onChange={(v) => setFormData(prev => ({ ...prev, consigneeName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('consigneeName')}`} iconColor={accentText} />
-                      </div>
-                      <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Shipper Name</label>
-                        <PartyAutocomplete type="SHIPPER" value={formData.shipperName} onChange={(v) => setFormData(prev => ({ ...prev, shipperName: v }))} placeholder="Search or type a new name..." inputClass={`${inputClass} ${getFieldClass('shipperName')}`} iconColor={accentText} />
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className={`p-6 border-b ${isCHAExport ? 'border-amber-100' : 'border-emerald-100'}`}>
-                <div className="flex items-center gap-2 mb-1"><Globe size={16} className={isCHAExport ? 'text-amber-500' : 'text-emerald-500'} /><h3 className={`text-sm font-semibold uppercase tracking-wider ${isCHAExport ? 'text-amber-700' : 'text-emerald-700'}`}>Agent Information</h3></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Agent / Forwarder</label><div className="relative"><Anchor size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="agent" value={formData.agent} onChange={handleChange} className={`${inputClass}`} /></div></div>
-              </div>
-              <div className={`p-6 border-b ${isCHAExport ? 'border-amber-100' : 'border-emerald-100'}`}>
-                <div className="flex items-center gap-2 mb-1"><FileCheck size={16} className={isCHAExport ? 'text-amber-500' : 'text-emerald-500'} /><h3 className={`text-sm font-semibold uppercase tracking-wider ${isCHAExport ? 'text-amber-700' : 'text-emerald-700'}`}>CHA Bill Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Import / Export</label>
-                    <select name="importExport" value={isCHAExport ? 'Export' : 'Import'} disabled className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm bg-gray-50 text-gray-700`}>
-                      <option value="Import">Import</option><option value="Export">Export</option>
-                    </select>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
-                    <div className="flex gap-2">
-                      <select name="mode" value={TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select mode...</option>{TRANSPORT_MODES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="mode" value={!TRANSPORT_MODES.includes(formData.mode) ? formData.mode : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">HAWB No</label><div className="relative"><Barcode size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="hawb" value={formData.hawb} onChange={handleChange} className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">MAWB No</label><div className="relative"><Barcode size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="text" name="mawb" value={formData.mawb} onChange={handleChange} className={`${inputClass}`} /></div></div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">AWB Date</label><div className="relative"><Calendar size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="date" name="awbDate" value={formData.awbDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Weight (kg)</label><div className="relative"><Weight size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Gross Weight (kg)</label><div className="relative"><Scale size={15} className={`absolute left-3 top-1/2 -translate-y-1/2 ${accentText}`} /><input type="number" name="grossWeight" value={formData.grossWeight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                </div>
-              </div>
-              <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
-                <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
-                <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
-                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
-                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
-                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
-                </label>
-              </div>
-            </>
-          )}
-
-          {/* TRANSPORT SHIPMENT */}
-          {isTransport && (
-            <>
-              <div className="p-6 border-b border-sky-100 bg-gradient-to-br from-white to-sky-50/30">
-                <div className="flex items-center gap-2 mb-1"><Truck size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Reference Details</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Vehicle No</label>
-                    <div className="relative"><Hash size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="refNo" value={formData.refNo} onChange={handleChange} placeholder="KA-01-AB-1234" className={`${inputClass}`} /></div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
-                    <div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="enquiryDate" value={formData.enquiryDate} onChange={handleChange} className={`${inputClass}`} /></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-6 border-b border-sky-100">
-                <div className="flex items-center gap-2 mb-1"><User size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Customer Details</h3></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Customer Name <span className="text-red-500">*</span></label><div className="relative"><User size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="customerName" value={formData.customerName} onChange={handleChange} placeholder="Customer name" className={`${inputClass} ${getFieldClass('customerName')}`} /></div></div>
-              </div>
-
-              <div className="p-6 border-b border-sky-100">
-                <div className="flex items-center gap-2 mb-1"><Ship size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Transport Details</h3></div>
-                <div className="mb-4"><label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Mode</label>
-                  <div className="flex gap-2">
-                    <select name="transportMode" value={TRANSPORT_MODE_OPTIONS.includes(formData.transportMode) ? formData.transportMode : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select mode...</option>{TRANSPORT_MODE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                    <input type="text" name="transportMode" value={!TRANSPORT_MODE_OPTIONS.includes(formData.transportMode) ? formData.transportMode : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Vehicle Type</label>
-                    <div className="flex gap-2">
-                      <select name="vehicleType" value={VEHICLE_TYPES.includes(formData.vehicleType) ? formData.vehicleType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{VEHICLE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                      <input type="text" name="vehicleType" value={!VEHICLE_TYPES.includes(formData.vehicleType) ? formData.vehicleType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                    </div>
-                  </div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">No of Containers</label><div className="relative"><Box size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="number" name="noOfContainers" value={formData.noOfContainers} onChange={handleChange} min="1" className={`${inputClass}`} /></div></div>
-                </div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Package Type</label>
-                  <div className="flex gap-2">
-                    <select name="packageType" value={PACKAGE_TYPES.includes(formData.packageType) ? formData.packageType : ''} onChange={handleChange} className={`flex-1 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}><option value="">Select...</option>{PACKAGE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-                    <input type="text" name="packageType" value={!PACKAGE_TYPES.includes(formData.packageType) ? formData.packageType : ''} onChange={handleChange} placeholder="Or type..." className={`w-1/3 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing}`} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-6 border-b border-sky-100">
-                <div className="flex items-center gap-2 mb-1"><MapPin size={16} className="text-sky-500" /><h3 className="text-sm font-semibold text-sky-700 uppercase tracking-wider">Route & Delivery</h3></div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">From <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="fromLocation" value={formData.fromLocation} onChange={handleChange} placeholder="Origin" className={`${inputClass} ${getFieldClass('fromLocation')}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">To <span className="text-red-500">*</span></label><div className="relative"><MapPin size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="text" name="toLocation" value={formData.toLocation} onChange={handleChange} placeholder="Destination" className={`${inputClass} ${getFieldClass('toLocation')}`} /></div></div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Delivery Date</label><div className="relative"><Calendar size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="date" name="deliveryDate" value={formData.deliveryDate} onChange={handleChange} className={`${inputClass}`} /></div></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Weight (kg)</label><div className="relative"><Scale size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-sky-400" /><input type="number" name="weight" value={formData.weight} onChange={handleChange} step="0.01" className={`${inputClass}`} /></div></div>
-                </div>
-              </div>
-
-              <div className="p-6 border-b border-amber-100 bg-gradient-to-br from-amber-50/30 to-yellow-50/30">
-                <div className="flex items-center gap-2 mb-1"><Mail size={16} className="text-amber-500" /><h3 className="text-sm font-semibold text-amber-700 uppercase tracking-wider">Client Notification</h3></div>
-                <p className="text-[11px] text-amber-500 mb-4">Client will receive automatic email updates on key status changes</p>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1.5">Notification Email</label><div className="relative"><Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" /><input type="email" name="notificationEmail" value={formData.notificationEmail} onChange={handleChange} placeholder="client@example.com" className={`${inputClass.replace(focusRing, 'focus:ring-amber-500 focus:border-amber-500')}`} /></div></div>
-                {/* NEW - one-time toggle set at creation; decides whether all 3 milestone emails (Enquiry Received, Freight Confirmed, Invoice Ready) fire automatically for this shipment */}
-                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
-                  <input type="checkbox" checked={!!formData.autoEmailEnabled} onChange={(e) => setFormData(prev => ({ ...prev, autoEmailEnabled: e.target.checked }))} className="w-4 h-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-                  <span className="text-xs font-medium text-amber-700">Send automatic update emails to this customer?</span>
-                </label>
-              </div>
-            </>
-          )}
-
-          {!isEditMode && (
-            <div className="p-6 border-b border-indigo-100">
-              <div className="flex items-center gap-2 mb-1"><User size={16} className="text-indigo-500" /><h3 className="text-sm font-semibold text-indigo-700 uppercase tracking-wider">Co-Handler (Optional)</h3></div>
-              <p className="text-[11px] text-gray-500 mb-3">If someone else is working on this with you, add them here — it'll show up in their "My Shipments" too.</p>
-              <select value={coHandlerId} onChange={(e) => setCoHandlerId(e.target.value)} className={`w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 ${focusRing} bg-white`}>
-                <option value="">No co-handler</option>
-                {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.name || emp.email}</option>)}
-              </select>
+      {created && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-[#0E1236]/60 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" aria-labelledby="created-title" className="w-full max-w-md rounded-3xl bg-[var(--bg-primary)] border border-[var(--border-color)] shadow-2xl p-7 text-center">
+            <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-500/40"><CheckCircle2 size={34} /></div>
+            <h3 id="created-title" className="text-xl font-extrabold text-[var(--text-primary)]">{created.refNo} created</h3>
+            <p className="text-sm text-[var(--text-secondary)] mt-1.5 mb-6">{[formData[primaryField], formData.mode || formData.transportMode, formData.importExport].filter(Boolean).join(' · ') || 'Saved successfully'}</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button type="button" autoFocus onClick={() => navigate(created.dest)} className="col-span-2 h-12 rounded-2xl bg-orange-500 hover:bg-orange-600 text-white font-bold shadow-lg shadow-orange-500/30">Open shipment →</button>
+              <button type="button" onClick={startAnother} className="h-11 rounded-2xl bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm font-bold hover:bg-[var(--hover-bg)]">Create another</button>
+              <button type="button" onClick={copyCreatedDetails} className="h-11 rounded-2xl bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm font-bold hover:bg-[var(--hover-bg)] flex items-center justify-center gap-1.5"><Copy size={14} /> Copy details</button>
             </div>
-          )}
-
-          <div className="px-6 py-4 bg-gradient-to-r from-indigo-50 to-blue-50 border-t border-indigo-100 flex items-center justify-between">
-            <p className="text-xs text-gray-500"><span className="text-red-500">*</span> Required fields</p>
-            <div className="flex gap-3">
-              <Link to="/" className="px-5 py-2.5 border border-indigo-200 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-50 transition-colors">Cancel</Link>
-              <button type="submit" disabled={loading} className={`px-6 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-all flex items-center gap-2 shadow-lg ${isFFOnly ? 'bg-gradient-to-r from-purple-500 to-indigo-600 shadow-purple-200' : isDORelease ? 'bg-gradient-to-r from-teal-500 to-emerald-600 shadow-teal-200' : isTransport ? 'bg-gradient-to-r from-sky-500 to-blue-600 shadow-sky-200' : isCHAExport && !isEditMode ? 'bg-gradient-to-r from-amber-500 to-orange-600 shadow-amber-200' : isCHA && !isEditMode ? 'bg-gradient-to-r from-emerald-500 to-green-600 shadow-emerald-200' : 'bg-gradient-to-r from-indigo-600 to-blue-600 shadow-indigo-200'}`}>
-                {loading ? <><Loader2 size={16} className="animate-spin" />Saving...</> : <>{isEditMode ? <Pencil size={16} /> : isFFOnly ? <FileText size={16} /> : isDORelease ? <ClipboardList size={16} /> : isTransport ? <Truck size={16} /> : isCHA ? <FileCheck size={16} /> : <Ship size={16} />}{isEditMode ? 'Update Shipment' : isFFOnly ? 'Create FF Only' : isDORelease ? 'Create DO Release' : isTransport ? 'Create Transport' : isCHAExport ? 'Create CHA Export Bill' : isCHA ? 'Create CHA Import Bill' : 'Create Shipment'}</>}
-              </button>
-            </div>
+            <Link to="/" className="inline-block mt-4 text-xs font-semibold text-[var(--text-muted)] hover:underline">Back to all shipments</Link>
           </div>
         </div>
-      </form>
-
-      {/* ✅ NEW — Chargeable Weight calculator popup, Freight module only */}
-      <ChargeableWeightModal
-        isOpen={showWeightCalc}
-        onClose={() => setShowWeightCalc(false)}
-        transportMode={formData.mode}
-        grossWeight={formData.grossWeight}
-        onApply={({ chargeableWeight, cbm }) => {
-          setFormData(prev => ({ ...prev, weight: chargeableWeight, cbm: prev.cbm || cbm }))
-          addToast('Chargeable weight applied', 'success')
-        }}
-      />
-        </div>
-
-        {/* ✅ NEW — live summary sidebar, fills in as you type */}
-        <LiveSummaryPanel formData={formData} shipmentMode={shipmentMode} accentBg={accentBg} />
-      </div>
+      )}
+    </div>
   )
 }
