@@ -19,13 +19,14 @@ const PINS_KEY = 'pas_nav_pins'
 const DEFAULT_PINS = ['/', '/enquiry-cleanup']
 const DEFAULT_GROUPS = { overview: true, team: true, modules: true, refs: true, more: false, tools: true }
 
-// Icon tile colours for the module and reference-group links (dark sidebar).
+// Icon tile colours for the module and reference-group links. Soft tints on the light
+// sidebar, and the original glassy tints when dark mode is on.
 const TINTS = {
-  violet: 'bg-violet-500/20 text-violet-300',
-  indigo: 'bg-indigo-500/25 text-indigo-200',
-  emerald: 'bg-emerald-500/20 text-emerald-300',
-  sky: 'bg-sky-500/20 text-sky-300',
-  teal: 'bg-teal-500/20 text-teal-300',
+  violet: 'bg-violet-500/15 text-violet-600 dark:bg-violet-500/20 dark:text-violet-300',
+  indigo: 'bg-indigo-500/15 text-indigo-600 dark:bg-indigo-500/25 dark:text-indigo-200',
+  emerald: 'bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300',
+  sky: 'bg-sky-500/15 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300',
+  teal: 'bg-teal-500/15 text-teal-600 dark:bg-teal-500/20 dark:text-teal-300',
 }
 const DOTS = { amber: 'bg-amber-400', teal: 'bg-teal-400', indigo: 'bg-indigo-400', rose: 'bg-rose-400' }
 
@@ -544,15 +545,15 @@ export default function MainLayout({ user }) {
     const badge = badgeFor(item.path)
     const pinned = pins.includes(item.path)
     const tile = active
-      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50'
-      : (TINTS[item.tint] || 'bg-white/10 text-indigo-200')
+      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 dark:shadow-indigo-900/50'
+      : (TINTS[item.tint] || 'bg-indigo-500/10 text-indigo-600 dark:bg-white/10 dark:text-indigo-200')
     return (
       <div key={`${keyPrefix}${item.path}`} className="group relative">
         <Link to={item.path} onClick={closeSidebar} title={rail ? item.label : undefined}
           aria-current={active ? 'page' : undefined}
           className={`relative flex items-center gap-3 min-h-[46px] lg:min-h-[42px] px-2 rounded-xl text-[15px] lg:text-sm transition-colors ${rail ? 'lg:justify-center lg:px-0' : ''} ${active
-            ? 'bg-gradient-to-r from-indigo-500/40 to-indigo-500/10 text-white font-semibold ring-1 ring-inset ring-indigo-400/30'
-            : 'text-indigo-100/80 hover:bg-white/[0.07] hover:text-white font-medium'}`}>
+            ? 'bg-gradient-to-r from-indigo-100 to-indigo-50 text-[#12163A] font-semibold ring-1 ring-inset ring-indigo-200/70 dark:from-indigo-500/40 dark:to-indigo-500/10 dark:text-white dark:ring-indigo-400/30'
+            : 'text-[#4B5280] hover:bg-indigo-500/[0.07] hover:text-[#12163A] font-medium dark:text-indigo-100/80 dark:hover:bg-white/[0.07] dark:hover:text-white'}`}>
           {active && <span className={`absolute -left-3 ${rail ? 'lg:-left-2' : ''} inset-y-2.5 w-1 rounded-r bg-orange-500`} />}
           <span className={`w-8 h-8 lg:w-7 lg:h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${tile}`}>
             <Icon size={16} strokeWidth={active ? 2.4 : 2} />
@@ -561,7 +562,7 @@ export default function MainLayout({ user }) {
           {badge && (
             <>
               <span className={`${hideInRail} min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center lg:group-hover:opacity-0 ${badge.tone}`}>{shortCount(badge.n)}</span>
-              {rail && <span className={`hidden lg:flex absolute top-0 right-1 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold items-center justify-center ring-2 ring-[#141A4A] ${badge.tone}`}>{shortCount(badge.n)}</span>}
+              {rail && <span className={`hidden lg:flex absolute top-0 right-1 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold items-center justify-center ring-2 ring-white dark:ring-[#141A4A] ${badge.tone}`}>{shortCount(badge.n)}</span>}
             </>
           )}
         </Link>
@@ -569,7 +570,7 @@ export default function MainLayout({ user }) {
           <button type="button" onClick={() => toggleGroupPin(item.path)}
             aria-label={pinned ? `Unpin ${item.label}` : `Pin ${item.label}`} aria-pressed={pinned}
             title={pinned ? 'Unpin' : 'Pin to top'}
-            className={`hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 items-center justify-center rounded-lg hover:bg-white/10 focus:opacity-100 ${pinned ? 'text-amber-400 opacity-0 group-hover:opacity-100' : 'text-indigo-200/70 opacity-0 group-hover:opacity-100'}`}>
+            className={`hidden lg:flex absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 items-center justify-center rounded-lg hover:bg-indigo-500/10 dark:hover:bg-white/10 focus:opacity-100 ${pinned ? 'text-amber-500 dark:text-amber-400 opacity-0 group-hover:opacity-100' : 'text-[#8A90B8] dark:text-indigo-200/70 opacity-0 group-hover:opacity-100'}`}>
             <Star size={14} fill={pinned ? 'currentColor' : 'none'} />
           </button>
         )}
@@ -582,11 +583,11 @@ export default function MainLayout({ user }) {
     return (
       <Link key={item.path} to={item.path} onClick={closeSidebar} title={rail ? item.label : undefined}
         aria-current={active ? 'page' : undefined}
-        className={`rounded-xl px-3 py-2.5 flex flex-col gap-0.5 transition-colors ${rail ? 'lg:items-center lg:px-0 lg:py-2' : ''} ${active ? 'bg-indigo-500/30 ring-1 ring-inset ring-indigo-400/40' : 'bg-white/[0.06] hover:bg-white/10'}`}>
-        <span className="flex items-center gap-2 text-[15px] font-bold text-white">
+        className={`rounded-xl px-3 py-2.5 flex flex-col gap-0.5 transition-colors ${rail ? 'lg:items-center lg:px-0 lg:py-2' : ''} ${active ? 'bg-indigo-100 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-500/30 dark:ring-indigo-400/40' : 'bg-white/80 ring-1 ring-inset ring-[#E4E7F7] hover:bg-white dark:bg-white/[0.06] dark:ring-0 dark:hover:bg-white/10'}`}>
+        <span className="flex items-center gap-2 text-[15px] font-bold text-[#12163A] dark:text-white">
           <span className={`w-2 h-2 rounded-full ${DOTS[item.dot]}`} />{item.code}
         </span>
-        <span className={`text-[10.5px] text-indigo-200/60 ${hideInRail}`}>{item.sub}</span>
+        <span className={`text-[10.5px] text-[#8A90B8] dark:text-indigo-200/60 ${hideInRail}`}>{item.sub}</span>
       </Link>
     )
   }
@@ -597,9 +598,9 @@ export default function MainLayout({ user }) {
         const Icon = item.icon
         return (
           <a key={item.url} href={item.url} target="_blank" rel="noopener noreferrer" title={item.label} aria-label={`${item.label} (opens in a new tab)`}
-            className="relative flex items-center justify-center h-11 rounded-xl bg-white/[0.06] hover:bg-white/10 text-indigo-100">
+            className="relative flex items-center justify-center h-11 rounded-xl bg-white/80 ring-1 ring-inset ring-[#E4E7F7] hover:bg-white text-indigo-600 dark:bg-white/[0.06] dark:ring-0 dark:hover:bg-white/10 dark:text-indigo-100">
             <Icon size={18} />
-            <ExternalLink size={9} className="absolute top-1.5 right-1.5 text-indigo-200/50" />
+            <ExternalLink size={9} className="absolute top-1.5 right-1.5 text-[#8A90B8] dark:text-indigo-200/50" />
           </a>
         )
       })}
@@ -683,13 +684,13 @@ export default function MainLayout({ user }) {
 
       <aside
         aria-label="Main menu"
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-[290px] max-w-[86vw] ${rail ? 'lg:w-[80px]' : 'lg:w-[280px]'} bg-gradient-to-b from-[#0E1236] to-[#141A4A] text-indigo-100 border-r border-white/5 transition-transform duration-200 lg:transition-none lg:translate-x-0 ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col w-[290px] max-w-[86vw] ${rail ? 'lg:w-[80px]' : 'lg:w-[280px]'} bg-gradient-to-b from-white via-[#F3F4FF] to-[#E9ECFF] text-[#4B5280] border-r border-[#E4E7F7] dark:from-[#0E1236] dark:via-[#0E1236] dark:to-[#141A4A] dark:text-indigo-100 dark:border-white/5 transition-transform duration-200 lg:transition-none lg:translate-x-0 ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}`}
       >
         <div className={`flex-shrink-0 h-16 flex items-center justify-between px-4 ${rail ? 'lg:justify-center lg:px-2' : ''}`}>
-          <Link to="/" onClick={closeSidebar} aria-label="PAS Freight Services, home" className="flex items-center rounded-xl bg-white px-2 py-1 shadow-lg shadow-black/20">
+          <Link to="/" onClick={closeSidebar} aria-label="PAS Freight Services, home" className="flex items-center rounded-xl bg-white px-2 py-1 shadow-md shadow-indigo-500/10 ring-1 ring-[#E4E7F7] dark:shadow-lg dark:shadow-black/20 dark:ring-0">
             <Logo alt="PAS Freight Services" className={`h-9 w-auto ${rail ? 'lg:h-7' : ''}`} textClass={hideInRail} />
           </Link>
-          <button onClick={closeSidebar} aria-label="Close menu" className="lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-indigo-200 hover:bg-white/10">
+          <button onClick={closeSidebar} aria-label="Close menu" className="lg:hidden w-11 h-11 -mr-2 flex items-center justify-center rounded-lg text-[#4B5280] hover:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-white/10">
             <X size={20} />
           </button>
         </div>
@@ -698,28 +699,28 @@ export default function MainLayout({ user }) {
           onClick={() => setSidebarCollapsed(v => !v)}
           aria-label={rail ? 'Expand menu' : 'Collapse menu'}
           title={rail ? 'Expand menu' : 'Collapse menu'}
-          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-[#141A4A] border border-white/15 shadow-sm items-center justify-center text-indigo-200 hover:text-white z-10"
+          className="hidden lg:flex absolute -right-3 top-20 w-6 h-6 rounded-full bg-white border border-[#E4E7F7] dark:bg-[#141A4A] dark:border-white/15 shadow-sm items-center justify-center text-[#6B72A8] hover:text-indigo-600 dark:text-indigo-200 dark:hover:text-white z-10"
         >
           {rail ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
 
         <div className={`flex-shrink-0 px-3 pb-2 ${rail ? 'lg:px-2' : ''}`}>
           <button onClick={() => setPaletteOpen(true)} title={rail ? 'Search (Ctrl K)' : undefined} aria-label="Search pages and shipments"
-            className={`w-full flex items-center gap-2.5 h-11 px-3.5 rounded-xl bg-white/[0.07] border border-white/10 text-indigo-200/70 text-sm hover:bg-white/10 ${rail ? 'lg:justify-center lg:px-0' : ''}`}>
+            className={`w-full flex items-center gap-2.5 h-11 px-3.5 rounded-xl bg-white border border-[#E4E7F7] text-[#8A90B8] shadow-sm shadow-indigo-500/5 dark:bg-white/[0.07] dark:border-white/10 dark:text-indigo-200/70 dark:shadow-none text-sm hover:border-indigo-300 dark:hover:bg-white/10 ${rail ? 'lg:justify-center lg:px-0' : ''}`}>
             <Search size={16} className="flex-shrink-0" />
             <span className={`flex-1 text-left truncate ${hideInRail}`}>Jump to a page or shipment</span>
-            <kbd className={`text-[10.5px] font-bold rounded-md bg-white/10 px-1.5 py-0.5 text-indigo-100/80 hidden lg:block ${hideInRail}`}>Ctrl K</kbd>
+            <kbd className={`text-[10.5px] font-bold rounded-md bg-[#F0F2FB] text-[#4B5280] dark:bg-white/10 dark:text-indigo-100/80 px-1.5 py-0.5 hidden lg:block ${hideInRail}`}>Ctrl K</kbd>
           </button>
           <Link to="/create" onClick={closeSidebar}
-            className="lg:hidden mt-2 flex items-center justify-center gap-2 h-11 rounded-xl bg-orange-500 text-white text-sm font-bold shadow-lg shadow-orange-900/30">
+            className="lg:hidden mt-2 flex items-center justify-center gap-2 h-11 rounded-xl bg-orange-500 text-white text-sm font-bold shadow-lg shadow-orange-500/30">
             <Plus size={18} strokeWidth={2.5} /> New Shipment
           </Link>
         </div>
 
-        <nav className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-3 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.18)_transparent] ${rail ? 'lg:px-2' : ''}`}>
+        <nav className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-3 [scrollbar-width:thin] [scrollbar-color:rgba(79,70,229,0.22)_transparent] dark:[scrollbar-color:rgba(255,255,255,0.18)_transparent] ${rail ? 'lg:px-2' : ''}`}>
           {pinnedItems.length > 0 && (
             <div className={`mb-1 ${rail ? 'lg:hidden' : ''}`}>
-              <div className="px-2 h-8 flex items-center justify-between text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#7B82B8]">
+              <div className="px-2 h-8 flex items-center justify-between text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#8A90B8] dark:text-[#7B82B8]">
                 <span>Pinned</span>
                 <Star size={11} className="text-amber-400" fill="currentColor" />
               </div>
@@ -732,11 +733,11 @@ export default function MainLayout({ user }) {
             const expanded = openGroups[group.id] || hasActive
             return (
               <div key={group.id} className="mt-1">
-                {rail && index > 0 && <div className="hidden lg:block h-px bg-white/10 my-2" />}
+                {rail && index > 0 && <div className="hidden lg:block h-px bg-[#E4E7F7] dark:bg-white/10 my-2" />}
                 <button
                   onClick={() => toggleGroup(group.id)}
                   aria-expanded={expanded}
-                  className={`w-full flex items-center justify-between px-2 h-9 rounded-md text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#7B82B8] hover:text-white ${hideInRail}`}
+                  className={`w-full flex items-center justify-between px-2 h-9 rounded-md text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#8A90B8] hover:text-[#12163A] dark:text-[#7B82B8] dark:hover:text-white ${hideInRail}`}
                 >
                   <span>{group.label}</span>
                   <ChevronDown size={14} className={`transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`} />
@@ -753,26 +754,26 @@ export default function MainLayout({ user }) {
           })}
         </nav>
 
-        <div className="flex-shrink-0 p-3 border-t border-white/10">
-          <div className={`flex items-center gap-3 rounded-2xl bg-white/[0.07] p-2.5 ${rail ? 'lg:flex-col lg:gap-2 lg:p-2' : ''}`}>
+        <div className="flex-shrink-0 p-3 border-t border-[#E4E7F7] dark:border-white/10">
+          <div className={`flex items-center gap-3 rounded-2xl bg-white ring-1 ring-[#E4E7F7] shadow-sm shadow-indigo-500/5 dark:bg-white/[0.07] dark:ring-0 dark:shadow-none p-2.5 ${rail ? 'lg:flex-col lg:gap-2 lg:p-2' : ''}`}>
             <div className="relative flex-shrink-0">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center text-sm font-bold">{userInitial}</div>
-              <span className="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-[#141A4A]" />
+              <span className="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-white dark:ring-[#141A4A]" />
             </div>
             <div className={`flex-1 min-w-0 ${hideInRail}`}>
-              <p className="text-sm font-semibold text-white truncate">{displayName}</p>
-              <p className="text-xs text-indigo-200/60 truncate flex items-center gap-1">
+              <p className="text-sm font-semibold text-[#12163A] dark:text-white truncate">{displayName}</p>
+              <p className="text-xs text-[#8A90B8] dark:text-indigo-200/60 truncate flex items-center gap-1">
                 {isAdmin && <Shield size={11} className="text-orange-400 flex-shrink-0" aria-hidden="true" />}
                 {isAdmin ? 'Administrator' : 'Team member'}
               </p>
             </div>
             <div className={`flex gap-1.5 ${rail ? 'lg:flex-col' : ''}`}>
               <button onClick={() => setDarkMode(v => !v)} aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} title={darkMode ? 'Light mode' : 'Dark mode'}
-                className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-indigo-100">
+                className="w-9 h-9 rounded-lg bg-[#F0F2FB] hover:bg-[#E4E7F7] text-[#4B5280] dark:bg-white/10 dark:hover:bg-white/20 dark:text-indigo-100 flex items-center justify-center">
                 {darkMode ? <Sun size={16} className="text-amber-300" /> : <Moon size={16} />}
               </button>
               <button onClick={handleLogout} aria-label="Sign out" title="Sign out"
-                className="w-9 h-9 rounded-lg bg-white/10 hover:bg-rose-500/80 flex items-center justify-center text-indigo-100 hover:text-white">
+                className="w-9 h-9 rounded-lg bg-[#F0F2FB] text-[#4B5280] hover:bg-rose-500 hover:text-white dark:bg-white/10 dark:hover:bg-rose-500/80 dark:text-indigo-100 flex items-center justify-center">
                 <LogOut size={16} />
               </button>
             </div>
