@@ -229,7 +229,7 @@ function loadStickyFilters() {
     search: '', statusFilter: '', shipmentTypeFilter: '', page: 1, perPage: 25,
     showArchived: false, todayOnly: false, customDate: '', inProgressOnly: false,
     deliveredOnly: false, invoicedOnly: false, todayInvoicedOnly: false, thisMonthOnly: false,
-    pendingCustomsOnly: false, customs2Only: false, pendingInvoiceOnly: false, simpleTypesOnly: false, cancelledOnly: false,
+    pendingCustomsOnly: false, customs2Only: false, enquiryOnly: false, pendingInvoiceOnly: false, simpleTypesOnly: false, cancelledOnly: false,
     createdFrom: '', createdTo: '', employeeId: '',
   }
 }
@@ -298,6 +298,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const [thisMonthOnly, setThisMonthOnly] = useState(sticky.thisMonthOnly || false)
   const [pendingCustomsOnly, setPendingCustomsOnly] = useState(sticky.pendingCustomsOnly || false)
   const [customs2Only, setCustoms2Only] = useState(sticky.customs2Only || false)
+  const [enquiryOnly, setEnquiryOnly] = useState(sticky.enquiryOnly || false)
   const [pendingInvoiceOnly, setPendingInvoiceOnly] = useState(sticky.pendingInvoiceOnly || false)
   const [simpleTypesOnly, setSimpleTypesOnly] = useState(sticky.simpleTypesOnly || false)
   const [cancelledOnly, setCancelledOnly] = useState(sticky.cancelledOnly || false)
@@ -519,12 +520,12 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
           search, statusFilter, shipmentTypeFilter, page, perPage,
           showArchived, todayOnly, customDate, inProgressOnly,
           deliveredOnly, invoicedOnly, todayInvoicedOnly, thisMonthOnly,
-          pendingCustomsOnly, customs2Only, pendingInvoiceOnly, simpleTypesOnly, cancelledOnly,
+          pendingCustomsOnly, customs2Only, enquiryOnly, pendingInvoiceOnly, simpleTypesOnly, cancelledOnly,
           createdFrom, createdTo, employeeId,
         }))
       } catch {}
     }
-  }, [search, statusFilter, shipmentTypeFilter, page, perPage, showArchived, todayOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, todayInvoicedOnly, thisMonthOnly, pendingCustomsOnly, customs2Only, pendingInvoiceOnly, simpleTypesOnly, cancelledOnly, createdFrom, createdTo, employeeId, initialized])
+  }, [search, statusFilter, shipmentTypeFilter, page, perPage, showArchived, todayOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, todayInvoicedOnly, thisMonthOnly, pendingCustomsOnly, customs2Only, enquiryOnly, pendingInvoiceOnly, simpleTypesOnly, cancelledOnly, createdFrom, createdTo, employeeId, initialized])
 
   useEffect(() => { setInitialized(true) }, [])
 
@@ -559,6 +560,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayInvoicedOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -581,6 +583,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayInvoicedOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -604,6 +607,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayInvoicedOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -626,6 +630,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayInvoicedOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -648,9 +653,33 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayInvoicedOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
+    setShowArchived(false)
+    setShowBin(false)
+    setSearch('')
+    setStatusFilter('')
+    setPage(1)
+    setSelected([])
+  }
+
+  // ─── ENQUIRY CARD ─── not nominated yet; moves to Freight once the Nomination Date is filled
+  const showEnquiry = () => {
+    setEnquiryOnly(true)
+    setInProgressOnly(false)
+    setPendingCustomsOnly(false)
+    setCustoms2Only(false)
+    setPendingInvoiceOnly(false)
+    setSimpleTypesOnly(false)
+    setCancelledOnly(false)
+    setTodayOnly(false)
+    setThisMonthOnly(false)
+    setCustomDate('')
+    setDeliveredOnly(false)
+    setInvoicedOnly(false)
+    setTodayInvoicedOnly(false)
     setShowArchived(false)
     setShowBin(false)
     setSearch('')
@@ -670,6 +699,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayInvoicedOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -699,6 +729,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setDeliveredOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -721,6 +752,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setDeliveredOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -736,6 +768,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const showPendingCustoms = () => {
     setPendingCustomsOnly(true)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -757,6 +790,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // ─── CUSTOMS 2 CARD ─── Customs paperwork done up to the BOE; OOC, Gate Pass and Delivery still to fill
   const showCustoms2 = () => {
     setCustoms2Only(true)
+    setEnquiryOnly(false)
     setPendingCustomsOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
@@ -782,6 +816,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setSimpleTypesOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setCancelledOnly(false)
     setTodayOnly(false)
     setThisMonthOnly(false)
@@ -807,6 +842,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setPendingInvoiceOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setCancelledOnly(false)
     setTodayOnly(false)
     setThisMonthOnly(false)
@@ -828,6 +864,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setCancelledOnly(true)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setTodayOnly(false)
@@ -856,6 +893,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setTodayInvoicedOnly(false)
     setPendingCustomsOnly(false)
     setCustoms2Only(false)
+    setEnquiryOnly(false)
     setPendingInvoiceOnly(false)
     setSimpleTypesOnly(false)
     setCancelledOnly(false)
@@ -886,7 +924,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     if (!name) { addToast('Give the view a name first', 'warning'); return }
     const filters = {
       search, statusFilter, shipmentTypeFilter, showArchived, todayOnly, customDate, inProgressOnly,
-      deliveredOnly, invoicedOnly, todayInvoicedOnly, thisMonthOnly, pendingCustomsOnly, customs2Only, pendingInvoiceOnly,
+      deliveredOnly, invoicedOnly, todayInvoicedOnly, thisMonthOnly, pendingCustomsOnly, customs2Only, enquiryOnly, pendingInvoiceOnly,
       simpleTypesOnly, cancelledOnly, createdFrom, createdTo, employeeId,
     }
     persistViews([...savedViews.filter(v => v.name.toLowerCase() !== name.toLowerCase()), { id: String(Date.now()), name, filters }].slice(-12))
@@ -900,7 +938,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     setShowArchived(!!f.showArchived); setShowBin(false); setTodayOnly(!!f.todayOnly); setCustomDate(f.customDate || '')
     setInProgressOnly(!!f.inProgressOnly); setDeliveredOnly(!!f.deliveredOnly); setInvoicedOnly(!!f.invoicedOnly)
     setTodayInvoicedOnly(!!f.todayInvoicedOnly); setThisMonthOnly(!!f.thisMonthOnly)
-    setPendingCustomsOnly(!!f.pendingCustomsOnly); setCustoms2Only(!!f.customs2Only); setPendingInvoiceOnly(!!f.pendingInvoiceOnly)
+    setPendingCustomsOnly(!!f.pendingCustomsOnly); setCustoms2Only(!!f.customs2Only); setEnquiryOnly(!!f.enquiryOnly); setPendingInvoiceOnly(!!f.pendingInvoiceOnly)
     setSimpleTypesOnly(!!f.simpleTypesOnly); setCancelledOnly(!!f.cancelledOnly)
     setCreatedFrom(f.createdFrom || ''); setCreatedTo(f.createdTo || ''); setEmployeeId(f.employeeId || '')
     setPage(1); setSelected([]); setViewsOpen(false)
@@ -912,7 +950,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const createSimilar = (id) => { clearHover(); setPeekId(null); navigate(`/create?copy=${id}`) }
 
   const clearAllFilters = () => {
-    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setThisMonthOnly(false); setCustomDate(''); setInProgressOnly(false); setDeliveredOnly(false); setInvoicedOnly(false); setTodayInvoicedOnly(false); setPendingCustomsOnly(false); setCustoms2Only(false); setPendingInvoiceOnly(false); setCancelledOnly(false); setCreatedFrom(''); setCreatedTo(''); setEmployeeId(''); setPage(1)
+    setSearch(''); setStatusFilter(''); setShipmentTypeFilter(''); setTodayOnly(false); setThisMonthOnly(false); setCustomDate(''); setInProgressOnly(false); setDeliveredOnly(false); setInvoicedOnly(false); setTodayInvoicedOnly(false); setPendingCustomsOnly(false); setCustoms2Only(false); setEnquiryOnly(false); setPendingInvoiceOnly(false); setCancelledOnly(false); setCreatedFrom(''); setCreatedTo(''); setEmployeeId(''); setPage(1)
     addToast('Filters cleared', 'info')
   }
 
@@ -931,7 +969,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   const cancelsTomorrow = dueSoon.filter(r => r.enquiryDaysLeft <= 1).length
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['shipments', debouncedSearch, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, todayInvoicedOnly, pendingCustomsOnly, customs2Only, pendingInvoiceOnly, simpleTypesOnly, cancelledOnly, createdFrom, createdTo, employeeId, page, perPage, scopeKey],
+    queryKey: ['shipments', debouncedSearch, statusFilter, shipmentTypeFilter, showArchived, showBin, todayOnly, thisMonthOnly, customDate, inProgressOnly, deliveredOnly, invoicedOnly, todayInvoicedOnly, pendingCustomsOnly, customs2Only, enquiryOnly, pendingInvoiceOnly, simpleTypesOnly, cancelledOnly, createdFrom, createdTo, employeeId, page, perPage, scopeKey],
     queryFn: async () => {
       if (showBin) {
         const params = { page, limit: perPage }
@@ -943,7 +981,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
         if (customDate) params.date = customDate
         else if (todayOnly) params.today = 'true'
         else if (thisMonthOnly) params.thisMonthOnly = 'true'
-        else if (inProgressOnly) params.pipelineStage = 'freight'
+        else if (enquiryOnly) params.pipelineStage = 'enquiry'
+        else if (inProgressOnly) params.pipelineStage = 'nominated'
         else if (deliveredOnly) params.deliveredOnly = 'true'
         else if (invoicedOnly) params.invoicedThisMonthOnly = 'true'
         else if (todayInvoicedOnly) params.invoicedTodayOnly = 'true'
@@ -1141,6 +1180,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     const todayInvoiced = fullStats?.todayInvoiced ?? 0
     const pipelineFreight = fullStats?.pipelineFreight ?? 0
     const pipelineCustoms = fullStats?.pipelineCustoms ?? 0
+    const pipelineEnquiry = fullStats?.pipelineEnquiry ?? 0
+    const pipelineNominated = fullStats?.pipelineNominated ?? 0
     const pipelineCustoms1 = fullStats?.pipelineCustoms1 ?? 0
     const pipelineCustoms2 = fullStats?.pipelineCustoms2 ?? 0
     const pipelineInvoice = fullStats?.pipelineInvoice ?? 0
@@ -1158,6 +1199,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
       todayInvoiced,
       pipelineFreight,
       pipelineCustoms,
+      pipelineEnquiry,
+      pipelineNominated,
       pipelineCustoms1,
       pipelineCustoms2,
       pipelineInvoice,
@@ -1248,7 +1291,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     {l:'Invoiced Sent',v:'INVOICE_SENT',i:Mail},
   ]
   const startItem = totalCount===0?0:(page-1)*perPage+1; const endItem = Math.min(page*perPage,totalCount)
-  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||thisMonthOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly||todayInvoicedOnly||pendingCustomsOnly||customs2Only||pendingInvoiceOnly||simpleTypesOnly||cancelledOnly||createdFrom||createdTo||employeeId; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
+  const hasFilters = search||statusFilter||shipmentTypeFilter||todayOnly||thisMonthOnly||customDate||inProgressOnly||deliveredOnly||invoicedOnly||todayInvoicedOnly||pendingCustomsOnly||customs2Only||enquiryOnly||pendingInvoiceOnly||simpleTypesOnly||cancelledOnly||createdFrom||createdTo||employeeId; const isEmpty = !isLoading&&!isError&&shipments.length===0; const showSkeleton = isLoading && !data
 
   // ✅ MOVED HERE — must be declared before statCards below, which now
   // references showPipelineTab for the Pending Customs/Invoice cards.
@@ -1266,13 +1309,13 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // Invoice" (calendar-month scoped), and a new "This Month Shipments"
   // card added alongside "Today's Shipments". Now 6 cards total.
   const statCards = [
-    { label: showArchived ? 'Total Shipments' : 'Active Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: showArchived ? 'All archived shipments' : 'Everything still open', onClick: showAllShipments, active: !todayOnly && !thisMonthOnly && !customDate && !inProgressOnly && !invoicedOnly && !todayInvoicedOnly && !pendingCustomsOnly && !customs2Only && !pendingInvoiceOnly && !simpleTypesOnly && !cancelledOnly && !showArchived && !showBin && !search && !statusFilter },
+    { label: showArchived ? 'Total Shipments' : 'Active Shipments', value: overallTotal, icon: Box, gradient: statGradients[0], desc: showArchived ? 'All archived shipments' : 'Everything still open', onClick: showAllShipments, active: !todayOnly && !thisMonthOnly && !customDate && !inProgressOnly && !invoicedOnly && !todayInvoicedOnly && !pendingCustomsOnly && !customs2Only && !enquiryOnly && !pendingInvoiceOnly && !simpleTypesOnly && !cancelledOnly && !showArchived && !showBin && !search && !statusFilter },
     { 
       label: showArchived ? 'Completed' : 'Freight', 
-      value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pipelineFreight, 
+      value: showArchived ? analytics.delivered + analytics.invoiced : analytics.pipelineNominated, 
       icon: showArchived ? CheckCircle2 : Clock, 
       gradient: showArchived ? statGradients[2] : statGradients[1], 
-      desc: showArchived ? 'Every field filled' : 'Freight details still to fill',
+      desc: showArchived ? 'Every field filled' : 'Nominated, Freight details still to fill',
       onClick: showArchived ? undefined : showInProgressShipments,
       active: inProgressOnly
     },
@@ -1284,6 +1327,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     // group pages), since these are company-wide counts like the
     // Pipeline board itself.
     ...(showPipelineTab ? [
+      { label: 'Enquiry', value: analytics.pipelineEnquiry, icon: Clock, gradient: 'from-amber-500 to-yellow-600', desc: 'Waiting for nomination', onClick: showEnquiry, active: enquiryOnly },
       { label: 'Customs 1', value: analytics.pipelineCustoms1, icon: FileCheck, gradient: 'from-emerald-500 to-teal-600', desc: 'Job No, Checklist, Approval, BOE', onClick: showPendingCustoms, active: pendingCustomsOnly },
       { label: 'Customs 2', value: analytics.pipelineCustoms2, icon: FileCheck, gradient: 'from-cyan-500 to-sky-600', desc: 'OOC, Gate Pass, Delivery', onClick: showCustoms2, active: customs2Only },
       { label: 'Pending Invoice', value: analytics.pipelineInvoice, icon: Banknote, gradient: 'from-amber-500 to-orange-600', desc: 'Customs done, invoice not made yet', onClick: showPendingInvoice, active: pendingInvoiceOnly },
@@ -1299,9 +1343,9 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // card stays reachable as a "more views" chip underneath. Same handlers
   // and counts as before, nothing is removed.
   const tileLabels = showPipelineTab
-    ? [showArchived ? 'Total Shipments' : 'Active Shipments', showArchived ? 'Completed' : 'Freight', 'Customs 1', 'Customs 2', 'Pending Invoice', 'This Month Invoice']
+    ? [showArchived ? 'Total Shipments' : 'Active Shipments', 'Enquiry', showArchived ? 'Completed' : 'Freight', 'Customs 1', 'Customs 2', 'Pending Invoice', 'This Month Invoice']
     : [showArchived ? 'Completed' : 'Freight', "Today's Shipments", 'This Month Shipments', 'This Month Invoice']
-  const tileGradients = ['from-slate-600 to-slate-700', 'from-indigo-600 to-violet-600', 'from-teal-500 to-emerald-500', 'from-cyan-500 to-sky-600', 'from-orange-500 to-amber-500', 'from-pink-600 to-rose-500']
+  const tileGradients = ['from-slate-600 to-slate-700', 'from-amber-500 to-yellow-600', 'from-indigo-600 to-violet-600', 'from-teal-500 to-emerald-500', 'from-cyan-500 to-sky-600', 'from-orange-500 to-amber-500', 'from-pink-600 to-rose-500']
   const kpiTiles = tileLabels.map(l => statCards.find(c => c.label === l)).filter(Boolean)
   const moreViews = statCards.filter(c => !tileLabels.includes(c.label))
 
@@ -1321,7 +1365,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   ]
   const attentionCount = dueSoon.length + (analytics.pipelineCustoms1 > 0 ? 1 : 0) + (analytics.pipelineCustoms2 > 0 ? 1 : 0) + (analytics.pipelineInvoice > 0 ? 1 : 0)
   const flowNodes = [
-    { label: 'Freight', value: analytics.pipelineFreight, color: 'bg-amber-500', onClick: showInProgressShipments },
+    { label: 'Enquiry', value: analytics.pipelineEnquiry, color: 'bg-yellow-500', onClick: showEnquiry },
+    { label: 'Freight', value: analytics.pipelineNominated, color: 'bg-amber-500', onClick: showInProgressShipments },
     { label: 'Customs 1', value: analytics.pipelineCustoms1, color: 'bg-teal-500', onClick: showPendingCustoms },
     { label: 'Customs 2', value: analytics.pipelineCustoms2, color: 'bg-cyan-500', onClick: showCustoms2 },
     { label: 'Invoice', value: analytics.pipelineInvoice, color: 'bg-orange-500', onClick: showPendingInvoice },
@@ -1341,7 +1386,8 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     if (customDate) return `Shipments on ${fmtDDMMYYYY(customDate + 'T00:00:00')}`
     if (todayOnly) return "Today's Shipments"
     if (thisMonthOnly) return "This Month's Shipments"
-    if (inProgressOnly) return 'Freight — Freight Details Still to Fill'
+    if (enquiryOnly) return 'Enquiry — Waiting for Nomination'
+    if (inProgressOnly) return 'Freight — Nominated, Freight Details Still to Fill'
     if (deliveredOnly) return 'Delivered / Hand Over Shipments'
     if (todayInvoicedOnly) return "Invoiced Today"
     if (invoicedOnly) return 'Invoiced This Month'
@@ -1671,7 +1717,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
       {!showBin && (
         <>
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${kpiTiles.length > 4 ? "lg:grid-cols-3" : "xl:grid-cols-4"}`}>
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${kpiTiles.length > 4 ? "lg:grid-cols-3 xl:grid-cols-4" : "xl:grid-cols-4"}`}>
             {kpiTiles.map((stat, i) => {
               const Icon = stat.icon
               return (
@@ -1736,10 +1782,10 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
                   {flowNodes.map((n, i) => (
                     <div key={n.label} className="flex items-start flex-1 min-w-0">
                       <button type="button" onClick={n.onClick} className="flex flex-col items-center gap-2 w-full min-w-0 group">
-                        <span className={`w-14 h-14 rounded-full ${n.color} text-white flex items-center justify-center text-sm font-bold shadow group-hover:scale-105 transition-transform`}>{Number(n.value || 0) >= 10000 ? `${Math.round(n.value / 1000)}k` : Number(n.value || 0).toLocaleString()}</span>
+                        <span className={`w-12 h-12 rounded-full ${n.color} text-white flex items-center justify-center text-xs font-bold shadow group-hover:scale-105 transition-transform`}>{Number(n.value || 0) >= 10000 ? `${Math.round(n.value / 1000)}k` : Number(n.value || 0).toLocaleString()}</span>
                         <span className="text-[11px] font-semibold text-[var(--text-secondary)] text-center leading-tight">{n.label}</span>
                       </button>
-                      {i < flowNodes.length - 1 && <span className="hidden sm:block h-0.5 w-4 mt-7 border-t-2 border-dashed border-[var(--border-color)] shrink-0" />}
+                      {i < flowNodes.length - 1 && <span className="hidden sm:block h-0.5 w-2 mt-6 border-t-2 border-dashed border-[var(--border-color)] shrink-0" />}
                     </div>
                   ))}
                 </div>

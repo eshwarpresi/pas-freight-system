@@ -1459,6 +1459,8 @@ const getShipmentBreakdown = async (req, res) => {
     const simpleTypesInProgress = await prisma.shipment.count({ where: getPipelineStageWhere('simple', false) });
     const cancelled = await prisma.shipment.count({ where: getCancelledWhere(false) });
     // Not part of the sum below: the Customs stage split into its two dashboard cards.
+    const enquiry = await prisma.shipment.count({ where: getPipelineStageWhere('enquiry', false) });
+    const nominated = await prisma.shipment.count({ where: getPipelineStageWhere('nominated', false) });
     const customs1 = await prisma.shipment.count({ where: getPipelineStageWhere('customs1', false) });
     const customs2 = await prisma.shipment.count({ where: getPipelineStageWhere('customs2', false) });
 
@@ -1483,6 +1485,9 @@ const getShipmentBreakdown = async (req, res) => {
           otherActive
         },
         split: {
+          enquiry,
+          nominated,
+          sumMatchesFreight: (enquiry + nominated) === inProgress,
           customs1,
           customs2,
           sumMatchesCustoms: (customs1 + customs2) === pendingCustoms
@@ -1574,7 +1579,7 @@ const getShipmentStats = async (req, res) => {
     // same scope (mine/team/search/status/etc) as everything else here.
     const { start: monthStart, end: monthEnd } = getISTMonthBounds();
 
-    const [total, delivered, invoiced, weightAgg, monthlyShipments, pipelineFreight, pipelineCustoms, pipelineInvoice, pipelineSimple, cancelled, pipelineCustoms1, pipelineCustoms2] = await Promise.all([
+    const [total, delivered, invoiced, weightAgg, monthlyShipments, pipelineFreight, pipelineCustoms, pipelineInvoice, pipelineSimple, cancelled, pipelineEnquiry, pipelineNominated, pipelineCustoms1, pipelineCustoms2] = await Promise.all([
       prisma.shipment.count({ where }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
@@ -1602,6 +1607,9 @@ const getShipmentStats = async (req, res) => {
       // ✅ FIXED — "Cancelled" now also respects which tab you're
       // viewing, same reasoning as the pipeline counts above.
       prisma.shipment.count({ where: withScope(getCancelledWhere(isArchived === 'true')) }),
+      // Freight shown as two cards: waiting for nomination, then nominated with Freight fields still to fill.
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('enquiry', isArchived === 'true')) }),
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('nominated', isArchived === 'true')) }),
       // Customs shown as two cards: paperwork up to the BOE / SB, then OOC / Gate Pass / Delivery.
       prisma.shipment.count({ where: withScope(getPipelineStageWhere('customs1', isArchived === 'true')) }),
       prisma.shipment.count({ where: withScope(getPipelineStageWhere('customs2', isArchived === 'true')) })
@@ -1667,6 +1675,8 @@ const getShipmentStats = async (req, res) => {
       pipelineInvoice,
       pipelineSimple,
       cancelled,
+      pipelineEnquiry,
+      pipelineNominated,
       pipelineCustoms1,
       pipelineCustoms2
     };
@@ -2818,6 +2828,14 @@ function getPipelineStageWhere(stage, isArchivedFlag = false) {
       shipmentType: { in: SIMPLE_PIPELINE_TYPES },
       AND: [invoiceIncompleteFilter(), getNotCancelledFilter()]
     };
+  }
+  // The Freight stage is worked in two steps: an Enquiry waits for its nomination, then it is Freight
+  // work until every Freight field is filled. Together they are exactly the 'freight' stage above.
+  if (stage === 'enquiry') {
+    return { ...baseActive, AND: [getPipelineStageWhere('freight', isArchivedFlag), { OR: [{ freightForwarding: null }, { freightForwarding: { nominationDate: null } }] }] };
+  }
+  if (stage === 'nominated') {
+    return { ...baseActive, AND: [getPipelineStageWhere('freight', isArchivedFlag), { freightForwarding: { nominationDate: { not: null } } }] };
   }
   // Customs split in two. Together they are exactly the 'customs' stage above.
   if (stage === 'customs1') {
