@@ -455,8 +455,9 @@ function isArchiveEligible(shipment, debug) {
     if (!cha.oocDate) missing.push('OOC Date');
     if (!cha.gatePassDate) missing.push('Gate Pass Date');
     if (!cha.deliveryDate) missing.push('Delivery Date');
+    // Tracking No is optional: it is almost never filled in, and the Export screen has no box for it, so asking
+    // for it kept finished shipments in Active forever. It can still be entered on the Import Customs screen.
   }
-  if (!cha.trackingNumber) missing.push('Tracking Number');
   if (missing.length) { if (debug) console.log(`🔍 ARCHIVE CHECK [${shipment.refNo}] — missing:`, missing); return false; }
 
   if (shipment.shipmentType === 'CHA Only') return true;
@@ -1457,6 +1458,10 @@ const getShipmentBreakdown = async (req, res) => {
     const pendingInvoice = await prisma.shipment.count({ where: getPipelineStageWhere('invoice', false) });
     const simpleTypesInProgress = await prisma.shipment.count({ where: getPipelineStageWhere('simple', false) });
     const cancelled = await prisma.shipment.count({ where: getCancelledWhere(false) });
+    // Not part of the sum below: inProgress + pendingCustoms is split here into "not invoiced yet" and "already invoiced".
+    const liveFreight = await prisma.shipment.count({ where: getPipelineStageWhere('freightLive', false) });
+    const liveCustoms = await prisma.shipment.count({ where: getPipelineStageWhere('customsLive', false) });
+    const paperwork = await prisma.shipment.count({ where: getPipelineStageWhere('paperwork', false) });
 
     // ✅ The honest reconciliation check — if these 5 buckets don't sum
     // to the full Active count, this surfaces exactly how many
@@ -1477,6 +1482,12 @@ const getShipmentBreakdown = async (req, res) => {
           simpleTypesInProgress,
           cancelled,
           otherActive
+        },
+        split: {
+          liveFreight,
+          liveCustoms,
+          invoicedPaperworkPending: paperwork,
+          sumMatchesFreightPlusCustoms: (liveFreight + liveCustoms + paperwork) === (inProgress + pendingCustoms)
         },
         reconciliation: {
           activeBucketsSum: accountedFor + otherActive,
@@ -1565,7 +1576,7 @@ const getShipmentStats = async (req, res) => {
     // same scope (mine/team/search/status/etc) as everything else here.
     const { start: monthStart, end: monthEnd } = getISTMonthBounds();
 
-    const [total, delivered, invoiced, weightAgg, monthlyShipments, pipelineFreight, pipelineCustoms, pipelineInvoice, pipelineSimple, cancelled] = await Promise.all([
+    const [total, delivered, invoiced, weightAgg, monthlyShipments, pipelineFreight, pipelineCustoms, pipelineInvoice, pipelineSimple, cancelled, liveFreight, liveCustoms, paperwork] = await Promise.all([
       prisma.shipment.count({ where }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['DELIVERED', 'HAND_OVER'] } } }),
       prisma.shipment.count({ where: { ...where, currentStatus: { in: ['INVOICE_GENERATED', 'INVOICE_SENT'] } } }),
@@ -1592,7 +1603,11 @@ const getShipmentStats = async (req, res) => {
       prisma.shipment.count({ where: withScope(getPipelineStageWhere('simple', isArchived === 'true')) }),
       // ✅ FIXED — "Cancelled" now also respects which tab you're
       // viewing, same reasoning as the pipeline counts above.
-      prisma.shipment.count({ where: withScope(getCancelledWhere(isArchived === 'true')) })
+      prisma.shipment.count({ where: withScope(getCancelledWhere(isArchived === 'true')) }),
+      // Freight stage and Customs stage, split by "already invoiced or not" (see getPipelineStageWhere).
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('freightLive', isArchived === 'true')) }),
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('customsLive', isArchived === 'true')) }),
+      prisma.shipment.count({ where: withScope(getPipelineStageWhere('paperwork', isArchived === 'true')) })
     ]);
 
     // Monthly invoiced = shipments matching the current filter whose
@@ -1654,7 +1669,10 @@ const getShipmentStats = async (req, res) => {
       pipelineCustoms,
       pipelineInvoice,
       pipelineSimple,
-      cancelled
+      cancelled,
+      liveFreight,
+      liveCustoms,
+      paperwork
     };
     setCachedStats(req.query, statsPayload, req.user?.id);
     res.json({ status: 'success', data: statsPayload });
@@ -2633,15 +2651,14 @@ function customsIncompleteFilter() {
         cha: { OR: [
           { jobNo: null }, { jobNo: '' }, { checklistDate: null }, { checklistApprovalDate: null },
           { boeNo: null }, { boeNo: '' }, { boeDate: null }, { oocDate: null }, { gatePassDate: null },
-          { deliveryDate: null }, { trackingNumber: null }, { trackingNumber: '' }
+          { deliveryDate: null }
         ] }
       },
       {
         importExport: 'Export',
         cha: { OR: [
           { jobNo: null }, { jobNo: '' }, { checklistDate: null }, { checklistApprovalDate: null },
-          { sbNo: null }, { sbNo: '' }, { sbDate: null }, { leoDate: null }, { handOverDate: null },
-          { trackingNumber: null }, { trackingNumber: '' }
+          { sbNo: null }, { sbNo: '' }, { sbDate: null }, { leoDate: null }, { handOverDate: null }
         ] }
       }
     ]
@@ -2655,15 +2672,14 @@ function customsCompleteFilter() {
         cha: {
           jobNo: TEXT_FILLED, checklistDate: { not: null }, checklistApprovalDate: { not: null },
           boeNo: TEXT_FILLED, boeDate: { not: null }, oocDate: { not: null }, gatePassDate: { not: null },
-          deliveryDate: { not: null }, trackingNumber: TEXT_FILLED
+          deliveryDate: { not: null }
         }
       },
       {
         importExport: 'Export',
         cha: {
           jobNo: TEXT_FILLED, checklistDate: { not: null }, checklistApprovalDate: { not: null },
-          sbNo: TEXT_FILLED, sbDate: { not: null }, leoDate: { not: null }, handOverDate: { not: null },
-          trackingNumber: TEXT_FILLED
+          sbNo: TEXT_FILLED, sbDate: { not: null }, leoDate: { not: null }, handOverDate: { not: null }
         }
       }
     ]
@@ -2696,6 +2712,7 @@ const PIPELINE_CARD_SELECT = {
 // pending). The Pipeline board (Kanban tab) still always wants active
 // only regardless of any Dashboard toggle, so it explicitly passes
 // false — only the Dashboard stats/list pass the real toggle.
+const INVOICED_STATUS_LIST = ['INVOICE_GENERATED', 'INVOICE_SENT'];
 function getPipelineStageWhere(stage, isArchivedFlag = false) {
   const baseActive = { isDeleted: false, isArchived: isArchivedFlag };
   if (stage === 'freight') {
@@ -2739,6 +2756,25 @@ function getPipelineStageWhere(stage, isArchivedFlag = false) {
       ...baseActive,
       shipmentType: { in: SIMPLE_PIPELINE_TYPES },
       AND: [invoiceIncompleteFilter(), getNotCancelledFilter()]
+    };
+  }
+  // Three views that split the Freight and Customs stages by whether the shipment is already invoiced.
+  // A shipment that is already invoiced is finished business whose paperwork is incomplete, so it must not be counted
+  // as "in progress". Freight stage and Customs stage never overlap, so:
+  //   freight + customs  =  freightLive + customsLive + paperwork   (exactly)
+  if (stage === 'freightLive') {
+    return { ...baseActive, AND: [getPipelineStageWhere('freight', isArchivedFlag), { currentStatus: { notIn: INVOICED_STATUS_LIST } }] };
+  }
+  if (stage === 'customsLive') {
+    return { ...baseActive, AND: [getPipelineStageWhere('customs', isArchivedFlag), { currentStatus: { notIn: INVOICED_STATUS_LIST } }] };
+  }
+  if (stage === 'paperwork') {
+    return {
+      ...baseActive,
+      AND: [
+        { OR: [getPipelineStageWhere('freight', isArchivedFlag), getPipelineStageWhere('customs', isArchivedFlag)] },
+        { currentStatus: { in: INVOICED_STATUS_LIST } }
+      ]
     };
   }
   if (stage === 'done') {

@@ -88,8 +88,8 @@ function isArchiveEligible(shipment, debug) {
     if (!cha.oocDate) missing.push('OOC Date');
     if (!cha.gatePassDate) missing.push('Gate Pass Date');
     if (!cha.deliveryDate) missing.push('Delivery Date');
+    // Tracking No is optional (see freightForwarding.controller.js), so it is not checked here.
   }
-  if (!cha.trackingNumber) missing.push('Tracking Number');
   if (missing.length) { if (debug) console.log(`🔍 ARCHIVE CHECK [${shipment.refNo}] — missing:`, missing); return false; }
 
   if (shipment.shipmentType === 'CHA Only') return true;

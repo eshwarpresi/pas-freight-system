@@ -443,8 +443,8 @@ function getCompletenessSections(sh) {
       ['Job No', cha.jobNo], ['Checklist Date', cha.checklistDate], ['Approval Date', cha.checklistApprovalDate],
       ...(isExport
         ? [['SB No', cha.sbNo], ['SB Date', cha.sbDate], ['LEO Date', cha.leoDate], ['Hand Over Date', cha.handOverDate]]
-        : [['BOE No', cha.boeNo], ['BOE Date', cha.boeDate], ['OOC Date', cha.oocDate], ['Gate Pass Date', cha.gatePassDate], ['Delivery Date', cha.deliveryDate]]),
-      ['Tracking No', cha.trackingNumber]
+        // Tracking No is optional, so it is not listed as missing
+        : [['BOE No', cha.boeNo], ['BOE Date', cha.boeDate], ['OOC Date', cha.oocDate], ['Gate Pass Date', cha.gatePassDate], ['Delivery Date', cha.deliveryDate]])
     ]))
   }
   sections.push(section('Invoice', 'accounts', [
