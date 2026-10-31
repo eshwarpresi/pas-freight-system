@@ -1321,19 +1321,17 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     },
     { label: "Today's Invoice", value: analytics.todayInvoiced, icon: FileSpreadsheet, gradient: 'from-teal-500 to-cyan-600', desc: 'Invoiced today', onClick: showTodayInvoiced, active: todayInvoicedOnly },
     { label: 'This Month Invoice', value: analytics.monthlyInvoiced, icon: FileSpreadsheet, gradient: statGradients[3], desc: 'Invoiced this calendar month', onClick: showInvoicedShipments, active: invoicedOnly },
-    // ✅ NEW — same stages as the Pipeline tab, as clickable cards on the
-    // main list view. Overview-only (showPipelineTab already restricts to
-    // the main company-wide view, not My Shipments/employee/reference-
-    // group pages), since these are company-wide counts like the
-    // Pipeline board itself.
-    ...(showPipelineTab ? [
+    // The pipeline stages as clickable cards. Shown on every page (Overview, My Shipments, an employee,
+    // a reference code like SP or RL): the backend counts each stage inside the same scope as the list,
+    // so on any page these cards add up to that page's Active Shipments.
+    ...([
       { label: 'Enquiry', value: analytics.pipelineEnquiry, icon: Clock, gradient: 'from-amber-500 to-yellow-600', desc: 'Waiting for nomination', onClick: showEnquiry, active: enquiryOnly },
       { label: 'Customs 1', value: analytics.pipelineCustoms1, icon: FileCheck, gradient: 'from-emerald-500 to-teal-600', desc: 'Job No, Checklist, Approval, BOE', onClick: showPendingCustoms, active: pendingCustomsOnly },
       { label: 'Customs 2', value: analytics.pipelineCustoms2, icon: FileCheck, gradient: 'from-cyan-500 to-sky-600', desc: 'OOC, Gate Pass, Delivery', onClick: showCustoms2, active: customs2Only },
       { label: 'Pending Invoice', value: analytics.pipelineInvoice, icon: Banknote, gradient: 'from-amber-500 to-orange-600', desc: 'Customs done, invoice not made yet', onClick: showPendingInvoice, active: pendingInvoiceOnly },
       { label: 'FF Only / Transport / DO', value: analytics.pipelineSimple, icon: Box, gradient: 'from-violet-500 to-purple-600', desc: 'In progress, not yet invoiced', onClick: showSimpleTypesInProgress, active: simpleTypesOnly },
       { label: 'Cancelled', value: analytics.cancelled, icon: AlertCircle, gradient: 'from-red-500 to-rose-600', desc: 'Cancelled, or no progress for 5 days', onClick: showCancelled, active: cancelledOnly },
-    ] : []),
+    ]),
     { label: "Today's Shipments", value: todayCount || 0, icon: Calendar, gradient: 'from-rose-500 to-pink-600', desc: 'Created today', onClick: showTodayShipments, active: todayOnly },
     { label: 'This Month Shipments', value: analytics.monthlyShipments, icon: TrendingUp, gradient: 'from-cyan-500 to-sky-600', desc: 'Created this calendar month', onClick: showThisMonthShipments, active: thisMonthOnly },
   ]
@@ -1342,9 +1340,7 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
   // The first four stat cards become the big gradient tiles; every other
   // card stays reachable as a "more views" chip underneath. Same handlers
   // and counts as before, nothing is removed.
-  const tileLabels = showPipelineTab
-    ? [showArchived ? 'Total Shipments' : 'Active Shipments', 'Enquiry', showArchived ? 'Completed' : 'Freight', 'Customs 1', 'Customs 2', 'Pending Invoice', 'This Month Invoice']
-    : [showArchived ? 'Completed' : 'Freight', "Today's Shipments", 'This Month Shipments', 'This Month Invoice']
+  const tileLabels = [showArchived ? 'Total Shipments' : 'Active Shipments', 'Enquiry', showArchived ? 'Completed' : 'Freight', 'Customs 1', 'Customs 2', 'Pending Invoice', 'This Month Invoice']
   const tileGradients = ['from-slate-600 to-slate-700', 'from-amber-500 to-yellow-600', 'from-indigo-600 to-violet-600', 'from-teal-500 to-emerald-500', 'from-cyan-500 to-sky-600', 'from-orange-500 to-amber-500', 'from-pink-600 to-rose-500']
   const kpiTiles = tileLabels.map(l => statCards.find(c => c.label === l)).filter(Boolean)
   const moreViews = statCards.filter(c => !tileLabels.includes(c.label))
