@@ -184,7 +184,7 @@ function isStepCompleteBackend(statusKey, ff, cha, accounts, shipmentStage) {
   }
 }
 
-async function recomputeCurrentStatus(shipmentId) {
+async function recomputeCurrentStatus(shipmentId, opts = {}) {
   const s = await prisma.shipment.findUnique({
     where: { id: shipmentId },
     select: { refNo: true, isArchived: true, shipmentType: true, importExport: true, shipmentStage: true, currentStatus: true, freightForwarding: true, cha: true, accounts: true }
@@ -220,7 +220,7 @@ async function recomputeCurrentStatus(shipmentId) {
   // Before, this only ran when an invoice field was saved, so a shipment whose
   // last missing field was on another tab sat in Active indefinitely.
   if (!s.isArchived && s.accounts && !s.accounts.completedAt && isArchiveEligible(s)) {
-    await archiveIfComplete(shipmentId);
+    await archiveIfComplete(shipmentId, undefined, opts);
   }
   // The reverse: a shipment that archived itself when the invoice was sent goes back to
   // Active the moment its invoice details are cleared again (e.g. entered by mistake).
@@ -324,7 +324,7 @@ async function sendInvoiceReadyOnce(full, actor) {
 // Archives a shipment the moment every required field is filled in. Returns
 // true if it archived. Stamps completedAt so it only ever happens once, and
 // sends the "Invoice Ready" email (if enabled for the shipment) at that moment.
-async function archiveIfComplete(shipmentId, actor) {
+async function archiveIfComplete(shipmentId, actor, opts = {}) {
   try {
     const sh = await prisma.shipment.findUnique({
       where: { id: shipmentId },
@@ -344,8 +344,15 @@ async function archiveIfComplete(shipmentId, actor) {
     statsCache.clear();
     broadcastShipmentChange(sh.refNo);
     if (sh.freightForwarding?.autoEmailEnabled && sh.freightForwarding.notificationEmail) {
-      const full = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { freightForwarding: true, cha: true, accounts: true } });
-      await sendInvoiceReadyOnce(full, actor);
+      if (opts.silent) {
+        // Backlog clean-up: no customer email for an old shipment. The history entry below is the same
+        // "already handled" record sendInvoiceReadyOnce uses, so it cannot be emailed later by accident either.
+        const done = await prisma.statusHistory.findFirst({ where: { shipmentId, status: 'EMAIL_INVOICE_READY' }, select: { id: true } });
+        if (!done) await prisma.statusHistory.create({ data: { shipmentId, status: 'EMAIL_INVOICE_READY', remarks: 'No email sent - completed through the backlog clean-up' } });
+      } else {
+        const full = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { freightForwarding: true, cha: true, accounts: true } });
+        await sendInvoiceReadyOnce(full, actor);
+      }
     }
     return true;
   } catch (err) {
@@ -3333,7 +3340,294 @@ const updateAWB = async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ status: 'error', message: 'Failed' }); }
 };
 
+// ─── BACKLOG CLEAN-UP + EXCEL IMPORT ───
+// Lets the Freight, Customs and Accounts teams fill in the fields that old shipments are still missing, from one
+// page or from an Excel sheet. Three rules keep it safe:
+//   1. It only FILLS EMPTY fields. A value that is already there is never overwritten.
+//   2. Every value is checked (real dates, positive numbers, no placeholders like "NA") before it is saved.
+//   3. It is silent: no customer email goes out when an old shipment completes and archives.
+// The field list below mirrors isArchiveEligible() exactly, so "missing" here means "this is what stops it archiving".
+const BACKLOG_FIELDS = [
+  // Freight team
+  { key: 'consigneeName', label: 'Consignee', table: 'freightForwarding', type: 'text', team: 'freight' },
+  { key: 'shipperName', label: 'Shipper', table: 'freightForwarding', type: 'text', team: 'freight' },
+  { key: 'grossWeight', label: 'Gross Weight', table: 'freightForwarding', type: 'number', team: 'freight' },
+  { key: 'weight', label: 'Chargeable Weight', table: 'freightForwarding', type: 'number', team: 'freight' },
+  { key: 'nominationDate', label: 'Nomination Date', table: 'freightForwarding', type: 'date', team: 'freight' },
+  { key: 'bookingDate', label: 'Booking Date', table: 'freightForwarding', type: 'date', team: 'freight' },
+  { key: 'pickupDate', label: 'Pickup Date', table: 'freightForwarding', type: 'date', team: 'freight' },
+  { key: 'etd', label: 'ETD', table: 'freightForwarding', type: 'date', team: 'freight' },
+  { key: 'eta', label: 'ETA', table: 'freightForwarding', type: 'date', team: 'freight' },
+  { key: 'mawb', label: 'MAWB', table: 'freightForwarding', type: 'text', team: 'freight' },
+  { key: 'hawb', label: 'HAWB', table: 'freightForwarding', type: 'text', team: 'freight' },
+  { key: 'awbDate', label: 'AWB Date', table: 'freightForwarding', type: 'date', team: 'freight' },
+  { key: 'preAlertsSentDate', label: 'Pre-Alerts Sent Date', table: 'freightForwarding', type: 'date', team: 'freight' },
+  { key: 'doCollectionDate', label: 'DO Collection Date', table: 'cha', type: 'date', team: 'freight' },
+  // Customs team
+  { key: 'jobNo', label: 'Job No', table: 'cha', type: 'text', team: 'customs' },
+  { key: 'checklistDate', label: 'Checklist Date', table: 'cha', type: 'date', team: 'customs' },
+  { key: 'checklistApprovalDate', label: 'Checklist Approval Date', table: 'cha', type: 'date', team: 'customs' },
+  { key: 'boeNo', label: 'BOE No', table: 'cha', type: 'text', team: 'customs', mode: 'import' },
+  { key: 'boeDate', label: 'BOE Date', table: 'cha', type: 'date', team: 'customs', mode: 'import' },
+  { key: 'oocDate', label: 'OOC Date', table: 'cha', type: 'date', team: 'customs', mode: 'import' },
+  { key: 'gatePassDate', label: 'Gate Pass Date', table: 'cha', type: 'date', team: 'customs', mode: 'import' },
+  { key: 'deliveryDate', label: 'Delivery Date', table: 'cha', type: 'date', team: 'customs', mode: 'import' },
+  { key: 'sbNo', label: 'SB No', table: 'cha', type: 'text', team: 'customs', mode: 'export' },
+  { key: 'sbDate', label: 'SB Date', table: 'cha', type: 'date', team: 'customs', mode: 'export' },
+  { key: 'leoDate', label: 'LEO Date', table: 'cha', type: 'date', team: 'customs', mode: 'export' },
+  { key: 'handOverDate', label: 'Hand Over Date', table: 'cha', type: 'date', team: 'customs', mode: 'export' },
+  // Accounts team
+  { key: 'invoiceNumber', label: 'Invoice No', table: 'accounts', type: 'text', team: 'invoice' },
+  { key: 'invoiceDate', label: 'Invoice Date', table: 'accounts', type: 'date', team: 'invoice' },
+  { key: 'sendingDate', label: 'Invoice Sending Date', table: 'accounts', type: 'date', team: 'invoice' }
+];
+const BACKLOG_FIELD_BY_KEY = Object.fromEntries(BACKLOG_FIELDS.map((f) => [f.key, f]));
+const BACKLOG_STAGES = ['enquiry', 'nominated', 'customs1', 'customs2', 'invoice', 'simple'];
+const BACKLOG_MAX_ROWS = 200; // the server's default request size limit is 100 KB, so the page sends small batches
+
+// Which fields a shipment must have before it can archive - the same rules as isArchiveEligible().
+function backlogRequiredKeys(sh) {
+  const keys = ['invoiceNumber', 'invoiceDate', 'sendingDate'];
+  if (['Transport', 'DO Release', 'FF Only'].includes(sh.shipmentType)) return keys;
+  const mode = sh.importExport === 'Export' ? 'export' : 'import';
+  for (const f of BACKLOG_FIELDS) {
+    if (f.team === 'customs' && (!f.mode || f.mode === mode)) keys.push(f.key);
+  }
+  if (sh.shipmentType === 'CHA Only') return keys;
+  for (const f of BACKLOG_FIELDS) { if (f.team === 'freight') keys.push(f.key); }
+  return keys;
+}
+function backlogValue(sh, key) {
+  const f = BACKLOG_FIELD_BY_KEY[key];
+  const row = sh[f.table];
+  return row ? row[key] : null;
+}
+function backlogIsEmpty(v) { return v === null || v === undefined || v === ''; }
+function getMissingFields(sh) {
+  return backlogRequiredKeys(sh).filter((k) => backlogIsEmpty(backlogValue(sh, k)));
+}
+function backlogFmtDate(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // yyyy-mm-dd
+}
+function backlogDisplay(sh, key) {
+  const v = backlogValue(sh, key);
+  if (backlogIsEmpty(v)) return '';
+  const f = BACKLOG_FIELD_BY_KEY[key];
+  if (f.type === 'date') return backlogFmtDate(v);
+  return String(v);
+}
+
+// Accepts yyyy-mm-dd, dd-mm-yyyy, dd/mm/yyyy and dd.mm.yyyy. Returns a Date at UTC midnight, or null.
+function backlogParseDate(raw) {
+  const s = String(raw).trim();
+  let y, m, d;
+  let mt = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/);
+  if (mt) { y = +mt[1]; m = +mt[2]; d = +mt[3]; }
+  else {
+    mt = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (!mt) return null;
+    d = +mt[1]; m = +mt[2]; y = +mt[3];
+  }
+  if (y < 2020 || y > 2030 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null; // e.g. 31 Feb
+  return dt;
+}
+const BACKLOG_PLACEHOLDERS = new Set(['-', '--', '.', '..', 'na', 'n/a', 'nil', 'none', 'null', 'tbd', 'pending', '0', 'x', 'xx', '?']);
+
+// Returns { ok:true, value } or { ok:false, reason }.
+function backlogParseValue(field, raw) {
+  const s = String(raw).trim();
+  if (field.type === 'date') {
+    const d = backlogParseDate(s);
+    return d ? { ok: true, value: d } : { ok: false, reason: 'Not a valid date (use dd-mm-yyyy or yyyy-mm-dd, years 2020 to 2030)' };
+  }
+  if (field.type === 'number') {
+    const n = Number(s.replace(/,/g, ''));
+    if (!Number.isFinite(n) || n <= 0 || n > 10000000) return { ok: false, reason: 'Must be a number above zero' };
+    return { ok: true, value: Math.round(n * 1000) / 1000 };
+  }
+  const t = s.replace(/\s+/g, ' ');
+  if (BACKLOG_PLACEHOLDERS.has(t.toLowerCase())) return { ok: false, reason: 'Looks like a placeholder, not a real value' };
+  if (t.length > 100) return { ok: false, reason: 'Longer than 100 characters' };
+  return { ok: true, value: t };
+}
+function backlogSame(field, existing, value) {
+  if (field.type === 'date') return backlogFmtDate(existing) === backlogFmtDate(value);
+  if (field.type === 'number') return Number(existing) === Number(value);
+  return String(existing).trim().toLowerCase() === String(value).trim().toLowerCase();
+}
+
+const BACKLOG_INCLUDE = { freightForwarding: true, cha: true, accounts: true };
+
+// GET /freight/backlog  - every active shipment that is still missing something, grouped by the dashboard stage.
+// The stage lists come from getPipelineStageWhere(), the same filters the dashboard cards use, so the counts match the cards.
+const getBacklog = async (req, res) => {
+  try {
+    const stageIds = {};
+    const idToStage = new Map();
+    for (const stage of BACKLOG_STAGES) {
+      const rows = await prisma.shipment.findMany({ where: getPipelineStageWhere(stage, false), select: { id: true } });
+      stageIds[stage] = rows.map((r) => r.id);
+      for (const r of rows) { if (!idToStage.has(r.id)) idToStage.set(r.id, stage); }
+    }
+    const ids = [...idToStage.keys()];
+    const found = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      const part = await prisma.shipment.findMany({
+        where: { id: { in: ids.slice(i, i + 500) } },
+        select: { id: true, refNo: true, shipmentType: true, importExport: true, createdByName: true, currentStatus: true, createdAt: true, ...BACKLOG_INCLUDE }
+      });
+      found.push(...part);
+    }
+    const counts = Object.fromEntries(BACKLOG_STAGES.map((s) => [s, stageIds[s].length]));
+    const rows = found.map((sh) => {
+      const required = backlogRequiredKeys(sh);
+      const values = {};
+      for (const k of required) values[k] = backlogDisplay(sh, k);
+      const f = sh.freightForwarding || {};
+      return {
+        id: sh.id,
+        refNo: sh.refNo,
+        shipmentType: sh.shipmentType || '',
+        importExport: sh.importExport === 'Export' ? 'Export' : 'Import',
+        consignee: f.consigneeName || f.customerName || '',
+        createdByName: sh.createdByName || '',
+        currentStatus: sh.currentStatus,
+        createdAt: sh.createdAt,
+        stage: idToStage.get(sh.id),
+        required,
+        missing: required.filter((k) => backlogIsEmpty(backlogValue(sh, k))),
+        values
+      };
+    });
+    rows.sort((a, b) => String(a.refNo).localeCompare(String(b.refNo), undefined, { numeric: true }));
+    res.json({
+      status: 'success',
+      data: { counts, total: rows.length, rows, fields: BACKLOG_FIELDS.map(({ key, label, type, team, mode }) => ({ key, label, type, team, mode: mode || null })) }
+    });
+  } catch (error) {
+    console.error('Error getting backlog:', error);
+    res.status(500).json({ status: 'error', message: 'Failed to load the clean-up list' });
+  }
+};
+
+// POST /freight/backlog/import   body: { rows: [{ id, refNo, fields: { key: "value" } }], apply: false }
+// apply:false  = check only (preview), nothing is saved.
+// apply:true   = save the rows that passed the checks.
+const importBacklog = async (req, res) => {
+  try {
+    const input = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    const apply = req.body?.apply === true;
+    if (!input.length) return res.status(400).json({ status: 'error', message: 'No rows received' });
+    if (input.length > BACKLOG_MAX_ROWS) return res.status(400).json({ status: 'error', message: `Send at most ${BACKLOG_MAX_ROWS} rows at a time` });
+
+    const ids = [...new Set(input.map((r) => String(r.id || '').trim()).filter(Boolean))];
+    const refs = [...new Set(input.filter((r) => !r.id && r.refNo).map((r) => String(r.refNo).trim()))];
+    const select = { id: true, refNo: true, shipmentType: true, importExport: true, isArchived: true, isDeleted: true, currentStatus: true, ...BACKLOG_INCLUDE };
+    const [byId, byRef] = await Promise.all([
+      ids.length ? prisma.shipment.findMany({ where: { id: { in: ids } }, select }) : [],
+      refs.length ? prisma.shipment.findMany({ where: { refNo: { in: refs }, isDeleted: false }, select }) : []
+    ]);
+    const idMap = new Map(byId.map((s) => [s.id, s]));
+    const refMap = new Map();
+    for (const s of byRef) { if (!refMap.has(s.refNo)) refMap.set(s.refNo, []); refMap.get(s.refNo).push(s); }
+
+    const actor = actorName(req);
+    const results = [];
+    const seen = new Set();
+    for (const r of input) {
+      const out = { id: null, refNo: String(r.refNo || '').trim(), status: 'error', updates: [], issues: [] };
+      results.push(out);
+      let sh = null;
+      if (r.id) sh = idMap.get(String(r.id).trim());
+      else if (r.refNo) {
+        const list = refMap.get(String(r.refNo).trim()) || [];
+        if (list.length > 1) { out.issues.push({ reason: 'Several shipments share this Ref No - use the sheet downloaded from the Clean-up page' }); continue; }
+        sh = list[0];
+      }
+      if (!sh) { out.issues.push({ reason: 'Shipment not found' }); continue; }
+      out.id = sh.id; out.refNo = sh.refNo;
+      if (seen.has(sh.id)) { out.issues.push({ reason: 'This shipment appears twice in the sheet' }); continue; }
+      seen.add(sh.id);
+      if (sh.isDeleted) { out.issues.push({ reason: 'Shipment is in the Bin' }); continue; }
+      if (sh.isArchived) { out.status = 'nochange'; out.issues.push({ reason: 'Already archived, left untouched' }); continue; }
+      if (sh.currentStatus === 'CANCELLED') { out.status = 'nochange'; out.issues.push({ reason: 'Cancelled, left untouched' }); continue; }
+
+      const allowed = new Set(backlogRequiredKeys(sh));
+      const final = {}; // value each date will have after this import, for the order checks
+      for (const k of allowed) { const v = backlogValue(sh, k); if (!backlogIsEmpty(v)) final[k] = v; }
+      const staged = [];
+      for (const [key, raw] of Object.entries(r.fields || {})) {
+        if (raw === null || raw === undefined || String(raw).trim() === '') continue;
+        const f = BACKLOG_FIELD_BY_KEY[key];
+        if (!f) continue;
+        if (!allowed.has(key)) { out.issues.push({ key, label: f.label, reason: 'Not needed for this shipment type' }); continue; }
+        const parsed = backlogParseValue(f, raw);
+        if (!parsed.ok) { out.issues.push({ key, label: f.label, reason: parsed.reason }); continue; }
+        const existing = backlogValue(sh, key);
+        if (!backlogIsEmpty(existing)) {
+          if (!backlogSame(f, existing, parsed.value)) out.issues.push({ key, label: f.label, reason: `Already has "${backlogDisplay(sh, key)}", not changed` });
+          continue;
+        }
+        staged.push({ f, value: parsed.value });
+        final[key] = parsed.value;
+      }
+      // Two common mix-ups: sending the invoice before it is dated, and arriving before departing.
+      const later = (a, b) => final[a] && final[b] && backlogFmtDate(final[a]) < backlogFmtDate(final[b]);
+      const dropField = (key, reason) => {
+        const i = staged.findIndex((x) => x.f.key === key);
+        if (i >= 0) { staged.splice(i, 1); out.issues.push({ key, label: BACKLOG_FIELD_BY_KEY[key].label, reason }); }
+      };
+      if (later('sendingDate', 'invoiceDate')) dropField('sendingDate', 'Sending Date is before the Invoice Date');
+      if (later('eta', 'etd')) dropField('eta', 'ETA is before the ETD');
+      out.updates = staged.map((x) => ({ key: x.f.key, label: x.f.label, value: x.f.type === 'date' ? backlogFmtDate(x.value) : String(x.value) }));
+      out.status = staged.length ? 'update' : (out.issues.length ? 'nochange' : 'nochange');
+      out._staged = staged;
+      out._sh = sh;
+    }
+
+    if (apply) {
+      for (const out of results) {
+        if (out.status !== 'update') continue;
+        try {
+          const data = {};
+          const tables = {};
+          for (const x of out._staged) { (tables[x.f.table] = tables[x.f.table] || {})[x.f.key] = x.value; }
+          for (const [table, vals] of Object.entries(tables)) data[table] = { upsert: { create: vals, update: vals } };
+          data.statusHistory = { create: { status: 'DATA_IMPORT', remarks: `Backlog clean-up filled: ${out.updates.map((u) => u.label).join(', ')}`, ...(actor ? { changedBy: actor } : {}) } };
+          await prisma.shipment.update({ where: { id: out.id }, data });
+          await recomputeCurrentStatus(out.id, { silent: true });
+          out.saved = true;
+        } catch (err) {
+          console.error('Backlog import failed for', out.refNo, err.message);
+          out.status = 'error';
+          out.saved = false;
+          out.issues.push({ reason: 'Could not save this row' });
+        }
+      }
+      statsCache.clear();
+      broadcastShipmentChange();
+    }
+
+    const summary = { rows: results.length, update: 0, nochange: 0, error: 0, fields: 0 };
+    for (const out of results) {
+      summary[out.status] = (summary[out.status] || 0) + 1;
+      if (out.status === 'update') summary.fields += out.updates.length;
+      delete out._staged; delete out._sh;
+    }
+    res.json({ status: 'success', data: { applied: apply, summary, results } });
+  } catch (error) {
+    console.error('Error importing backlog:', error);
+    res.status(500).json({ status: 'error', message: 'Import failed' });
+  }
+};
+
 module.exports = { 
+  getBacklog, // ✅ NEW — Backlog Clean-up list
+  importBacklog, // ✅ NEW — Excel bulk import for the Backlog Clean-up page
+  getMissingFields, // used by the tests
   getStaleEnquiries: cleanup.getStaleEnquiries, // ✅ NEW — weekly clean-up list
   reopenShipment: cleanup.reopenShipment, // ✅ NEW — Reopen a cancelled / timed-out enquiry
   checkDuplicate: cleanup.checkDuplicate, // ✅ NEW — duplicate guard on Create Shipment

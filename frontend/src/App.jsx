@@ -21,6 +21,7 @@ const EmployeeDashboard = lazy(() => import('./pages/EmployeeDashboard'))
 const DailyReport = lazy(() => import('./pages/DailyReport'))
 const Reminders = lazy(() => import('./pages/Reminders'))
 const EnquiryCleanup = lazy(() => import('./pages/EnquiryCleanup'))
+const BacklogCleanup = lazy(() => import('./pages/BacklogCleanup'))
 const ConversionReport = lazy(() => import('./pages/ConversionReport'))
 const TeamPerformance = lazy(() => import('./pages/TeamPerformance'))
 const ShipmentDetail = lazy(() => import('./pages/ShipmentDetail'))
@@ -226,6 +227,7 @@ function App() {
                 <Route path="team-performance" element={<TeamPerformance />} />
                 <Route path="reminders" element={<Reminders />} />
                 <Route path="enquiry-cleanup" element={<EnquiryCleanup />} />
+                <Route path="backlog" element={<BacklogCleanup />} />
                 <Route path="conversion-report" element={<ConversionReport />} />
 
                 <Route path="freight" element={<FreightDashboard />} />

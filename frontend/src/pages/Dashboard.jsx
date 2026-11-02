@@ -1744,6 +1744,14 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
             </div>
           )}
 
+          {!showArchived && (
+            <div className="flex">
+              <Link to="/backlog" className="px-3.5 py-2 rounded-full text-xs font-semibold flex items-center gap-2 border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:border-indigo-400 transition-all whitespace-nowrap">
+                <ClipboardList size={13} />Backlog Clean-up: fill missing fields, or import from Excel
+              </Link>
+            </div>
+          )}
+
           {!showArchived && !targetUserId && !referenceGroup && (
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
               <section className="lg:col-span-3 glass rounded-3xl border border-[var(--border-color)] p-5 sm:p-6">

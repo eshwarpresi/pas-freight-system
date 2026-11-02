@@ -85,6 +85,10 @@ router.post('/shipments/check-duplicate', freightController.checkDuplicate); // 
 router.get('/reports/lost-reasons', freightController.getLostReasons); // why enquiries were lost
 router.get('/reports/conversion', freightController.getConversionReport); // enquiries / quotations / wins per person per week
 
+// ─── BACKLOG CLEAN-UP (NEW) — fill missing fields from a page or an Excel sheet ───
+router.get('/backlog', freightController.getBacklog);
+router.post('/backlog/import', freightController.importBacklog);
+
 // ─── GET SINGLE SHIPMENT ───
 router.get('/shipments/:id', freightController.getShipmentById);
 
