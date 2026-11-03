@@ -3624,7 +3624,65 @@ const importBacklog = async (req, res) => {
   }
 };
 
+// ─── WHERE IS THIS SHIPMENT? ───
+// The dashboard list only shows the tab you are on (Active or Archive), so a search can come back empty even though
+// the shipment exists - it may be archived, in the Bin, cancelled, or already finished and waiting to archive.
+// This looks the search up everywhere and says where each match is sitting.
+const LOCATE_STAGE_LABEL = {
+  enquiry: 'Active - Enquiry (waiting for nomination)',
+  nominated: 'Active - Freight (Freight fields to fill)',
+  customs1: 'Active - Customs 1',
+  customs2: 'Active - Customs 2',
+  invoice: 'Active - Pending Invoice'
+};
+const locateShipments = async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 3) return res.json({ status: 'success', data: [] });
+    const filter = await buildSearchFilter(q);
+    const found = await prisma.shipment.findMany({
+      where: filter,
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+      select: {
+        id: true, refNo: true, shipmentType: true, importExport: true, isArchived: true, isDeleted: true,
+        currentStatus: true, shipmentStage: true, createdByName: true, deletedAt: true,
+        freightForwarding: { select: { consigneeName: true, customerName: true } }
+      }
+    });
+    const ids = found.map((s) => s.id);
+    const stageOf = new Map();
+    if (ids.length) {
+      for (const stage of ['enquiry', 'nominated', 'customs1', 'customs2', 'invoice', 'simple']) {
+        const rows = await prisma.shipment.findMany({ where: { AND: [getPipelineStageWhere(stage, false), { id: { in: ids } }] }, select: { id: true } });
+        rows.forEach((r) => { if (!stageOf.has(r.id)) stageOf.set(r.id, stage); });
+      }
+    }
+    const data = found.map((s) => {
+      let where, label;
+      const stage = stageOf.get(s.id);
+      if (s.isDeleted) { where = 'bin'; label = 'In the Bin (deleted)'; }
+      else if (s.isArchived) { where = 'archive'; label = 'Archived'; }
+      else if (stage === 'simple') { where = 'active'; label = `Active - ${s.shipmentType} (invoice not finished)`; }
+      else if (stage) { where = 'active'; label = LOCATE_STAGE_LABEL[stage]; }
+      else if (s.currentStatus === 'CANCELLED' || s.shipmentStage === 'Cancelled') { where = 'cancelled'; label = 'Cancelled'; }
+      else if (s.currentStatus === 'ENQUIRY') { where = 'cancelled'; label = 'Cancelled - enquiry with no progress for over 5 days'; }
+      else { where = 'complete'; label = 'Complete - waiting to move to Archive'; }
+      const f = s.freightForwarding || {};
+      return {
+        id: s.id, refNo: s.refNo, shipmentType: s.shipmentType || '', importExport: s.importExport || '',
+        consignee: f.consigneeName || f.customerName || '', createdByName: s.createdByName || '', where, label
+      };
+    });
+    res.json({ status: 'success', data });
+  } catch (error) {
+    console.error('Error locating shipment:', error);
+    res.status(500).json({ status: 'error', message: 'Could not look that up' });
+  }
+};
+
 module.exports = { 
+  locateShipments, // ✅ NEW — says where a searched shipment is (Active stage / Archive / Bin / Cancelled)
   getBacklog, // ✅ NEW — Backlog Clean-up list
   importBacklog, // ✅ NEW — Excel bulk import for the Backlog Clean-up page
   getMissingFields, // used by the tests

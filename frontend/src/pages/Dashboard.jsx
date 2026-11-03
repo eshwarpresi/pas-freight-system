@@ -346,6 +346,25 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
     staleTime: 600000, refetchOnWindowFocus: false, retry: 1,
   })
 
+  // Where is the shipment I searched for? Looks everywhere (Archive, Bin, Cancelled, every Active stage),
+  // so a search that finds nothing in this tab still says where the shipment is.
+  const { data: locateMatches } = useQuery({
+    queryKey: ['locate', debouncedSearch],
+    queryFn: async () => {
+      const res = await api.get('/freight/shipments/locate', { params: { q: debouncedSearch } })
+      return res.data?.data || []
+    },
+    enabled: debouncedSearch.trim().length >= 3,
+    staleTime: 30000, refetchOnWindowFocus: false,
+  })
+  const LOCATE_STYLE = {
+    active: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800',
+    archive: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600',
+    bin: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800',
+    cancelled: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800',
+    complete: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800',
+  }
+
   const isTransportFilter = shipmentTypeFilter === 'TRANSPORT'
   const isDOReleaseFilter = shipmentTypeFilter === 'DO_RELEASE'
   const isFreightFilter = shipmentTypeFilter === 'FULL_SHIPMENT'
@@ -2006,6 +2025,23 @@ export default function Dashboard({ defaultType = '', mineOnly = false, targetUs
 
       {isError&&(<div className="glass rounded-xl border border-red-200/50 dark:border-red-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-red-400 to-rose-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><AlertCircle size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Connection Error</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Unable to load shipments.</p><button onClick={()=>refetch()} className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><RefreshCw size={14}/> Retry</button></div>)}
       
+      {debouncedSearch.trim().length >= 3 && locateMatches && locateMatches.length > 0 && (
+        <div className="glass rounded-xl border border-[var(--border-color)] p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">Where is it? Matches for “{debouncedSearch.trim()}” across all shipments</p>
+          <div className="divide-y divide-[var(--border-color)]">
+            {locateMatches.map(m => (
+              <Link key={m.id} to={`/shipment/${m.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 hover:bg-[var(--bg-secondary)]/50 rounded-lg px-1">
+                <span className="text-sm font-bold text-indigo-600">{m.refNo}</span>
+                <span className="text-xs text-[var(--text-secondary)]">{[m.shipmentType, m.importExport].filter(Boolean).join(' · ')}</span>
+                <span className="text-xs text-[var(--text-primary)] truncate max-w-[260px]">{m.consignee}</span>
+                <span className="text-xs text-[var(--text-muted)]">{m.createdByName}</span>
+                <span className={`ml-auto px-2 py-0.5 rounded-full border text-[11px] font-semibold ${LOCATE_STYLE[m.where] || ''}`}>{m.label}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {!isError&&isEmpty&&hasFilters&&(<div className="glass rounded-xl border border-amber-200/50 dark:border-amber-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><FileSearch size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">No Results</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Try adjusting your search or filters.</p><button onClick={clearAllFilters} className="inline-flex items-center gap-2 px-4 py-2 border border-[var(--border-color)] rounded-lg text-sm font-semibold text-[var(--text-primary)]"><RotateCcw size={14}/> Clear All Filters</button></div>)}
 
       {!isError&&isEmpty&&!hasFilters&&!showArchived&&!showBin&&(<div className="glass rounded-xl border border-indigo-200/50 dark:border-indigo-800/50 p-16 text-center"><div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg"><Inbox size={28} className="text-white"/></div><h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">{mineOnly ? "You haven't created any shipments yet" : targetUserName ? `${targetUserName} hasn't created any shipments yet` : 'Welcome to PAS Freight'}</h3><p className="text-sm text-[var(--text-secondary)] mb-4">Create your first shipment to get started.</p><Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-lg text-sm font-semibold shadow-lg"><Plus size={14}/> Create Shipment</Link></div>)}

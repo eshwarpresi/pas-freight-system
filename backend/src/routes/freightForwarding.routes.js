@@ -86,6 +86,7 @@ router.get('/reports/lost-reasons', freightController.getLostReasons); // why en
 router.get('/reports/conversion', freightController.getConversionReport); // enquiries / quotations / wins per person per week
 
 // ─── BACKLOG CLEAN-UP (NEW) — fill missing fields from a page or an Excel sheet ───
+router.get('/shipments/locate', freightController.locateShipments); // ✅ NEW — where is this shipment?
 router.get('/backlog', freightController.getBacklog);
 router.post('/backlog/import', freightController.importBacklog);
 
