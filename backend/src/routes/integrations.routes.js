@@ -235,6 +235,10 @@ router.post('/shipment/:ref/stage', async (req, res) => {
     const stage = req.body?.stage ? String(req.body.stage) : '';
     if (stage && !['Quoted', 'Nomination', 'Lost'].includes(stage)) return res.status(400).json({ status: 'error', message: 'stage must be Quoted, Nomination or Lost' });
     const quoteNo = s(req.body?.quoteNo);
+    // Who is telling us (shown in the history). The Quotation software sends nothing here; the mailer sends
+    // by: 'Customer mail' and a short note saying which mail it was.
+    const by = s(req.body?.by) ? s(req.body.by).slice(0, 40) : 'Quotation software';
+    const note = s(req.body?.note) ? s(req.body.note).slice(0, 300) : null;
     const sh = await findByRef(req.params.ref);
     if (!sh) return res.status(404).json({ status: 'error', message: 'No shipment with this reference in the DSR' });
 
@@ -289,13 +293,14 @@ router.post('/shipment/:ref/stage', async (req, res) => {
     const data = {};
     const notes = [];
     if (stage) {
-      const allowedFrom = stage === 'Quoted' ? ['', 'Enquiry'] : ['', 'Enquiry', 'Quoted'];
+      // "Rates Requested" comes before Quoted, so a shipment sitting there can move on too
+      const allowedFrom = stage === 'Quoted' ? ['', 'Enquiry', 'Rates Requested'] : ['', 'Enquiry', 'Rates Requested', 'Quoted'];
       moved = allowedFrom.includes(finalStage);
       if (moved) { data.shipmentStage = stage; finalStage = stage; }
       if (reopened) notes.push('Shipment re-opened (quotation status changed back from Lost)');
       notes.push(stage === 'Quoted'
         ? `Quotation${quoteNo ? ' ' + quoteNo : ''} prepared and sent`
-        : `Customer nominated${quoteNo ? ' (quotation ' + quoteNo + ')' : ''}`);
+        : `Customer nominated${quoteNo ? ' (quotation ' + quoteNo + ')' : ''}${note ? ' - ' + note : ''}`);
     }
     if (applied.length) notes.push(`Details updated from quotation${quoteNo ? ' ' + quoteNo : ''}: ${applied.join(', ')}`);
 
@@ -318,7 +323,7 @@ router.post('/shipment/:ref/stage', async (req, res) => {
         where: { id: sh.id },
         data: {
           ...data,
-          statusHistory: { create: notes.map((r) => ({ status: sh.currentStatus || 'ENQUIRY', remarks: r, changedBy: 'Quotation software' })) },
+          statusHistory: { create: notes.map((r) => ({ status: sh.currentStatus || 'ENQUIRY', remarks: r, changedBy: by })) },
         },
       });
     }
