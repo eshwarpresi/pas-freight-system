@@ -414,4 +414,83 @@ router.post('/shipment/:ref/rate-request', async (req, res) => {
   }
 });
 
+// ─── Mail filler: the mailer reads a shipment's mail thread and fills in what is still empty ───
+// The Backlog Clean-up import already knows the rules (fill EMPTY fields only, check every date and number,
+// stay silent towards the customer), so the mail filler goes through that same code instead of a second copy.
+const freightCtl = () => require('../controllers/freightForwarding.controller');
+const clean = (v, n) => String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+
+// Nominated, still-open shipments that are missing something, a page at a time.
+//   GET /fill/queue?limit=20&after=<last id from the previous page>   ->   { items: [...], next: <id or null> }
+router.get('/fill/queue', async (req, res) => {
+  try {
+    if (!guard(req, res)) return;
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    let cursor = s(req.query.after);
+    const items = [];
+    let exhausted = false;
+    while (items.length < limit && !exhausted) {
+      const page = await prisma.shipment.findMany({
+        where: {
+          isDeleted: false, isArchived: false, NOT: { currentStatus: 'CANCELLED' },
+          freightForwarding: { is: { nominationDate: { not: null } } },
+          ...(cursor ? { id: { gt: cursor } } : {}),
+        },
+        orderBy: { id: 'asc' }, take: 100,
+        select: { id: true, refNo: true, shipmentType: true, importExport: true, freightForwarding: true, cha: true, accounts: true },
+      });
+      if (page.length < 100) exhausted = true;
+      for (const sh of page) {
+        cursor = sh.id;
+        const missing = freightCtl().getMissingFields(sh);
+        if (!missing.length) continue;
+        const f = sh.freightForwarding || {};
+        items.push({
+          id: sh.id, refNo: sh.refNo, shipmentType: sh.shipmentType || '', importExport: sh.importExport === 'Export' ? 'Export' : 'Import',
+          customer: f.customerName || f.consigneeName || f.shipperName || '', missing,
+        });
+        if (items.length >= limit) { exhausted = false; break; }
+      }
+    }
+    res.json({ status: 'success', data: { items, next: exhausted ? null : cursor } });
+  } catch (err) {
+    console.error('Fill queue failed:', err);
+    res.status(500).json({ status: 'error', message: 'Could not load the list' });
+  }
+});
+
+// The mailer sends what it found:  { id, fields: { checklistDate: "07-11-2026" }, evidence: { checklistDate: "..." }, apply: true|false }
+// apply:false only checks (nothing is saved). Existing values are never replaced.
+router.post('/shipment/:ref/fill', async (req, res) => {
+  try {
+    if (!guard(req, res)) return;
+    const sh = s(req.body?.id) ? { id: s(req.body.id) } : await findByRef(req.params.ref);
+    if (!sh) return res.status(404).json({ status: 'error', message: 'No shipment with this reference in the DSR' });
+    const fields = req.body?.fields && typeof req.body.fields === 'object' ? req.body.fields : {};
+    const evidence = req.body?.evidence && typeof req.body.evidence === 'object' ? req.body.evidence : {};
+    const apply = req.body?.apply === true;
+    const actor = 'Customer mail';
+
+    const out = await new Promise((resolve, reject) => {
+      const fakeReq = { body: { rows: [{ id: sh.id, fields }], apply }, user: { name: actor } };
+      const fakeRes = { code: 200, status(c) { this.code = c; return this; }, json(j) { resolve({ code: this.code, body: j }); } };
+      Promise.resolve(freightCtl().importBacklog(fakeReq, fakeRes)).catch(reject);
+    });
+    const row = out.body?.data?.results?.[0];
+    if (out.code !== 200 || !row) return res.status(502).json({ status: 'error', message: 'The fill check did not run' });
+
+    // One plain history line that says where each value came from
+    if (apply && row.saved && row.updates.length) {
+      const parts = row.updates.map((u) => `${u.label} ${u.value}${evidence[u.key] ? ' ("' + clean(evidence[u.key], 120) + '")' : ''}`);
+      await prisma.statusHistory.create({
+        data: { shipmentId: sh.id, status: 'DATA_IMPORT', remarks: ('Filled from customer mail: ' + parts.join('; ')).slice(0, 900), changedBy: actor },
+      });
+    }
+    res.json({ status: 'success', data: { applied: apply && !!row.saved, updates: row.updates, issues: row.issues, state: row.status } });
+  } catch (err) {
+    console.error('Mail fill failed:', err);
+    res.status(500).json({ status: 'error', message: 'Could not fill the shipment' });
+  }
+});
+
 module.exports = router;
